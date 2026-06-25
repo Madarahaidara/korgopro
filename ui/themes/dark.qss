@@ -1,0 +1,37 @@
+
+
+#LoginView {
+    background-color: #020617;
+    border-radius: 10px;
+}
+
+#LoginTitle {
+    font-size: 26px;
+    font-weight: bold;
+    color: #e5e7eb;
+    qproperty-alignment: AlignCenter;
+}
+
+#LoginView QLineEdit {
+    height: 38px;
+    padding: 8px;
+    border-radius: 6px;
+    background-color: #020617;
+    border: 1px solid #334155;
+    color: #e5e7eb;
+}
+
+#LoginButton {
+    height: 40px;
+    border-radius: 6px;
+    background-color: #2563eb;
+    color: white;
+}
+
+#LoginButton:hover {
+    background-color: #1d4ed8;
+}
+
+#LoginError {
+    color: #ef4444;
+}

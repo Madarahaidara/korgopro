@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+    <html lang="fr">
+    <head>
+    <meta charset="UTF-8" />
+    <title>Facture</title>
+
+    <style>
+        *{
+            margin:0;
+            padding:0;
+            box-sizing:border-box;
+        }
+
+        body{
+            background:#ffffff;
+            font-family:Arial, Helvetica, sans-serif;
+            color:#000;
+        }
+
+        .page{
+            width:210mm;
+            min-height:297mm;
+            margin:auto;
+            padding:18mm 15mm;
+        }
+
+        .header{
+            text-align:center;
+            margin-bottom:25px;
+        }
+
+        .company-name{
+            font-size:24px;
+            font-weight:bold;
+            text-transform:uppercase;
+            margin-bottom:2px;
+        }
+
+        .company-slogan{
+            font-size:13px;
+            font-style:italic;
+            font-weight:bold;
+        }
+
+        .company-address{
+            font-size:12px;
+        }
+
+        .company-contact{
+            font-size:12px;
+        }
+
+        .client-section{
+            width:100%;
+            margin-top:20px;
+            margin-bottom:25px;
+            font-size:13px;
+            line-height:1.35;
+        }
+
+        .client-section b{
+            display:inline-block;
+            width:160px;
+        }
+
+        .invoice-title{
+            text-align:center;
+            font-size:38px;
+            font-weight:bold;
+            margin:35px 0 25px;
+        }
+
+        .comments{
+            font-size:14px;
+            font-weight:bold;
+            margin-bottom:12px;
+        }
+
+        table{
+            width:100%;
+            border-collapse:collapse;
+        }
+
+        .blue-header th{
+            background:#0047ab;
+            color:#fff;
+            border:2px solid #1c1c1c;
+            padding:8px 5px;
+            font-size:13px;
+            text-align:center;
+        }
+
+        .top-table td{
+            border:1px solid #7d7d7d;
+            height:50px;
+            padding:8px;
+            font-size:13px;
+            vertical-align:top;
+        }
+
+        .items-table{
+            margin-top:18px;
+            border:2px solid #1c1c1c;
+        }
+
+        .items-table th{
+            background:#0047ab;
+            color:white;
+            border:1px solid #1c1c1c;
+            padding:6px;
+            font-size:13px;
+            text-align:center;
+        }
+
+        .items-table td{
+            border:1px solid #9d9d9d;
+            height:24px;
+            padding:4px 6px;
+            font-size:13px;
+        }
+
+        .qty{
+            width:16%;
+            text-align:center;
+        }
+
+        .desc{
+            width:48%;
+        }
+
+        .price{
+            width:18%;
+            text-align:right;
+        }
+
+        .total{
+            width:18%;
+            text-align:right;
+        }
+
+        .summary-label{
+            text-align:right;
+            font-weight:normal;
+            padding-right:10px !important;
+        }
+
+        .summary-value{
+            text-align:right;
+            padding-right:10px !important;
+        }
+
+        .grand-total-label{
+            background:#0047ab;
+            color:white;
+            font-weight:bold;
+        }
+
+        .grand-total-value{
+            background:#0047ab;
+            color:white;
+            font-weight:bold;
+        }
+
+        .notes{
+            margin-top:18px;
+            font-size:13px;
+        }
+
+        .signature{
+            width:320px;
+            margin-top:45px;
+            margin-left:auto;
+            text-align:center;
+            font-size:14px;
+        }
+
+        .signature-line{
+            margin-top:8px;
+            border-top:1px solid #000;
+            height:1px;
+        }
+
+        @media print{
+            body{
+                margin:0;
+            }
+
+            .page{
+                margin:0;
+                width:100%;
+            }
+        }
+    </style>
+    </head>
+
+    <body>
+
+    <div class="page">
+
+        <!-- HEADER -->
+        <div class="header">
+            <div class="company-name">COMPAORE EQUIPEMENTS</div>
+        </div>
+
+        <!-- CLIENT -->
+        <div class="client-section">
+
+            <div><b>DATE :</b> 13/12/2025</div>
+
+            <div><b>Numéro Facture N° :</b> SALE00001</div>
+
+            <div><b>Code client :</b> </div>
+
+            <div><b>Nom :</b> Client général</div>
+
+            <div><b>Livré à :</b> </div>
+
+            <div><b>Entreprise :</b> </div>
+
+            <div><b>Adresse :</b> </div>
+
+            <div><b>Ville :</b> </div>
+
+            <div><b>État/Province :</b> </div>
+
+            <div><b>Code Postal :</b> </div>
+
+            <div><b>Téléphone :</b> </div>
+
+        </div>
+
+        <!-- TITLE -->
+        <div class="invoice-title">
+            Facture
+        </div>
+
+        <!-- COMMENTS -->
+        <div class="comments">
+            Commentaires ou Indications particulières :
+        </div>
+
+        <!-- TOP TABLE -->
+        <table class="top-table">
+
+            <thead class="blue-header">
+                <tr>
+                    <th>VENDEUR</th>
+                    <th>NUMÉRO B.C.</th>
+                    <th>DATE EXP.</th>
+                    <th>PORT DE TRANSIT</th>
+                    <th>POINT F.O.B.</th>
+                    <th>MODALITÉS</th>
+                </tr>
+            </thead>
+
+            <tbody>
+                <tr>
+                    <td>user015</td>
+                    <td>&nbsp;</td>
+                    <td>&nbsp;</td>
+                    <td>&nbsp;</td>
+                    <td>&nbsp;</td>
+                    <td style="text-align:center;">
+                        Paiement à la livraison.
+                    </td>
+                </tr>
+            </tbody>
+
+        </table>
+
+        <!-- ITEMS TABLE -->
+        <table class="items-table">
+
+            <thead>
+                <tr>
+                    <th class="qty">QUANTITÉ</th>
+                    <th class="desc">DESCRIPTION</th>
+                    <th class="price">PRIX UNITAIRE</th>
+                    <th class="total">TOTAL</th>
+                </tr>
+            </thead>
+
+            <tbody>
+
+                <!-- EMPTY LINES -->
+    
+                <tr>
+                    <td class="qty">4.00</td>
+                    <td class="desc">Produit Alimentation Premium 33</td>
+                    <td class="price">5,888</td>
+                    <td class="total">21,679</td>
+                </tr>
+            
+                <tr>
+                    <td class="qty">&nbsp;</td>
+                    <td class="desc">&nbsp;</td>
+                    <td class="price">&nbsp;</td>
+                    <td class="total">&nbsp;</td>
+                </tr>
+            
+                <tr>
+                    <td class="qty">&nbsp;</td>
+                    <td class="desc">&nbsp;</td>
+                    <td class="price">&nbsp;</td>
+                    <td class="total">&nbsp;</td>
+                </tr>
+            
+                <tr>
+                    <td class="qty">&nbsp;</td>
+                    <td class="desc">&nbsp;</td>
+                    <td class="price">&nbsp;</td>
+                    <td class="total">&nbsp;</td>
+                </tr>
+            
+                <tr>
+                    <td class="qty">&nbsp;</td>
+                    <td class="desc">&nbsp;</td>
+                    <td class="price">&nbsp;</td>
+                    <td class="total">&nbsp;</td>
+                </tr>
+            
+                <tr>
+                    <td class="qty">&nbsp;</td>
+                    <td class="desc">&nbsp;</td>
+                    <td class="price">&nbsp;</td>
+                    <td class="total">&nbsp;</td>
+                </tr>
+            
+                <tr>
+                    <td class="qty">&nbsp;</td>
+                    <td class="desc">&nbsp;</td>
+                    <td class="price">&nbsp;</td>
+                    <td class="total">&nbsp;</td>
+                </tr>
+            
+                <tr>
+                    <td class="qty">&nbsp;</td>
+                    <td class="desc">&nbsp;</td>
+                    <td class="price">&nbsp;</td>
+                    <td class="total">&nbsp;</td>
+                </tr>
+            
+                <!-- TOTALS -->
+                <tr>
+                    <td colspan="2"></td>
+                    <td class="summary-label grand-total-label">
+                        TOTAL
+                    </td>
+
+                    <td class="summary-value grand-total-value">
+                        25,811
+                    </td>
+                </tr>
+
+            </tbody>
+
+        </table>
+
+        <!-- NOTES -->
+        <div class="notes">
+
+            Arrêté la présente facture à la somme de 25,811
+            <br>
+
+            Émettre tous les chèques à l'ordre de COMPAORE EQUIPEMENTS
+            <br>
+
+            Si vous avez des questions concernant la présente facture,
+            n'hésitez pas à nous contacter au
+            71194209, hadi@gmail.com
+
+        </div>
+
+        <!-- SIGNATURE -->
+        <div class="signature">
+
+            Signature
+
+            <div class="signature-line"></div>
+
+        </div>
+
+    </div>
+
+    </body>
+    </html>

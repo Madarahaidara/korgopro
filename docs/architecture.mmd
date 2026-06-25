@@ -1,0 +1,41 @@
+flowchart LR
+  subgraph UI
+    A[LoginView] --> B[MainWindow]
+    B --> DashboardView
+    B --> SaleView
+    B --> StockView
+    B --> DocumentsView
+    B --> AdminView
+    B --> SettingsView
+    UIThemes[Theme Manager] --> B
+    Icons[Icon Manager] --> B
+  end
+
+  subgraph Controllers
+    C[AuthController] -->|auth| B
+    C -->|user_data| LoginView
+  end
+
+  subgraph Core
+    DB[SQLAlchemy Engine / Session] --> Models[core/models]
+    Managers[Business Managers] --> DB
+    Managers --> Models
+    Startup[Startup Manager] --> Managers
+  end
+
+  subgraph Utils
+    Settings[SettingsManager] --> B
+    Print[Print Service] --> SaleView
+    Resource[Resource Path] --> UI
+  end
+
+  A --> C
+  LoginView -->|on success| B
+  B -->|calls| Managers
+  Managers --> DB
+  Alembic[Alembic migrations] --> DB
+
+  style UI fill:#f9f,stroke:#333,stroke-width:1px
+  style Core fill:#ff9,stroke:#333,stroke-width:1px
+  style Controllers fill:#9f9,stroke:#333,stroke-width:1px
+  style Utils fill:#9cf,stroke:#333,stroke-width:1px

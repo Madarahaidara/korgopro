@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "korgo-pro"
+version = "0.1.0"
+description = "Application de gestion Korgo Pro"
+requires-python = ">=3.11"
+dependencies = [
+  "PySide6",
+  "SQLAlchemy",
+  "alembic",
+  "pandas",
+  "openpyxl",
+  "bcrypt",
+  "reportlab"
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["core*", "ui*", "utils*"]
+exclude = ["tests*", "venv*"]

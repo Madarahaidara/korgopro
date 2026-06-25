@@ -1,0 +1,166 @@
+══════════════════════════════════════════════════════════════════
+  AUDIT ET CORRECTIFS DE SÉCURITÉ — KORGO-PRO
+  Date: 25/06/2026
+══════════════════════════════════════════════════════════════════
+
+TABLE DES MATIÈRES
+──────────────────
+1. Faille #1 : Injection SQL dans database_manager.py
+2. Faille #2 : Mots de passe SHA256 (fallback faible)
+3. Migration automatique SHA256 → bcrypt
+4. Résumé des modifications
+
+
+══════════════════════════════════════════════════════════════════
+1. Faille #1 : Injection SQL dans database_manager.py
+══════════════════════════════════════════════════════════════════
+
+FICHIER CONCERNÉ : core/database_manager.py
+
+SÉVÉRITÉ : 🔴 CRITIQUE
+
+AVANT (VULNÉRABLE) :
+────────────────────
+  La méthode execute_sql() utilisait une "liste noire" pour bloquer
+  les commandes dangereuses. Exemple :
+
+      dangerous_commands = ['DROP DATABASE', 'DROP TABLE', 'TRUNCATE', 
+                            'DELETE', 'UPDATE', 'INSERT', 'ALTER']
+      for cmd in dangerous_commands:
+          if cmd in sql_upper:    # ← simple recherche de sous-chaîne
+              return {"success": False, ...}
+
+  PROBLÈMES :
+  ┌─────────────────────────────────────────────────────────────┐
+  │ 1. Contournable : 'DELETE' détecté mais 'DEL ETE' non      │
+  │ 2. Une requête comme "SELECT 1; DELETE FROM users" passait │
+  │ 3. Absence de vérification du début de la requête           │
+  │ 4. get_table_data() utilisait un f-string non validé :     │
+  │    f"SELECT COUNT(*) FROM {table_name}"                     │
+  └─────────────────────────────────────────────────────────────┘
+
+APRÈS (CORRIGÉ) :
+──────────────────
+  La méthode execute_sql() utilise une "liste blanche" (whitelist)
+  basée sur une expression régulière :
+
+      _ALLOWED_SQL_PATTERN = re.compile(
+          r'^\s*(SELECT|WITH|EXPLAIN\s+QUERY\s+PLAN|PRAGMA)\s',
+          re.IGNORECASE
+      )
+
+  CE QUI CHANGE :
+  ┌─────────────────────────────────────────────────────────────┐
+  │ ✓ Vérification que la requête COMMENCE par SELECT/WITH/... │
+  │ ✓ Blocage des mots-clés dangereux (INFORMATION_SCHEMA,     │
+  │   ATTACH DATABASE, INTO OUTFILE, etc.)                    │
+  │ ✓ get_table_data() utilise un dictionnaire de tables       │
+  │   autorisées (seulement "users" et "activity_logs")        │
+  │ ✓ Pas de f-string → pas d'injection possible               │
+  └─────────────────────────────────────────────────────────────┘
+
+  EXEMPLES :
+  ┌─────────────────────────────────────────────────────────────┐
+  │ AVANT : "SELECT 1; DELETE FROM users" → AUTORISÉ  (⚠️)    │
+  │ APRÈS  : "SELECT 1; DELETE FROM users" → REFUSÉ   (✅)    │
+  │                                                             │
+  │ AVANT : "SELECT * FROM users" → AUTORISÉ           (✅)    │
+  │ APRÈS  : "SELECT * FROM users" → AUTORISÉ          (✅)    │
+  └─────────────────────────────────────────────────────────────┘
+
+
+══════════════════════════════════════════════════════════════════
+2. Faille #2 : Mots de passe SHA256 (fallback faible)
+══════════════════════════════════════════════════════════════════
+
+FICHIER CONCERNÉ : core/security.py
+
+SÉVÉRITÉ : 🟡 MOYENNE
+
+AVANT (VULNÉRABLE) :
+────────────────────
+  La fonction verify_password() utilisait SHA256 comme fallback
+  si bcrypt échouait :
+
+      try:
+          return bcrypt.checkpw(password.encode(), hashed.encode())
+      except (ValueError, Exception):
+          sha256_hash = hashlib.sha256(password.encode()).hexdigest()
+          return sha256_hash == hashed
+
+  PROBLÈMES :
+  ┌─────────────────────────────────────────────────────────────┐
+  │ 1. SHA256 n'est pas conçu pour les mots de passe (trop     │
+  │    rapide : 10⁹ tentatives/seconde avec un GPU)            │
+  │ 2. bcrypt est lent et résistant au bruteforce              │
+  │ 3. Si un hash était invalide/corrompu, le fallback SHA256  │
+  │    acceptait quand même n'importe quel format              │
+  └─────────────────────────────────────────────────────────────┘
+
+APRÈS (CORRIGÉ) :
+──────────────────
+  Ajout d'une fonction dediée à la migration SHA256 → bcrypt :
+
+  - verify_password() : continue d'accepter SHA256 pour ne pas
+    bloquer les utilisateurs existants
+
+  - migrate_old_hash() : convertit un hash SHA256 en bcrypt
+    (appelée APRÈS une connexion réussie)
+
+  - _is_bcrypt_hash() : détecte si un hash est au format bcrypt
+    (commence par $2b$, $2a$ ou $2y$)
+
+
+══════════════════════════════════════════════════════════════════
+3. Migration automatique SHA256 → bcrypt
+══════════════════════════════════════════════════════════════════
+
+FICHIER CONCERNÉ : controllers/auth_controller.py
+
+  Lors de l'authentification, si l'utilisateur se connecte avec
+  un ancien mot de passe SHA256, le hash est automatiquement
+  migré vers bcrypt :
+
+      if verify_password(password, user.password_hash):
+          ...
+          if not _is_bcrypt_hash(user.password_hash):
+              user.password_hash = migrate_old_hash(password, 
+                                                     user.password_hash)
+          session.commit()
+
+  CE QUE ÇA SIGNIFIE :
+  ┌─────────────────────────────────────────────────────────────┐
+  │ • Aucun utilisateur bloqué                                 │
+  │ • À la première connexion après le correctif, le mot de    │
+  │   passe est automatiquement migré vers bcrypt              │
+  │ • Après migration, SHA256 n'est plus jamais utilisé        │
+  │ • La migration est transparente (l'utilisateur ne voit     │
+  │   rien)                                                    │
+  └─────────────────────────────────────────────────────────────┘
+
+
+══════════════════════════════════════════════════════════════════
+4. Résumé des modifications
+══════════════════════════════════════════════════════════════════
+
+Fichier                    │ Changement
+───────────────────────────┼────────────────────────────────────
+core/database_manager.py   │ execute_sql() : whitelist SELECT
+                           │ get_table_data() : dictionnaire
+                           │   de tables autorisées
+───────────────────────────┼────────────────────────────────────
+core/security.py           │ Nouvelle fonction _is_bcrypt_hash()
+                           │ Nouvelle fonction migrate_old_hash()
+                           │ verify_password() documentée
+───────────────────────────┼────────────────────────────────────
+controllers/auth_controller│ Migration auto SHA256 → bcrypt
+.py                        │   à chaque connexion réussie
+───────────────────────────┼────────────────────────────────────
+
+RECOMMANDATIONS FUTURES :
+  • Ajouter un script de migration CLI qui force la conversion
+    de tous les hash SHA256 restants vers bcrypt
+    (sans attendre la connexion de chaque utilisateur)
+  • Ajouter le hachage des tokens de session si implémentés
+  • Utiliser un mot de passe administrateur fort (min 12 car.)
+    pour initialiser la base

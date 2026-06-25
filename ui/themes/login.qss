@@ -1,0 +1,18 @@
+LoginView {
+    background-color: white;
+}
+
+
+
+QPushButton {
+    background-color: #0075C9;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 10px;
+}
+
+QLineEdit {
+    background-color: #ffffffff;
+    color : black;
+}
