@@ -1,9 +1,13 @@
 /* stock_style.qss */
 
+/* Police globale */
+QWidget {
+    font-family: 'Segoe UI', 'Arial', sans-serif;
+}
+
 /* Style principal */
 StockView {
     background-color: #f8fafc;
-    font-family: 'Segoe UI', sans-serif;
 }
 
 
@@ -45,8 +49,8 @@ QTabBar::tab {
 
 QTabBar::tab:selected {
     background-color: white;
-    color: #3b82f6;
-    border-bottom: 2px solid #3b82f6;
+    color: #00674F;
+    border-bottom: 2px solid #00674F;
 }
 
 QTabBar::tab:hover {
@@ -71,12 +75,12 @@ QTableWidget::item:selected {
 }
 
 QHeaderView::section {
-    background-color: #2c3e50;;
+    background-color: #00674F;
     color: white;
     padding: 10px;
     border: none;
     font-weight: bold;
-    border-right: 1px solid #2563eb;
+    border-right: 1px solid #008060;
 }
 
 QHeaderView::section:last {
@@ -102,12 +106,12 @@ QPushButton {
 }
 
 #editButton {
-    background-color: #3b82f6;
+    background-color: #00674F;
     color: white;
 }
 
 #editButton:hover {
-    background-color: #2563eb;
+    background-color: #008060;
 }
 
 #deleteButton {
@@ -361,9 +365,9 @@ QCheckBox::indicator:unchecked {
 }
 
 QCheckBox::indicator:checked {
-    border: 2px solid #3b82f6;
+    border: 2px solid #00674F;
     border-radius: 3px;
-    background-color: #3b82f6;
+    background-color: #00674F;
 }
 
 QCheckBox::indicator:checked {
@@ -406,8 +410,7 @@ StockView[darkMode="true"] {
 }
 
 StockView[darkMode="true"] #headerFrame {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-        stop:0 #1e40af, stop:1 #1e3a8a);
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #00674F, stop:1 #004F3C);
 }
 
 StockView[darkMode="true"] QTableWidget {
@@ -417,12 +420,12 @@ StockView[darkMode="true"] QTableWidget {
 }
 
 StockView[darkMode="true"] QTableWidget::item:selected {
-    background-color: #1e40af;
+    background-color: #00674F;
     color: white;
 }
 
 StockView[darkMode="true"] QHeaderView::section {
-    background-color: #1e40af;
+    background-color: #00674F;
     color: white;
 }
 
@@ -483,7 +486,7 @@ QProgressBar {
 }
 
 QProgressBar::chunk {
-    background-color: #3b82f6;
+    background-color: #00674F;
     border-radius: 3px;
 }
 

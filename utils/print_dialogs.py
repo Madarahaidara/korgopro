@@ -747,7 +747,7 @@ class PrintPreviewDialog(QDialog):
             
             # Définir la police
             font = QFont()
-            font.setFamily("Arial")
+            font.setFamily("Segoe UI")
             font.setPointSize(10)
             painter.setFont(font)
             
@@ -758,7 +758,7 @@ class PrintPreviewDialog(QDialog):
             
             # En-tête
             header_font = QFont()
-            header_font.setFamily("Arial")
+            header_font.setFamily("Segoe UI")
             header_font.setPointSize(14)
             header_font.setBold(True)
             painter.setFont(header_font)

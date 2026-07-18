@@ -1289,12 +1289,32 @@ class SaleView(QWidget):
     def _adapt_to_size(self):
         width = self.width()
         
-        if width < 1200:
+        # Seuils de responsivité progressive
+        if width < 800:
             if not self.is_compact_layout:
                 self._enable_compact_layout()
+            # Mode très compact : cacher la colonne code-barres et prix unitaire
+            self.cart_table.setColumnHidden(1, True)   # Code
+            self.cart_table.setColumnHidden(3, True)   # Prix unitaire
+            self.cart_table.setColumnHidden(0, True)   # Image
+        elif width < 1050:
+            if not self.is_compact_layout:
+                self._enable_compact_layout()
+            self.cart_table.setColumnHidden(1, False)  # Code
+            self.cart_table.setColumnHidden(3, False)  # Prix unitaire
+            self.cart_table.setColumnHidden(0, True)   # Image
+        elif width < 1200:
+            if not self.is_compact_layout:
+                self._enable_compact_layout()
+            self.cart_table.setColumnHidden(1, False)
+            self.cart_table.setColumnHidden(3, False)
+            self.cart_table.setColumnHidden(0, False)
         else:
             if self.is_compact_layout:
                 self._disable_compact_layout()
+            self.cart_table.setColumnHidden(1, False)
+            self.cart_table.setColumnHidden(3, False)
+            self.cart_table.setColumnHidden(0, False)
         
         self._adjust_cart_table_height()
         self.update_cart_display()
@@ -1309,14 +1329,11 @@ class SaleView(QWidget):
         
         self.cart_table.setColumnWidth(2, 70)
         self.cart_table.setColumnWidth(4, 70)
-        
-        if self.width() < 1000:
-            self.cart_table.setColumnHidden(0, True)
-        else:
-            self.cart_table.setColumnHidden(0, False)
     
     def _disable_compact_layout(self):
         self.is_compact_layout = False
+        self.cart_table.setColumnWidth(2, 120)
+        self.cart_table.setColumnWidth(4, 120)
         
         self.cart_scroll_area.widget().layout().setContentsMargins(0, 0, 0, 0)
         

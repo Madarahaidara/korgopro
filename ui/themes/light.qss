@@ -1,5 +1,11 @@
 
 
+/* Police globale */
+QWidget {
+    font-family: 'Segoe UI', 'Arial', sans-serif;
+}
+
+
 #LoginView {
     background-color: #020617;
     border-radius: 10px;
@@ -24,12 +30,12 @@
 #LoginButton {
     height: 40px;
     border-radius: 6px;
-    background-color: #2563eb;
+    background-color: #00674F;
     color: white;
 }
 
 #LoginButton:hover {
-    background-color: #1d4ed8;
+    background-color: #008060;
 }
 
 #LoginError {

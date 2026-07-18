@@ -38,9 +38,9 @@ QTabBar::tab {
 
 QTabBar::tab:selected {
     background-color: #ffffff;
-    color: #2c3e50;
+    color: #00674F;
     border: 1px solid #bdc3c7;
-    border-bottom: 2px solid #2c3e50;
+    border-bottom: 2px solid #00674F;
 }
 
 QTabBar::tab:hover {
@@ -70,7 +70,7 @@ QLineEdit#searchInput:focus {
 }
 
 QPushButton#addButton {
-    background-color: #2c3e50;
+    background-color: #00674F;
     color: white;
     border: none;
     border-radius: 4px;
@@ -79,11 +79,11 @@ QPushButton#addButton {
 }
 
 QPushButton#addButton:hover {
-    background-color: #34495e;
+    background-color: #008060;
 }
 
 QPushButton#addButton:pressed {
-    background-color: #1a252f;
+    background-color: #004F3C;
 }
 
 QPushButton#exportButton, 
@@ -107,8 +107,8 @@ QTableWidget#activityTable {
     border: 1px solid #dfe6e9;
     border-radius: 6px;
     alternate-background-color: #f8f9fa;
-    selection-background-color: rgba(52, 152, 219, 0.2);
-    selection-color: #2c3e50;
+    selection-background-color: rgba(44, 62, 80, 0.2);
+    selection-color: #00674F;
     gridline-color: #dfe6e9;
 }
 
@@ -117,15 +117,15 @@ QTableWidget#activityTable::item {
     padding: 8px;
 }
 
-/* EN-TÊTE DU TABLEAU EN #2c3e50 */
+/* EN-TÊTE DU TABLEAU EN #00674F */
 QTableWidget#usersTable QHeaderView::section,
 QTableWidget#activityTable QHeaderView::section {
-    background-color: #2c3e50;
+    background-color: #00674F;
     color: white;
     padding: 10px;
     border: none;
     font-weight: bold;
-    border-right: 1px solid #34495e;
+    border-right: 1px solid #008060;
 }
 
 QTableWidget#usersTable QHeaderView::section:last-child,
@@ -306,7 +306,7 @@ QLabel#userInfo {
 }
 
 QLabel#roleLabel {
-    background-color: #2c3e50;
+    background-color: #00674F;
     color: white;
     padding: 6px 12px;
     border-radius: 15px;
@@ -325,7 +325,7 @@ QLabel#permsTitle {
     font-size: 16px;
     font-weight: bold;
     padding-bottom: 10px;
-    border-bottom: 2px solid #2c3e50;
+    border-bottom: 2px solid #00674F;
 }
 
 QLabel#statsLabel {
@@ -385,7 +385,7 @@ QComboBox {
 }
 
 QComboBox:hover {
-    border-color: #2c3e50;
+    border-color: #00674F;
 }
 
 QComboBox::drop-down {
@@ -402,7 +402,7 @@ QComboBox::down-arrow {
 QComboBox QAbstractItemView {
     border: 1px solid #bdc3c7;
     background-color: white;
-    selection-background-color: #2c3e50;
+    selection-background-color: #00674F;
     selection-color: white;
     border-radius: 4px;
 }
@@ -416,7 +416,7 @@ QDateEdit {
 }
 
 QDateEdit:hover {
-    border-color: #2c3e50;
+    border-color: #00674F;
 }
 
 QDateEdit::drop-down {
@@ -431,21 +431,21 @@ QLabel {
 
 /* ===== ÉTATS SPÉCIAUX ===== */
 QTableWidget#usersTable::item:selected {
-    background-color: rgba(44, 62, 80, 0.1);
-    color: #1a252f;
+    background-color: rgba(0, 103, 79, 0.1);
+    color: #004F3C;
     font-weight: bold;
 }
 
 QCheckBox[checked="true"] {
-    color: #2c3e50;
+    color: #00674F;
     font-weight: bold;
 }
 
 /* ===== TOOLTIPS ===== */
 QToolTip {
-    background-color: #2c3e50;
+    background-color: #00674F;
     color: white;
-    border: 1px solid #1a252f;
+    border: 1px solid #004F3C;
     border-radius: 4px;
     padding: 8px;
     font-size: 12px;

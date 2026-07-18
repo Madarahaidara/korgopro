@@ -39,8 +39,8 @@ class MainWindow(QMainWindow):
         
         # Appliquer le titre de la fenêtre
         self.setWindowTitle(f"{self.company_name} – {self.app_name}")
-        # Taille minimale réduite pour supporter les petits écrans (1366×768)
-        self.setMinimumSize(900, 600)
+        # Taille minimale adaptée aux petits écrans (1024×768 minimum)
+        self.setMinimumSize(800, 500)
 
         self.menu_expanded_width = 220
         self.menu_collapsed_width = 60
@@ -67,8 +67,8 @@ class MainWindow(QMainWindow):
         header.setObjectName("Header")
 
         header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(20, 10, 20, 10)
-        header_layout.setSpacing(15)
+        header_layout.setContentsMargins(10, 8, 10, 8)
+        header_layout.setSpacing(10)
 
         # Logo / Nom de l'entreprise - Conteneur pour logo + texte
         self.logo_container = QWidget()
@@ -98,11 +98,11 @@ class MainWindow(QMainWindow):
         self.page_title.setObjectName("PageTitle")
 
         # Infos utilisateur
-        user_info = QLabel(
+        self.header_user_info = QLabel(
             f"{self.user_data.get('username', 'Utilisateur')} · {self.user_data.get('role', 'USER').upper()}"
         )
-        user_info.setObjectName("UserInfo")
-        user_info.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.header_user_info.setObjectName("UserInfo")
+        self.header_user_info.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
 
 
         # Bouton déconnexion
@@ -113,7 +113,7 @@ class MainWindow(QMainWindow):
         # Assemblage
         header_layout.addWidget(self.page_title)
         header_layout.addStretch()
-        header_layout.addWidget(user_info)
+        header_layout.addWidget(self.header_user_info)
         header_layout.addWidget(logout_btn)
 
         # ===== CORPS =====
@@ -134,7 +134,7 @@ class MainWindow(QMainWindow):
         # Bouton toggle
         self.btn_toggle = QPushButton("☰")
         self.btn_toggle.setObjectName("ToggleMenu")
-        self.btn_toggle.setFixedHeight(40)
+        self.btn_toggle.setFixedHeight(36)
         self.btn_toggle.setCursor(Qt.PointingHandCursor)
         menu_layout.addWidget(self.btn_toggle)
 
@@ -295,6 +295,20 @@ class MainWindow(QMainWindow):
         if result:
             print("Session déverrouillée")
             
+    def resizeEvent(self, event):
+        """Adapte le menu et le header à la largeur de la fenêtre"""
+        super().resizeEvent(event)
+        width = self.width()
+        
+        # Ajuster la largeur du menu proportionnellement
+        if not self.menu_collapsed:
+            menu_w = min(self.menu_expanded_width, max(140, width // 5))
+            self.menu.setFixedWidth(menu_w)
+        
+        # Masquer/afficher les infos utilisateur dans le header si trop étroit
+        if hasattr(self, 'header_user_info'):
+            self.header_user_info.setVisible(width > 900)
+    
     def _toggle_menu(self):
         """Affiche/masque le menu latéral"""
         self.menu_collapsed = not self.menu_collapsed
@@ -317,8 +331,8 @@ class MainWindow(QMainWindow):
         btn = QPushButton(text)
         btn.setObjectName(object_name)
         btn.setCursor(Qt.PointingHandCursor)
-        btn.setFixedHeight(44)
-        btn.setIconSize(QSize(22, 22))
+        btn.setFixedHeight(38)
+        btn.setIconSize(QSize(20, 20))
         btn.setProperty("fullText", text)
 
         if icon_path:

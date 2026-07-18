@@ -51,8 +51,8 @@ class StockView(QWidget):
             self.settings_manager.settings_changed.connect(self.on_settings_changed)
         
         self.setWindowTitle("Korgo - Gestion Complète des Stocks")
-        # Taille suggérée au démarrage, adaptative ensuite
-        self.resize(1200, 750)
+        # Taille minimale uniquement, adaptative au redimensionnement
+        self.setMinimumSize(800, 500)
         
         # Connexion à la base de données
         self.db_session = SessionLocal()

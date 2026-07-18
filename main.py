@@ -1,5 +1,6 @@
 # main.py (version optimisée — démarrage rapide)
 import sys
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
 from ui.views.login_view import LoginView
 from ui.views.main_window import MainWindow
@@ -10,6 +11,9 @@ from ui.views.splash_screen import ModernSplashScreen
 
 # Initialisation rapide de la base (ne crée les tables que si elles n'existent pas)
 Base.metadata.create_all(bind=engine)
+
+# Activer le High DPI scaling pour les écrans 4K/Retina
+QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
 
 # Créer l'application
 app = QApplication(sys.argv)

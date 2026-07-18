@@ -5,8 +5,14 @@ from PySide6.QtGui import QPixmap, QColor
 
 class ModernSplashScreen(QSplashScreen):
     def __init__(self, app):
-        # 600x400 pixels selon le design
-        pixmap = QPixmap(600, 400)
+        # Taille basée sur l'écran (30% de la largeur, max 600x400)
+        screen = app.primaryScreen().geometry()
+        splash_w = min(600, int(screen.width() * 0.4))
+        splash_h = min(400, int(screen.height() * 0.5))
+        pixmap = QPixmap(splash_w, splash_h)
+        self.splash_w = splash_w
+        self.splash_h = splash_h
+
         # Fond blanc
         pixmap.fill(QColor(255, 255, 255))  # #FFFFFF
         
@@ -26,7 +32,7 @@ class ModernSplashScreen(QSplashScreen):
     def init_ui(self):
         """Initialise l'interface du splash screen aux couleurs du logo"""
         self.widget = QWidget(self)
-        self.widget.setGeometry(0, 0, 600, 400)
+        self.widget.setGeometry(0, 0, self.splash_w, self.splash_h)
         # Application du fond blanc et des coins arrondis
         self.widget.setStyleSheet("background-color: #FFFFFF; border-radius: 15px;")
         

@@ -1,5 +1,10 @@
 /* dashboard.qss - Version compatible Qt */
 
+/* Police globale */
+QWidget {
+    font-family: 'Segoe UI', 'Arial', sans-serif;
+}
+
 
 #statCard {
     background-color: white;
@@ -10,7 +15,7 @@
 
 #statCard:hover {
     background-color: #f8f9fa;
-    border: 1px solid #3498db;
+    border: 1px solid #00674F;
 }
 
 #statTitle {
@@ -23,7 +28,7 @@
 #statValue {
     font-size: 28px;
     font-weight: bold;
-    color: #2c3e50;
+    color: #00674F;
 }
 
 #chartContainer {
@@ -36,7 +41,7 @@
 #sectionTitle {
     font-size: 18px;
     font-weight: bold;
-    color: #2c3e50;
+    color: #00674F;
     margin-bottom: 15px;
 }
 
@@ -77,19 +82,19 @@
     padding: 15px;
     border: none;
     font-weight: bold;
-    color: #2c3e50;
+    color: #00674F;
     font-size: 14px;
-    border-bottom: 2px solid #3498db;
+    border-bottom: 2px solid #00674F;
 }
 
 QTableWidget {
     gridline-color: #e0e0e0;
-    selection-background-color: #3498db;
+    selection-background-color: #00674F;
     selection-color: white;
 }
 
 QTableWidget::item:selected {
-    background-color: #3498db;
+    background-color: #00674F;
     color: white;
     font-weight: bold;
 }
@@ -124,9 +129,9 @@ QHeaderView::section {
     background-color: #f8f9fa;
     padding: 10px;
     border: none;
-    border-bottom: 2px solid #3498db;
+    border-bottom: 2px solid #00674F;
     font-weight: bold;
-    color: #2c3e50;
+    color: #00674F;
 }
 
 /* Style pour le graphique */
@@ -142,13 +147,13 @@ QLabel {
 QLabel#title {
     font-size: 24px;
     font-weight: bold;
-    color: #1a237e;
+    color: #00674F;
 }
 
 QLabel#sectionTitle {
     font-size: 16px;
     font-weight: bold;
-    color: #37474f;
+    color: #00674F;
 }
 
 /* Style pour les cadres */
@@ -163,7 +168,7 @@ QFrame#chartContainer {
 
 /* Style pour les boutons (si vous en avez) */
 QPushButton {
-    background-color: #3498db;
+    background-color: #00674F;
     color: white;
     border: none;
     padding: 8px 16px;
@@ -172,9 +177,9 @@ QPushButton {
 }
 
 QPushButton:hover {
-    background-color: #2980b9;
+    background-color: #008060;
 }
 
 QPushButton:pressed {
-    background-color: #21618c;
+    background-color: #004F3C;
 }

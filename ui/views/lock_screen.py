@@ -58,7 +58,7 @@ class LoadingWidget(QWidget):
         )
 
         pen.setColor(
-            QColor("#2a82da")
+            QColor("#00674F")
         )
 
         painter.setPen(pen)
@@ -147,8 +147,8 @@ class LockScreen(QDialog):
 
         self.setModal(True)
 
-        # Taille fixe : 380x460
-        self.setFixedSize(380, 460)
+        # Taille minimale, redimensionnable
+        self.setMinimumSize(340, 420)
 
         # Supprimer les flags de redimensionnement
         self.setWindowFlags(
