@@ -7,7 +7,7 @@ from core.models.customer import Customer
 from core.models.sale_log import SaleLog
 
 class Sale(Base):
-    """Modèle pour les ventes"""
+    """Modèle pour les factures définitives"""
     __tablename__ = "sales"
     
     id = Column(Integer, primary_key=True, index=True)
@@ -28,11 +28,23 @@ class Sale(Base):
     created_at = Column(DateTime, default=func.now())
     currency = Column(String(10), default="FCFA")
     
+    # Nouveaux champs pour facture définitive
+    type_document = Column(String(20), default="FACTURE")  # FACTURE, AVOIR
+    origine_proforma_id = Column(Integer, ForeignKey('proforma_invoices.id'), nullable=True)
+    date_conversion = Column(DateTime, nullable=True)
+    utilisateur_conversion = Column(Integer, ForeignKey('users.id'), nullable=True)
+    statut = Column(String(20), default="BROUILLON")  # BROUILLON, EMISE, PARTIELLEMENT_PAYEE, PAYEE, EN_RETARD, ANNULEE
+    date_expiration = Column(DateTime, nullable=True)
+    version = Column(Integer, default=1)
+    
     # Relations
     customer = relationship("Customer", backref="sales")
-    cashier = relationship("User", backref="sales")
+    cashier = relationship("User", backref="ventes_caisse", foreign_keys=[cashier_id])
     items = relationship("SaleItem", backref="sale", cascade="all, delete-orphan")
     logs = relationship("core.models.sale_log.SaleLog", backref="sale", cascade="all, delete-orphan")
+    # Lien vers la proforma source (relation unidirectionnelle)
+    origine_proforma = relationship("ProformaInvoice", foreign_keys=[origine_proforma_id])
+    utilisateur_conversion_rel = relationship("User", backref="ventes_converties", foreign_keys=[utilisateur_conversion])
     
     @property
     def profit(self):
@@ -163,7 +175,7 @@ class ProformaInvoice(Base):
     tax_amount = Column(Float, default=0)
     tax_percent = Column(Float, default=0)
     total_amount = Column(Float, nullable=False, default=0)
-    status = Column(String(20), default="DRAFT")  # DRAFT, SENT, ACCEPTED, REJECTED, EXPIRED, CONVERTED
+    status = Column(String(20), default="BROUILLON")  # BROUILLON, EN_ATTENTE, ENVOYEE, ACCEPTEE, REFUSEE, EXPIREE, CONVERTIE
     notes = Column(Text, nullable=True)
     terms_and_conditions = Column(Text, nullable=True)
     currency = Column(String(10), default="FCFA")
@@ -173,10 +185,8 @@ class ProformaInvoice(Base):
     customer = relationship("Customer", backref="proforma_invoices")
     creator = relationship("User", backref="created_proforma_invoices")
     items = relationship("ProformaInvoiceItem", backref="proforma_invoice", cascade="all, delete-orphan")
-    converted_sale = relationship("Sale", backref="proforma_invoice_source")
-    
-    def __repr__(self):
-        return f"<ProformaInvoice {self.proforma_number}>"
+    # La vente issue de cette proforma (relation unidirectionnelle)
+    vente_issue = relationship("Sale", foreign_keys=[converted_to_sale_id])
 
 
 class ProformaInvoiceItem(Base):
@@ -199,3 +209,5 @@ class ProformaInvoiceItem(Base):
     
     def __repr__(self):
         return f"<ProformaInvoiceItem {self.description} x {self.quantity}>"
+
+

@@ -12,7 +12,7 @@ from ui.views.sale_view import SaleView
 from ui.views.stock_view import StockView
 from ui.views.admin_view import AdminView
 from ui.views.settings_view import SettingsView
-from ui.views.proforma_invoice_view import EnhancedProformaInvoiceView as ProformaInvoiceView
+from ui.views.proforma_invoice_view import EnhancedProformaInvoiceView
 from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtCore import QSize
 from ui.views.lock_screen import LockScreen
@@ -145,13 +145,12 @@ class MainWindow(QMainWindow):
         self.btn_sale = self._create_menu_button(
             "Vente", "btn_sale", IconManager.get_menu_icon("sale")
         )
+        self.btn_proforma = self._create_menu_button(
+            "Pro Forma", "btn_proforma", IconManager.get_menu_icon("sale")
+        )
         self.btn_stock = self._create_menu_button(
             "Stock", "btn_stock", IconManager.get_menu_icon("stock")
         )
-        self.btn_proforma = self._create_menu_button(
-            "Proformas", "btn_proforma", IconManager.get_menu_icon("receipt")
-        )
-        
         self.btn_admin = self._create_menu_button(
             "Admin", "btn_admin", IconManager.get_menu_icon("admin")
         )
@@ -161,8 +160,8 @@ class MainWindow(QMainWindow):
 
         menu_layout.addWidget(self.btn_dashboard)
         menu_layout.addWidget(self.btn_sale)
-        menu_layout.addWidget(self.btn_stock)
         menu_layout.addWidget(self.btn_proforma)
+        menu_layout.addWidget(self.btn_stock)
         menu_layout.addWidget(self.btn_admin)
         menu_layout.addWidget(self.btn_settings)
         menu_layout.addStretch()
@@ -171,19 +170,17 @@ class MainWindow(QMainWindow):
         self.stack = QStackedWidget()
         
         # Instanciation des vues
-        self.sale_view = SaleView(self.user_data)
-        self.stock_view = StockView(self.user_data)
-        self.proforma_view = ProformaInvoiceView(self.user_data.get('id'))
-        self.admin_view = AdminView(self.user_data)
         self.dashboard_view = DashboardView(self.user_data)
+        self.sale_view = SaleView(self.user_data)
+        self.proforma_view = EnhancedProformaInvoiceView(current_user_id=self.user_data.get('id'))
+        self.stock_view = StockView(self.user_data)
+        self.admin_view = AdminView(self.user_data)
         self.settings_view = SettingsView(self.user_data, self.settings_manager)
-        
         
         self.stack.addWidget(self.dashboard_view)
         self.stack.addWidget(self.sale_view)
-        self.stack.addWidget(self.stock_view)
         self.stack.addWidget(self.proforma_view)
-   
+        self.stack.addWidget(self.stock_view)
         self.stack.addWidget(self.admin_view)
         self.stack.addWidget(self.settings_view)
         
@@ -194,13 +191,13 @@ class MainWindow(QMainWindow):
         self.btn_sale.clicked.connect(
             lambda: self._switch_view(self.sale_view, "Vente")
         )
+        self.btn_proforma.clicked.connect(
+            lambda: self._switch_view(self.proforma_view, "Factures Pro Forma")
+        )
         self.btn_stock.clicked.connect(
             lambda: self._switch_view(self.stock_view, "Stock")
         )
-        self.btn_proforma.clicked.connect(
-            lambda: self._switch_view(self.proforma_view, "Factures Proforma")
-        )
-       
+        
         self.btn_admin.clicked.connect(
             lambda: self._switch_view(self.admin_view, "Administration")
         )
@@ -240,32 +237,36 @@ class MainWindow(QMainWindow):
         
         btn_sale = self.findChild(QPushButton, "btn_sale")
         btn_stock = self.findChild(QPushButton, "btn_stock")
-        
         btn_admin = self.findChild(QPushButton, "btn_admin")
         btn_dashboard = self.findChild(QPushButton, "btn_dashboard")
         btn_settings = self.findChild(QPushButton, "btn_settings")
+        btn_proforma = self.findChild(QPushButton, "btn_proforma")
         
         # Cacher tous les boutons par défaut
         btn_dashboard.show()
         btn_sale.hide()
+        btn_proforma.hide()
         btn_stock.hide()
         btn_admin.hide()
         btn_settings.hide()
 
         if role == "CAISSIER":
             btn_sale.show()
+            btn_proforma.show()
             # CAISSIER: PAS d'accès aux documents, stock, admin, paramètres
             self.stack.setCurrentWidget(self.dashboard_view)
 
         elif role == "GERANT":
             btn_sale.show()
+            btn_proforma.show()
             btn_stock.show()
-      
+        
             # GERANT: PAS d'accès aux paramètres
             self.stack.setCurrentWidget(self.dashboard_view)
 
         elif role == "ADMIN":
             btn_sale.show()
+            btn_proforma.show()
             btn_stock.show()
             btn_admin.show()
             btn_settings.show()

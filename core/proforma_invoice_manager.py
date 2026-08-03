@@ -1,6 +1,10 @@
-# core/proforma_invoice_manager.py
+"""
+Gestionnaire métier pour les factures Pro Forma
+Séparation de la logique métier de la couche UI
+"""
+
 from datetime import datetime, timedelta
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from core.models.sale_models import ProformaInvoice, ProformaInvoiceItem, Sale, SaleItem
@@ -21,16 +25,28 @@ class ProformaInvoiceManager:
         self.sale_log_manager = SaleLogManager(session)
     
     def generate_proforma_number(self) -> str:
-        """Génère un numéro de facture proforma unique"""
-        prefix = "PROF"
-        date_str = datetime.now().strftime("%Y%m%d")
+        """Génère un numéro de facture proforma unique PF-YYYY-NNNNNN"""
+        year = datetime.now().year
+        prefix = f"PF-{year}"
         
-        # Compter le nombre de proformas créées aujourd'hui
+        # Compter le nombre de proformas créées cette année
         count = self.session.query(func.count(ProformaInvoice.id)).filter(
-            func.date(ProformaInvoice.created_date) == datetime.now().date()
+            func.extract('year', ProformaInvoice.created_date) == year
         ).scalar() or 0
         
-        return f"{prefix}-{date_str}-{str(count + 1).zfill(4)}"
+        return f"{prefix}-{count + 1:06d}"
+    
+    def generate_sale_number(self) -> str:
+        """Génère un numéro de facture définitive unique FAC-YYYY-NNNNNN"""
+        year = datetime.now().year
+        prefix = f"FAC-{year}"
+        
+        # Compter le nombre de factures créées cette année
+        count = self.session.query(func.count(Sale.id)).filter(
+            func.extract('year', Sale.sale_date) == year
+        ).scalar() or 0
+        
+        return f"{prefix}-{count + 1:06d}"
     
     def create_proforma(
         self,
@@ -57,14 +73,14 @@ class ProformaInvoiceManager:
             notes: Notes supplémentaires
             terms_and_conditions: Conditions générales
             valid_days: Jours de validité
+            valid_until: Date de validité (si fournie, prioritaire sur valid_days)
             currency: Devise
         
         Returns:
             ProformaInvoice créée
         """
         try:
-            # Déterminer la date de validité: utiliser `valid_until` si fourni,
-            # sinon calculer à partir de `valid_days`.
+            # Déterminer la date de validité
             validity_date = valid_until if valid_until is not None else (datetime.now() + timedelta(days=valid_days))
 
             proforma = ProformaInvoice(
@@ -78,7 +94,7 @@ class ProformaInvoiceManager:
                 notes=notes,
                 terms_and_conditions=terms_and_conditions,
                 currency=currency,
-                status="DRAFT"
+                status="BROUILLON"
             )
             
             subtotal = 0
@@ -132,7 +148,7 @@ class ProformaInvoiceManager:
         terms_and_conditions: Optional[str] = None,
         valid_until: Optional[datetime] = None
     ) -> ProformaInvoice:
-        """Met à jour une facture proforma"""
+        """Met à jour une facture proforma (seulement si en BROUILLON)"""
         try:
             proforma = self.session.query(ProformaInvoice).filter(
                 ProformaInvoice.id == proforma_id
@@ -141,7 +157,7 @@ class ProformaInvoiceManager:
             if not proforma:
                 raise ValueError(f"Proforma {proforma_id} introuvable")
             
-            if proforma.status != "DRAFT":
+            if proforma.status != "BROUILLON":
                 raise ValueError("Seules les proformas en brouillon peuvent être modifiées")
             
             if customer_id is not None:
@@ -209,9 +225,16 @@ class ProformaInvoiceManager:
             if not proforma:
                 raise ValueError(f"Proforma {proforma_id} introuvable")
             
-            valid_statuses = ["DRAFT", "SENT", "ACCEPTED", "REJECTED", "EXPIRED", "CONVERTED"]
+            valid_statuses = ["BROUILLON", "EN_ATTENTE", "ENVOYEE", "ACCEPTEE", "REFUSEE", "EXPIREE", "CONVERTIE"]
             if new_status not in valid_statuses:
                 raise ValueError(f"Statut invalide: {new_status}")
+            
+            # Règles de transition
+            if proforma.status == "CONVERTIE":
+                raise ValueError("Une proforma convertie ne peut pas changer de statut")
+            
+            if new_status == "CONVERTIE" and proforma.status != "ACCEPTEE":
+                raise ValueError("Seules les proformas acceptées peuvent être converties")
             
             old_status = proforma.status
             proforma.status = new_status
@@ -227,7 +250,10 @@ class ProformaInvoiceManager:
             raise
     
     def convert_to_sale(self, proforma_id: int, created_by_id: int) -> Sale:
-        """Convertit une facture proforma en vente"""
+        """
+        Convertit une facture proforma en vente/facture définitive
+        Opération irréversible
+        """
         try:
             proforma = self.session.query(ProformaInvoice).filter(
                 ProformaInvoice.id == proforma_id
@@ -236,11 +262,24 @@ class ProformaInvoiceManager:
             if not proforma:
                 raise ValueError(f"Proforma {proforma_id} introuvable")
             
-            if proforma.status == "CONVERTED":
+            if proforma.status == "CONVERTIE":
                 raise ValueError("Cette proforma a déjà été convertie en vente")
             
+            if proforma.status != "ACCEPTEE":
+                raise ValueError("Seules les proformas acceptées peuvent être converties")
+            
+            # Vérifier le stock pour tous les produits
+            for item in proforma.items:
+                if item.product_id:
+                    product = self.session.query(Product).filter(Product.id == item.product_id).first()
+                    if product and product.quantity < item.quantity:
+                        raise ValueError(
+                            f"Stock insuffisant pour {product.name}: "
+                            f"disponible {product.quantity}, requis {item.quantity}"
+                        )
+            
             # Générer le numéro de vente
-            sale_number = self._generate_sale_number()
+            sale_number = self.generate_sale_number()
             
             # Créer la vente
             sale = Sale(
@@ -255,10 +294,15 @@ class ProformaInvoiceManager:
                 payment_status="PENDING",
                 sale_status="COMPLETED",
                 notes=proforma.notes,
-                currency=proforma.currency
+                currency=proforma.currency,
+                type_document="FACTURE",
+                origine_proforma_id=proforma.id,
+                date_conversion=datetime.now(),
+                utilisateur_conversion=created_by_id,
+                statut="EMISE"
             )
             
-            # Ajouter les articles à la vente
+            # Ajouter les articles à la vente et mettre à jour le stock
             for proforma_item in proforma.items:
                 sale_item = SaleItem(
                     product_id=proforma_item.product_id,
@@ -270,12 +314,35 @@ class ProformaInvoiceManager:
                     notes=proforma_item.notes
                 )
                 sale.items.append(sale_item)
+                
+                # Déduire le stock si le produit existe
+                if proforma_item.product_id:
+                    product = self.session.query(Product).filter(Product.id == proforma_item.product_id).first()
+                    if product:
+                        product.quantity -= proforma_item.quantity
             
             self.session.add(sale)
             
-            # Mettre à jour la proforma
-            proforma.status = "CONVERTED"
+            # Marquer la proforma comme convertie
+            proforma.status = "CONVERTIE"
             proforma.converted_to_sale_id = sale.id
+            
+            # Créer une entrée dans le journal
+            user = self.session.query(User).filter(User.id == created_by_id).first()
+            username = user.username if user else ""
+            user_role = user.role if user else ""
+
+            self.sale_log_manager.add_sale_log(
+                sale_id=sale.id,
+                sale_number=sale_number,
+                action="conversion_proforma",
+                user_id=created_by_id,
+                username=username,
+                user_role=user_role,
+                total_amount=proforma.total_amount,
+                customer_id=proforma.customer_id,
+                details=f"Conversion de la proforma {proforma.proforma_number} en facture {sale_number}"
+            )
             
             self.session.commit()
             logger.info(f"Proforma {proforma.proforma_number} convertie en vente {sale_number}")
@@ -289,15 +356,18 @@ class ProformaInvoiceManager:
     
     def get_proforma(self, proforma_id: int) -> Optional[ProformaInvoice]:
         """Récupère une proforma par ID"""
-        return self.session.query(ProformaInvoice).filter(
+        result = self.session.query(ProformaInvoice).filter(
             ProformaInvoice.id == proforma_id
         ).first()
+        return result
     
     def get_proforma_by_number(self, proforma_number: str) -> Optional[ProformaInvoice]:
         """Récupère une proforma par numéro"""
-        return self.session.query(ProformaInvoice).filter(
+        result = self.session.query(ProformaInvoice).filter(
             ProformaInvoice.proforma_number == proforma_number
         ).first()
+        return result
+    
     
     def list_proformas(
         self,
@@ -306,7 +376,7 @@ class ProformaInvoiceManager:
         skip: int = 0,
         limit: int = 100
     ) -> List[ProformaInvoice]:
-        """Liste les factures proforma"""
+        """Liste les factures proforma avec filtres optionnels"""
         query = self.session.query(ProformaInvoice)
         
         if customer_id:
@@ -327,7 +397,7 @@ class ProformaInvoiceManager:
             if not proforma:
                 raise ValueError(f"Proforma {proforma_id} introuvable")
             
-            if proforma.status != "DRAFT":
+            if proforma.status != "BROUILLON":
                 raise ValueError("Seules les proformas en brouillon peuvent être supprimées")
             
             self.session.delete(proforma)
@@ -340,14 +410,3 @@ class ProformaInvoiceManager:
             self.session.rollback()
             logger.error(f"Erreur suppression proforma: {str(e)}")
             raise
-    
-    def _generate_sale_number(self) -> str:
-        """Génère un numéro de vente unique"""
-        prefix = "SALE"
-        date_str = datetime.now().strftime("%Y%m%d")
-        
-        count = self.session.query(func.count(Sale.id)).filter(
-            func.date(Sale.sale_date) == datetime.now().date()
-        ).scalar() or 0
-        
-        return f"{prefix}-{date_str}-{str(count + 1).zfill(4)}"

@@ -7,13 +7,13 @@ from PySide6.QtWidgets import (
     QSpacerItem
 )
 from PySide6.QtCore import Qt, Signal, QSize
-from PySide6.QtGui import QPixmap, QFont, QIcon
+from PySide6.QtGui import QPixmap, QFont, QIcon, QColor
 import os
 from utils.settings_manager import SettingsManager
 
 
 class SettingsView(QWidget):
-    """Vue des paramètres moderne et 100% responsive"""
+    """Vue des paramètres moderne et épurée"""
     
     settings_changed = Signal(dict)
     
@@ -24,120 +24,651 @@ class SettingsView(QWidget):
         self.current_logo_path = ""
         self.original_settings = {}
         
-        # Configuration du widget principal
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.setObjectName("settingsView")
         
         self._build_ui()
         self.load_current_settings()
         self._connect_signals()
         
     def _build_ui(self):
-        """Construit l'interface utilisateur responsive"""
-        # Layout principal avec marges adaptatives
+        """Construit l'interface utilisateur"""
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(20, 15, 20, 15)
-        main_layout.setSpacing(15)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
         
-        # En-tête avec titre
-        header_widget = self._create_header()
-        main_layout.addWidget(header_widget)
+        # Contenu principal avec scroll
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setStyleSheet("""
+            QScrollArea {
+                border: none;
+                background-color: #f8fafc;
+            }
+            QScrollBar:vertical {
+                border: none;
+                background: transparent;
+                width: 8px;
+                border-radius: 4px;
+            }
+            QScrollBar::handle:vertical {
+                background: #cbd5e1;
+                border-radius: 4px;
+                min-height: 30px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: #94a3b8;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                border: none;
+                background: none;
+            }
+        """)
         
-        # Onglets avec scroll
-        self.tab_widget = QTabWidget()
-        self.tab_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.tab_widget.setStyleSheet("""
+        content = QWidget()
+        content.setStyleSheet("background-color: #f8fafc;")
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(30, 15, 30, 30)
+        content_layout.setSpacing(20)
+        
+        # Onglets
+        self.tab_widget = self._create_tabs()
+        content_layout.addWidget(self.tab_widget)
+        
+        # Pied de page
+        footer = self._create_footer()
+        content_layout.addWidget(footer)
+        
+        scroll.setWidget(content)
+        main_layout.addWidget(scroll)
+    
+    def _create_tabs(self):
+        """Crée des onglets avec un style moderne"""
+        tabs = QTabWidget()
+        tabs.setStyleSheet("""
             QTabWidget::pane {
-                border: 1px solid #d0d0d0;
-                border-radius: 6px;
-                background: white;
+                background-color: white;
+                border: 1px solid #e8ecf1;
+                border-radius: 12px;
+                margin-top: 2px;
             }
             QTabBar::tab {
-                padding: 10px 20px;
+                background: transparent;
+                color: #64748b;
+                padding: 10px 22px;
                 margin-right: 4px;
-                border-top-left-radius: 4px;
-                border-top-right-radius: 4px;
-                background: #f0f0f0;
+                border: none;
+                border-bottom: 3px solid transparent;
+                font-size: 13px;
                 font-weight: 500;
+                min-width: 80px;
             }
             QTabBar::tab:selected {
-                background: #3498db;
-                color: white;
+                color: #1e293b;
+                border-bottom: 3px solid #3b82f6;
+                background: rgba(59, 130, 246, 0.05);
+                border-radius: 8px 8px 0 0;
             }
             QTabBar::tab:hover:!selected {
-                background: #e0e0e0;
+                color: #1e293b;
+                background: rgba(59, 130, 246, 0.03);
+                border-radius: 8px 8px 0 0;
             }
         """)
         
-        # Création des onglets avec scroll areas
-        self.tab_widget.addTab(self._create_scrollable_tab(self._create_company_tab()), "🏢 Entreprise")
-        self.tab_widget.addTab(self._create_scrollable_tab(self._create_general_tab()), "⚙️ Général")
-        self.tab_widget.addTab(self._create_scrollable_tab(self._create_billing_tab()), "📄 Facturation")
+        # Création des onglets
+        tabs.addTab(self._create_company_tab(), "🏢 Entreprise")
+        tabs.addTab(self._create_general_tab(), "⚙️ Général")
+        tabs.addTab(self._create_billing_tab(), "📄 Facturation")
         
-        main_layout.addWidget(self.tab_widget)
-        
-        # Pied de page avec boutons d'action
-        footer_widget = self._create_footer()
-        main_layout.addWidget(footer_widget)
+        return tabs
     
-    def _create_header(self):
-        """Crée l'en-tête responsive"""
-        header = QWidget()
-        header.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
-        header.setStyleSheet("""
+    def _create_card(self, title, content_widget):
+        """Crée une carte avec ombre et bordure arrondie"""
+        card = QFrame()
+        card.setStyleSheet("""
+            QFrame {
+                background-color: white;
+                border-radius: 12px;
+                border: 1px solid #e8ecf1;
+            }
+        """)
+        card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+        
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        
+        # En-tête de la carte
+        if title:
+            header = QWidget()
+            header.setStyleSheet("""
+                QWidget {
+                    background-color: #fafbfc;
+                    border-radius: 12px 12px 0 0;
+                    border-bottom: 1px solid #e8ecf1;
+                }
+            """)
+            header_layout = QHBoxLayout(header)
+            header_layout.setContentsMargins(20, 12, 20, 12)
+            
+            title_label = QLabel(title)
+            title_label.setStyleSheet("""
+                font-size: 14px;
+                font-weight: 600;
+                color: #0f172a;
+            """)
+            header_layout.addWidget(title_label)
+            
+            layout.addWidget(header)
+        
+        # Contenu
+        content_widget.setStyleSheet("background-color: white; border-radius: 0 0 12px 12px;")
+        layout.addWidget(content_widget)
+        
+        return card
+    
+    def _create_company_tab(self):
+        """Crée l'onglet Entreprise"""
+        tab = QWidget()
+        tab.setStyleSheet("background-color: #f8fafc;")
+        tab.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        
+        main_layout = QVBoxLayout(tab)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(20)
+        
+        container = QWidget()
+        container_layout = QVBoxLayout(container)
+        container_layout.setSpacing(20)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Carte 1: Informations de l'entreprise
+        info_content = QWidget()
+        info_layout = QGridLayout(info_content)
+        info_layout.setSpacing(12)
+        info_layout.setContentsMargins(25, 20, 25, 20)
+        info_layout.setColumnStretch(0, 0)
+        info_layout.setColumnStretch(1, 1)
+        
+        # Création des champs
+        self.company_name_input = QLineEdit()
+        self.company_address_input = QLineEdit()
+        self.company_po_box_input = QLineEdit()
+        self.company_phone_input = QLineEdit()
+        self.company_email_input = QLineEdit()
+        
+        fields = [
+            ("🏷️ Nom", self.company_name_input, 0),
+            ("📍 Adresse", self.company_address_input, 1),
+            ("📬 BP", self.company_po_box_input, 2),
+            ("📞 Téléphone", self.company_phone_input, 3),
+            ("✉️ Email", self.company_email_input, 4),
+        ]
+        
+        for label_text, field, row in fields:
+            label = QLabel(label_text)
+            label.setStyleSheet("color: #475569; font-weight: 500; font-size: 13px;")
+            label.setMinimumWidth(100)
+            
+            field.setPlaceholderText(f"Saisir {label_text.lower()}")
+            field.setMinimumHeight(36)
+            field.setStyleSheet(self._get_input_style())
+            field.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            
+            info_layout.addWidget(label, row, 0)
+            info_layout.addWidget(field, row, 1)
+        
+        info_card = self._create_card("Informations de l'entreprise", info_content)
+        container_layout.addWidget(info_card)
+        
+        # Carte 2: Informations légales
+        legal_content = QWidget()
+        legal_layout = QGridLayout(legal_content)
+        legal_layout.setSpacing(12)
+        legal_layout.setContentsMargins(25, 20, 25, 20)
+        legal_layout.setColumnStretch(0, 0)
+        legal_layout.setColumnStretch(1, 1)
+        
+        # Création des champs légaux
+        self.company_ifu_input = QLineEdit()
+        self.company_rccm_input = QLineEdit()
+        
+        legal_fields = [
+            ("📋 IFU", self.company_ifu_input, 0),
+            ("📑 RCCM", self.company_rccm_input, 1),
+        ]
+        
+        for label_text, field, row in legal_fields:
+            label = QLabel(label_text)
+            label.setStyleSheet("color: #475569; font-weight: 500; font-size: 13px;")
+            label.setMinimumWidth(100)
+            
+            field.setPlaceholderText(f"Saisir {label_text.lower()}")
+            field.setMinimumHeight(36)
+            field.setStyleSheet(self._get_input_style())
+            field.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            
+            legal_layout.addWidget(label, row, 0)
+            legal_layout.addWidget(field, row, 1)
+        
+        legal_card = self._create_card("Informations légales", legal_content)
+        container_layout.addWidget(legal_card)
+        
+        # Carte 3: Logo
+        logo_content = QWidget()
+        logo_layout = QHBoxLayout(logo_content)
+        logo_layout.setSpacing(20)
+        logo_layout.setContentsMargins(25, 20, 25, 20)
+        
+        # Prévisualisation du logo
+        preview_container = QWidget()
+        preview_container.setFixedSize(100, 100)
+        preview_container.setStyleSheet("""
             QWidget {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #2c3e50, stop:1 #34495e);
-                border-radius: 8px;
+                background-color: #f8fafc;
+                border: 2px dashed #cbd5e1;
+                border-radius: 12px;
+            }
+        """)
+        preview_layout = QVBoxLayout(preview_container)
+        preview_layout.setAlignment(Qt.AlignCenter)
+        
+        self.logo_preview = QLabel("📷")
+        self.logo_preview.setAlignment(Qt.AlignCenter)
+        self.logo_preview.setStyleSheet("font-size: 36px; color: #94a3b8;")
+        self.logo_preview.setFixedSize(90, 90)
+        
+        preview_layout.addWidget(self.logo_preview)
+        
+        # Boutons
+        buttons_widget = QWidget()
+        buttons_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        buttons_layout = QVBoxLayout(buttons_widget)
+        buttons_layout.setSpacing(8)
+        buttons_layout.setContentsMargins(0, 0, 0, 0)
+        
+        self.select_logo_btn = QPushButton("📁 Choisir un logo")
+        self.select_logo_btn.setMinimumHeight(36)
+        self.select_logo_btn.clicked.connect(self.select_logo)
+        self.select_logo_btn.setStyleSheet(self._get_primary_button_style())
+        
+        self.clear_logo_btn = QPushButton("🗑 Supprimer")
+        self.clear_logo_btn.setMinimumHeight(36)
+        self.clear_logo_btn.setEnabled(False)
+        self.clear_logo_btn.clicked.connect(self.clear_logo)
+        self.clear_logo_btn.setStyleSheet(self._get_danger_button_style())
+        
+        buttons_layout.addWidget(self.select_logo_btn)
+        buttons_layout.addWidget(self.clear_logo_btn)
+        
+        logo_layout.addWidget(preview_container)
+        logo_layout.addWidget(buttons_widget)
+        logo_layout.addStretch()
+        
+        logo_card = self._create_card("Logo de l'entreprise", logo_content)
+        container_layout.addWidget(logo_card)
+        
+        container_layout.addStretch()
+        
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("border: none; background-color: transparent;")
+        scroll.setWidget(container)
+        
+        main_layout.addWidget(scroll)
+        
+        return tab
+    
+    def _create_general_tab(self):
+        """Crée l'onglet Général"""
+        tab = QWidget()
+        tab.setStyleSheet("background-color: #f8fafc;")
+        tab.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        
+        main_layout = QVBoxLayout(tab)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(20)
+        
+        container = QWidget()
+        container_layout = QVBoxLayout(container)
+        container_layout.setSpacing(20)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Carte 1: Paramètres généraux
+        general_content = QWidget()
+        general_layout = QGridLayout(general_content)
+        general_layout.setSpacing(12)
+        general_layout.setContentsMargins(25, 20, 25, 20)
+        general_layout.setColumnStretch(0, 0)
+        general_layout.setColumnStretch(1, 1)
+        
+        # Création des champs
+        self.language_combo = QComboBox()
+        self.currency_combo = QComboBox()
+        self.date_format_combo = QComboBox()
+        
+        # Langue
+        label_lang = QLabel("🌐 Langue")
+        label_lang.setStyleSheet("color: #475569; font-weight: 500; font-size: 13px;")
+        label_lang.setMinimumWidth(120)
+        
+        self.language_combo.addItems(["🇫🇷 Français", "🇬🇧 English"])
+        self.language_combo.setMinimumHeight(36)
+        self.language_combo.setStyleSheet(self._get_combo_style())
+        self.language_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        
+        general_layout.addWidget(label_lang, 0, 0)
+        general_layout.addWidget(self.language_combo, 0, 1)
+        
+        # Devise
+        label_curr = QLabel("💰 Devise")
+        label_curr.setStyleSheet("color: #475569; font-weight: 500; font-size: 13px;")
+        label_curr.setMinimumWidth(120)
+        
+        self.currency_combo.addItems(["💵 USD", "💰 XAF", "💰 XOF"])
+        self.currency_combo.setMinimumHeight(36)
+        self.currency_combo.setStyleSheet(self._get_combo_style())
+        self.currency_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        
+        general_layout.addWidget(label_curr, 1, 0)
+        general_layout.addWidget(self.currency_combo, 1, 1)
+        
+        # Format date
+        label_date = QLabel("📅 Format date")
+        label_date.setStyleSheet("color: #475569; font-weight: 500; font-size: 13px;")
+        label_date.setMinimumWidth(120)
+        
+        self.date_format_combo.addItems(["jj/mm/aaaa", "mm/jj/aaaa", "aaaa-mm-jj"])
+        self.date_format_combo.setMinimumHeight(36)
+        self.date_format_combo.setStyleSheet(self._get_combo_style())
+        self.date_format_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        
+        general_layout.addWidget(label_date, 2, 0)
+        general_layout.addWidget(self.date_format_combo, 2, 1)
+        
+        general_card = self._create_card("Préférences générales", general_content)
+        container_layout.addWidget(general_card)
+        
+        # Carte 2: Affichage
+        display_content = QWidget()
+        display_layout = QVBoxLayout(display_content)
+        display_layout.setContentsMargins(25, 16, 25, 16)
+        
+        self.animation_check = QCheckBox("🎨 Activer les animations")
+        self.animation_check.setChecked(True)
+        self.animation_check.setStyleSheet("""
+            QCheckBox {
+                color: #334155;
+                font-size: 13px;
+                font-weight: 500;
+                spacing: 12px;
+            }
+            QCheckBox::indicator {
+                width: 20px;
+                height: 20px;
+                border-radius: 6px;
+                border: 2px solid #cbd5e1;
+                background-color: white;
+            }
+            QCheckBox::indicator:checked {
+                background-color: #3b82f6;
+                border-color: #3b82f6;
             }
         """)
         
-        layout = QHBoxLayout(header)
-        layout.setContentsMargins(20, 15, 20, 15)
+        display_layout.addWidget(self.animation_check)
         
-        # Titre
-        title_label = QLabel("⚙️ Paramètres")
-        title_font = QFont()
-        title_font.setPointSize(16)
-        title_font.setBold(True)
-        title_label.setFont(title_font)
-        title_label.setStyleSheet("color: white;")
-        title_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        display_card = self._create_card("Affichage", display_content)
+        container_layout.addWidget(display_card)
         
-        # Sous-titre
-        subtitle = QLabel("Configuration de l'application")
-        subtitle.setStyleSheet("color: #bdc3c7; font-size: 12px;")
-        subtitle.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        container_layout.addStretch()
         
-        layout.addWidget(title_label)
-        layout.addWidget(subtitle)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("border: none; background-color: transparent;")
+        scroll.setWidget(container)
         
-        return header
+        main_layout.addWidget(scroll)
+        
+        return tab
+    
+    def _create_billing_tab(self):
+        """Crée l'onglet Facturation"""
+        tab = QWidget()
+        tab.setStyleSheet("background-color: #f8fafc;")
+        tab.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        
+        main_layout = QVBoxLayout(tab)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(20)
+        
+        container = QWidget()
+        container_layout = QVBoxLayout(container)
+        container_layout.setSpacing(20)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Carte 1: Paramètres fiscaux
+        tax_content = QWidget()
+        tax_layout = QGridLayout(tax_content)
+        tax_layout.setSpacing(12)
+        tax_layout.setContentsMargins(25, 20, 25, 20)
+        tax_layout.setColumnStretch(0, 0)
+        tax_layout.setColumnStretch(1, 1)
+        
+        # Création des champs
+        self.tax_rate_spin = QDoubleSpinBox()
+        self.discount_spin = QDoubleSpinBox()
+        
+        # TVA
+        label_tax = QLabel("💹 Taux TVA")
+        label_tax.setStyleSheet("color: #475569; font-weight: 500; font-size: 13px;")
+        label_tax.setMinimumWidth(120)
+        
+        self.tax_rate_spin.setRange(0, 100)
+        self.tax_rate_spin.setSuffix(" %")
+        self.tax_rate_spin.setDecimals(2)
+        self.tax_rate_spin.setValue(20.0)
+        self.tax_rate_spin.setMinimumHeight(36)
+        self.tax_rate_spin.setStyleSheet(self._get_spinbox_style())
+        self.tax_rate_spin.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        
+        tax_layout.addWidget(label_tax, 0, 0)
+        tax_layout.addWidget(self.tax_rate_spin, 0, 1)
+        
+        # Remise
+        label_discount = QLabel("🏷️ Remise par défaut")
+        label_discount.setStyleSheet("color: #475569; font-weight: 500; font-size: 13px;")
+        label_discount.setMinimumWidth(120)
+        
+        self.discount_spin.setRange(0, 100)
+        self.discount_spin.setSuffix(" %")
+        self.discount_spin.setDecimals(2)
+        self.discount_spin.setMinimumHeight(36)
+        self.discount_spin.setStyleSheet(self._get_spinbox_style())
+        self.discount_spin.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        
+        tax_layout.addWidget(label_discount, 1, 0)
+        tax_layout.addWidget(self.discount_spin, 1, 1)
+        
+        tax_card = self._create_card("Paramètres fiscaux", tax_content)
+        container_layout.addWidget(tax_card)
+        
+        # Carte 2: Numérotation
+        numbering_content = QWidget()
+        numbering_layout = QGridLayout(numbering_content)
+        numbering_layout.setSpacing(12)
+        numbering_layout.setContentsMargins(25, 20, 25, 20)
+        numbering_layout.setColumnStretch(0, 0)
+        numbering_layout.setColumnStretch(1, 1)
+        
+        # Création des champs
+        self.invoice_prefix_input = QLineEdit()
+        self.invoice_start_spin = QSpinBox()
+        self.payment_terms_spin = QSpinBox()
+        
+        # Préfixe
+        label_prefix = QLabel("🔢 Préfixe facture")
+        label_prefix.setStyleSheet("color: #475569; font-weight: 500; font-size: 13px;")
+        label_prefix.setMinimumWidth(120)
+        
+        prefix_widget = QWidget()
+        prefix_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        prefix_layout = QHBoxLayout(prefix_widget)
+        prefix_layout.setContentsMargins(0, 0, 0, 0)
+        prefix_layout.setSpacing(8)
+        
+        self.invoice_prefix_input.setPlaceholderText("FAC")
+        self.invoice_prefix_input.setMaxLength(5)
+        self.invoice_prefix_input.setMinimumWidth(80)
+        self.invoice_prefix_input.setMaximumWidth(100)
+        self.invoice_prefix_input.setMinimumHeight(36)
+        self.invoice_prefix_input.setStyleSheet(self._get_input_style())
+        
+        label_sep = QLabel("-2024-")
+        label_sep.setStyleSheet("color: #94a3b8; font-weight: 500; font-size: 13px;")
+        
+        self.invoice_start_spin.setRange(1, 99999)
+        self.invoice_start_spin.setPrefix("N° ")
+        self.invoice_start_spin.setMinimumWidth(100)
+        self.invoice_start_spin.setMaximumWidth(150)
+        self.invoice_start_spin.setMinimumHeight(36)
+        self.invoice_start_spin.setStyleSheet(self._get_spinbox_style())
+        
+        prefix_layout.addWidget(self.invoice_prefix_input)
+        prefix_layout.addWidget(label_sep)
+        prefix_layout.addWidget(self.invoice_start_spin)
+        prefix_layout.addStretch()
+        
+        numbering_layout.addWidget(label_prefix, 0, 0)
+        numbering_layout.addWidget(prefix_widget, 0, 1)
+        
+        # Délai paiement
+        label_payment = QLabel("📅 Délai paiement")
+        label_payment.setStyleSheet("color: #475569; font-weight: 500; font-size: 13px;")
+        label_payment.setMinimumWidth(120)
+        
+        self.payment_terms_spin.setRange(0, 90)
+        self.payment_terms_spin.setSuffix(" jours")
+        self.payment_terms_spin.setValue(30)
+        self.payment_terms_spin.setSpecialValueText("À réception")
+        self.payment_terms_spin.setMinimumHeight(36)
+        self.payment_terms_spin.setStyleSheet(self._get_spinbox_style())
+        self.payment_terms_spin.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        
+        numbering_layout.addWidget(label_payment, 1, 0)
+        numbering_layout.addWidget(self.payment_terms_spin, 1, 1)
+        
+        numbering_card = self._create_card("Numérotation", numbering_content)
+        container_layout.addWidget(numbering_card)
+        
+        # Carte 3: Pied de page
+        footer_content = QWidget()
+        footer_content.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        footer_content_layout = QVBoxLayout(footer_content)
+        footer_content_layout.setSpacing(10)
+        footer_content_layout.setContentsMargins(25, 16, 25, 16)
+        
+        self.invoice_footer_input = QTextEdit()
+        self.invoice_footer_input.setPlaceholderText(
+            "Merci pour votre confiance.\n"
+            "Conditions de paiement : 30 jours nets."
+        )
+        self.invoice_footer_input.setMinimumHeight(70)
+        self.invoice_footer_input.setMaximumHeight(110)
+        self.invoice_footer_input.setStyleSheet("""
+            QTextEdit {
+                border: 2px solid #e2e8f0;
+                border-radius: 8px;
+                padding: 10px 12px;
+                font-size: 13px;
+                background-color: white;
+                color: #1e293b;
+            }
+            QTextEdit:focus {
+                border-color: #3b82f6;
+            }
+        """)
+        self.invoice_footer_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        
+        # Boutons templates
+        template_widget = QWidget()
+        template_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        template_layout = QHBoxLayout(template_widget)
+        template_layout.setContentsMargins(0, 0, 0, 0)
+        template_layout.setSpacing(8)
+        
+        template_widget.setMaximumHeight(36)
+        
+        templates = ["📝 Standard", "✨ Minimaliste", "💼 Professionnel"]
+        for template in templates:
+            btn = QPushButton(template)
+            btn.setMinimumHeight(32)
+            btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            btn.clicked.connect(lambda checked, t=template: self.load_footer_template(t))
+            btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #f1f5f9;
+                    color: #475569;
+                    border: 1px solid #e2e8f0;
+                    border-radius: 6px;
+                    padding: 4px 12px;
+                    font-size: 12px;
+                    font-weight: 500;
+                }
+                QPushButton:hover {
+                    background-color: #e2e8f0;
+                    border-color: #94a3b8;
+                }
+            """)
+            template_layout.addWidget(btn)
+        
+        footer_content_layout.addWidget(self.invoice_footer_input)
+        footer_content_layout.addWidget(template_widget)
+        
+        footer_card = self._create_card("Pied de page", footer_content)
+        container_layout.addWidget(footer_card)
+        
+        container_layout.addStretch()
+        
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("border: none; background-color: transparent;")
+        scroll.setWidget(container)
+        
+        main_layout.addWidget(scroll)
+        
+        return tab
     
     def _create_footer(self):
-        """Crée le pied de page avec les boutons d'action"""
+        """Crée un pied de page moderne"""
         footer = QFrame()
-        footer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
         footer.setStyleSheet("""
             QFrame {
-                background-color: #f8f9fa;
-                border-radius: 8px;
-                border: 1px solid #e0e0e0;
+                background-color: white;
+                border-radius: 12px;
+                border: 1px solid #e8ecf1;
+                padding: 12px 20px;
             }
         """)
+        footer.setMaximumHeight(70)
         
         layout = QHBoxLayout(footer)
-        layout.setContentsMargins(15, 10, 15, 10)
-        layout.setSpacing(15)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(12)
         
         # Statut
         self.status_label = QLabel("✅ Aucune modification")
         self.status_label.setStyleSheet("""
             QLabel {
-                color: #27ae60;
-                font-weight: bold;
-                padding: 5px 10px;
-                background-color: #e8f5e9;
-                border-radius: 4px;
+                color: #22c55e;
+                font-weight: 500;
+                padding: 4px 14px;
+                background-color: #f0fdf4;
+                border-radius: 16px;
+                font-size: 12px;
             }
         """)
         self.status_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -148,48 +679,50 @@ class SettingsView(QWidget):
         # Bouton Annuler
         self.cancel_btn = QPushButton("✖ Annuler")
         self.cancel_btn.setEnabled(False)
-        self.cancel_btn.setMinimumWidth(120)
+        self.cancel_btn.setMinimumWidth(90)
         self.cancel_btn.setMinimumHeight(36)
         self.cancel_btn.clicked.connect(self.load_current_settings)
         self.cancel_btn.setStyleSheet("""
             QPushButton {
-                background-color: #e74c3c;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                padding: 8px 16px;
-                font-weight: bold;
+                background-color: #f1f5f9;
+                color: #475569;
+                border: 1px solid #e2e8f0;
+                border-radius: 8px;
+                padding: 6px 18px;
+                font-weight: 500;
+                font-size: 13px;
             }
             QPushButton:hover {
-                background-color: #c0392b;
+                background-color: #e2e8f0;
             }
             QPushButton:disabled {
-                background-color: #bdc3c7;
-                color: #7f8c8d;
+                background-color: #f1f5f9;
+                color: #94a3b8;
             }
         """)
         
         # Bouton Enregistrer
         self.save_btn = QPushButton("💾 Enregistrer")
         self.save_btn.setEnabled(False)
-        self.save_btn.setMinimumWidth(120)
+        self.save_btn.setMinimumWidth(110)
         self.save_btn.setMinimumHeight(36)
         self.save_btn.clicked.connect(self.save_all_settings)
         self.save_btn.setStyleSheet("""
             QPushButton {
-                background-color: #27ae60;
+                background-color: #3b82f6;
                 color: white;
                 border: none;
-                border-radius: 6px;
-                padding: 8px 16px;
-                font-weight: bold;
+                border-radius: 8px;
+                padding: 6px 22px;
+                font-weight: 600;
+                font-size: 13px;
             }
             QPushButton:hover {
-                background-color: #219653;
+                background-color: #2563eb;
             }
             QPushButton:disabled {
-                background-color: #bdc3c7;
-                color: #7f8c8d;
+                background-color: #cbd5e1;
+                color: #94a3b8;
             }
         """)
         
@@ -198,556 +731,26 @@ class SettingsView(QWidget):
         
         return footer
     
-    def _create_scrollable_tab(self, content_widget):
-        """Encapsule un widget dans une QScrollArea responsive"""
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        scroll.setStyleSheet("""
-            QScrollArea {
-                border: none;
-                background-color: transparent;
-            }
-            QScrollBar:vertical {
-                border: none;
-                background: #f0f0f0;
-                width: 10px;
-                border-radius: 5px;
-            }
-            QScrollBar::handle:vertical {
-                background: #c0c0c0;
-                border-radius: 5px;
-                min-height: 30px;
-            }
-            QScrollBar::handle:vertical:hover {
-                background: #a0a0a0;
-            }
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
-                border: none;
-                background: none;
-            }
-        """)
-        
-        # Configurer le widget contenu
-        content_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        scroll.setWidget(content_widget)
-        
-        return scroll
-    
-    def _create_company_tab(self):
-        """Crée l'onglet Entreprise responsive"""
-        tab = QWidget()
-        tab.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        
-        main_layout = QVBoxLayout(tab)
-        main_layout.setSpacing(15)
-        main_layout.setContentsMargins(15, 15, 15, 15)
-        
-        # Groupe Informations de l'entreprise
-        basic_group = QGroupBox("Informations de l'entreprise")
-        basic_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
-        basic_group.setStyleSheet(self._get_group_box_style())
-        
-        basic_layout = QGridLayout(basic_group)
-        basic_layout.setSpacing(12)
-        basic_layout.setContentsMargins(20, 25, 20, 20)
-        basic_layout.setColumnStretch(0, 0)  # Labels
-        basic_layout.setColumnStretch(1, 1)  # Champs
-        
-        # Nom
-        label_name = QLabel("Nom :")
-        label_name.setMinimumWidth(120)
-        label_name.setStyleSheet("font-weight: 500; color: #2c3e50;")
-        
-        self.company_name_input = QLineEdit()
-        self.company_name_input.setPlaceholderText("Nom de votre entreprise")
-        self.company_name_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.company_name_input.setMinimumHeight(32)
-        self.company_name_input.setStyleSheet(self._get_input_style())
-        
-        basic_layout.addWidget(label_name, 0, 0)
-        basic_layout.addWidget(self.company_name_input, 0, 1)
-        
-        # Adresse
-        label_address = QLabel("Adresse :")
-        label_address.setMinimumWidth(120)
-        label_address.setStyleSheet("font-weight: 500; color: #2c3e50;")
-        
-        self.company_address_input = QLineEdit()
-        self.company_address_input.setPlaceholderText("Adresse de l'entreprise")
-        self.company_address_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.company_address_input.setMinimumHeight(32)
-        self.company_address_input.setStyleSheet(self._get_input_style())
-        
-        basic_layout.addWidget(label_address, 1, 0)
-        basic_layout.addWidget(self.company_address_input, 1, 1)
-        
-        # Boîte Postale
-        label_po_box = QLabel("Boîte Postale :")
-        label_po_box.setMinimumWidth(120)
-        label_po_box.setStyleSheet("font-weight: 500; color: #2c3e50;")
-        
-        self.company_po_box_input = QLineEdit()
-        self.company_po_box_input.setPlaceholderText("BP 1234")
-        self.company_po_box_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.company_po_box_input.setMinimumHeight(32)
-        self.company_po_box_input.setStyleSheet(self._get_input_style())
-        
-        basic_layout.addWidget(label_po_box, 2, 0)
-        basic_layout.addWidget(self.company_po_box_input, 2, 1)
-        
-        # Téléphone
-        label_phone = QLabel("Téléphone :")
-        label_phone.setMinimumWidth(120)
-        label_phone.setStyleSheet("font-weight: 500; color: #2c3e50;")
-        
-        self.company_phone_input = QLineEdit()
-        self.company_phone_input.setPlaceholderText("Téléphone")
-        self.company_phone_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.company_phone_input.setMinimumHeight(32)
-        self.company_phone_input.setStyleSheet(self._get_input_style())
-        
-        basic_layout.addWidget(label_phone, 3, 0)
-        basic_layout.addWidget(self.company_phone_input, 3, 1)
-        
-        # Email
-        label_email = QLabel("Email :")
-        label_email.setMinimumWidth(120)
-        label_email.setStyleSheet("font-weight: 500; color: #2c3e50;")
-        
-        self.company_email_input = QLineEdit()
-        self.company_email_input.setPlaceholderText("Email")
-        self.company_email_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.company_email_input.setMinimumHeight(32)
-        self.company_email_input.setStyleSheet(self._get_input_style())
-        
-        basic_layout.addWidget(label_email, 4, 0)
-        basic_layout.addWidget(self.company_email_input, 4, 1)
-        
-        main_layout.addWidget(basic_group)
-        
-        # Groupe Informations légales
-        legal_group = QGroupBox("Informations légales")
-        legal_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
-        legal_group.setStyleSheet(self._get_group_box_style())
-        
-        legal_layout = QGridLayout(legal_group)
-        legal_layout.setSpacing(12)
-        legal_layout.setContentsMargins(20, 25, 20, 20)
-        legal_layout.setColumnStretch(0, 0)
-        legal_layout.setColumnStretch(1, 1)
-        
-        # IFU
-        label_ifu = QLabel("IFU :")
-        label_ifu.setMinimumWidth(120)
-        label_ifu.setStyleSheet("font-weight: 500; color: #2c3e50;")
-        
-        self.company_ifu_input = QLineEdit()
-        self.company_ifu_input.setPlaceholderText("IFU - Ex: 1234567890A")
-        self.company_ifu_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.company_ifu_input.setMinimumHeight(32)
-        self.company_ifu_input.setStyleSheet(self._get_input_style())
-        
-        legal_layout.addWidget(label_ifu, 0, 0)
-        legal_layout.addWidget(self.company_ifu_input, 0, 1)
-        
-        # RCCM
-        label_rccm = QLabel("RCCM :")
-        label_rccm.setMinimumWidth(120)
-        label_rccm.setStyleSheet("font-weight: 500; color: #2c3e50;")
-        
-        self.company_rccm_input = QLineEdit()
-        self.company_rccm_input.setPlaceholderText("RCCM - Ex: RC-BNV-2023-1234")
-        self.company_rccm_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.company_rccm_input.setMinimumHeight(32)
-        self.company_rccm_input.setStyleSheet(self._get_input_style())
-        
-        legal_layout.addWidget(label_rccm, 1, 0)
-        legal_layout.addWidget(self.company_rccm_input, 1, 1)
-        
-        main_layout.addWidget(legal_group)
-        
-        # Groupe Logo
-        logo_group = QGroupBox("Logo")
-        logo_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
-        logo_group.setStyleSheet(self._get_group_box_style())
-        
-        logo_layout = QHBoxLayout(logo_group)
-        logo_layout.setContentsMargins(20, 25, 20, 20)
-        logo_layout.setSpacing(20)
-        
-        # Prévisualisation
-        self.logo_preview = QLabel()
-        self.logo_preview.setFixedSize(120, 120)
-        self.logo_preview.setAlignment(Qt.AlignCenter)
-        self.logo_preview.setText("📷 Aucun logo")
-        self.logo_preview.setStyleSheet("""
-            QLabel {
-                background-color: #f8f9fa;
-                border: 2px dashed #bdc3c7;
-                border-radius: 8px;
-                color: #7f8c8d;
-                font-size: 12px;
-            }
-        """)
-        self.logo_preview.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        
-        # Boutons
-        buttons_widget = QWidget()
-        buttons_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        buttons_layout = QVBoxLayout(buttons_widget)
-        buttons_layout.setSpacing(10)
-        buttons_layout.setContentsMargins(0, 0, 0, 0)
-        
-        self.select_logo_btn = QPushButton("📁 Choisir logo")
-        self.select_logo_btn.setMinimumHeight(36)
-        self.select_logo_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.select_logo_btn.clicked.connect(self.select_logo)
-        self.select_logo_btn.setStyleSheet(self._get_button_style("#3498db", "#2980b9"))
-        
-        self.clear_logo_btn = QPushButton("🗑 Supprimer")
-        self.clear_logo_btn.setMinimumHeight(36)
-        self.clear_logo_btn.setEnabled(False)
-        self.clear_logo_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.clear_logo_btn.clicked.connect(self.clear_logo)
-        self.clear_logo_btn.setStyleSheet(self._get_button_style("#e74c3c", "#c0392b"))
-        
-        buttons_layout.addWidget(self.select_logo_btn)
-        buttons_layout.addWidget(self.clear_logo_btn)
-        
-        logo_layout.addWidget(self.logo_preview)
-        logo_layout.addWidget(buttons_widget)
-        logo_layout.addStretch()
-        
-        main_layout.addWidget(logo_group)
-        
-        # Espacement flexible
-        spacer = QSpacerItem(0, 0, QSizePolicy.Minimum, QSizePolicy.Expanding)
-        main_layout.addSpacerItem(spacer)
-        
-        return tab
-    
-    def _create_general_tab(self):
-        """Crée l'onglet Général responsive"""
-        tab = QWidget()
-        tab.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        
-        main_layout = QVBoxLayout(tab)
-        main_layout.setSpacing(15)
-        main_layout.setContentsMargins(15, 15, 15, 15)
-        
-        # Groupe Paramètres généraux
-        general_group = QGroupBox("Paramètres généraux")
-        general_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
-        general_group.setStyleSheet(self._get_group_box_style())
-        
-        general_layout = QGridLayout(general_group)
-        general_layout.setSpacing(12)
-        general_layout.setContentsMargins(20, 25, 20, 20)
-        general_layout.setColumnStretch(0, 0)
-        general_layout.setColumnStretch(1, 1)
-        
-        # Langue
-        label_language = QLabel("Langue :")
-        label_language.setMinimumWidth(120)
-        label_language.setStyleSheet("font-weight: 500; color: #2c3e50;")
-        
-        self.language_combo = QComboBox()
-        self.language_combo.addItems(["🇫🇷 Français", "🇬🇧 English"])
-        self.language_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.language_combo.setMinimumHeight(32)
-        self.language_combo.setStyleSheet(self._get_combo_style())
-        
-        general_layout.addWidget(label_language, 0, 0)
-        general_layout.addWidget(self.language_combo, 0, 1)
-        
-        # Devise
-        label_currency = QLabel("Devise :")
-        label_currency.setMinimumWidth(120)
-        label_currency.setStyleSheet("font-weight: 500; color: #2c3e50;")
-        
-        self.currency_combo = QComboBox()
-        self.currency_combo.addItems([
-            "💵 Dollar US ($) - USD",
-            "💰 Franc CFA (FCFA) - XAF",
-            "💰 Franc CFA (FCFA) - XOF"
-        ])
-        self.currency_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.currency_combo.setMinimumHeight(32)
-        self.currency_combo.setStyleSheet(self._get_combo_style())
-        
-        general_layout.addWidget(label_currency, 1, 0)
-        general_layout.addWidget(self.currency_combo, 1, 1)
-        
-        # Format de date
-        label_date = QLabel("Format date :")
-        label_date.setMinimumWidth(120)
-        label_date.setStyleSheet("font-weight: 500; color: #2c3e50;")
-        
-        self.date_format_combo = QComboBox()
-        self.date_format_combo.addItems([
-            "📅 jj/mm/aaaa",
-            "📅 mm/jj/aaaa",
-            "📅 aaaa-mm-jj"
-        ])
-        self.date_format_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.date_format_combo.setMinimumHeight(32)
-        self.date_format_combo.setStyleSheet(self._get_combo_style())
-        
-        general_layout.addWidget(label_date, 2, 0)
-        general_layout.addWidget(self.date_format_combo, 2, 1)
-        
-        main_layout.addWidget(general_group)
-        
-        # Groupe Affichage
-        display_group = QGroupBox("Affichage")
-        display_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
-        display_group.setStyleSheet(self._get_group_box_style())
-        
-        display_layout = QVBoxLayout(display_group)
-        display_layout.setContentsMargins(20, 25, 20, 20)
-        display_layout.setSpacing(10)
-        
-        self.animation_check = QCheckBox("🎨 Activer les animations")
-        self.animation_check.setChecked(True)
-        self.animation_check.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.animation_check.setStyleSheet("""
-            QCheckBox {
-                font-weight: 500;
-                color: #2c3e50;
-                spacing: 10px;
-            }
-            QCheckBox::indicator {
-                width: 20px;
-                height: 20px;
-            }
-        """)
-        
-        display_layout.addWidget(self.animation_check)
-        
-        main_layout.addWidget(display_group)
-        
-        # Espacement flexible
-        spacer = QSpacerItem(0, 0, QSizePolicy.Minimum, QSizePolicy.Expanding)
-        main_layout.addSpacerItem(spacer)
-        
-        return tab
-    
-    def _create_billing_tab(self):
-        """Crée l'onglet Facturation responsive"""
-        tab = QWidget()
-        tab.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        
-        main_layout = QVBoxLayout(tab)
-        main_layout.setSpacing(15)
-        main_layout.setContentsMargins(15, 15, 15, 15)
-        
-        # Groupe Paramètres fiscaux
-        tax_group = QGroupBox("Paramètres fiscaux")
-        tax_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
-        tax_group.setStyleSheet(self._get_group_box_style())
-        
-        tax_layout = QGridLayout(tax_group)
-        tax_layout.setSpacing(12)
-        tax_layout.setContentsMargins(20, 25, 20, 20)
-        tax_layout.setColumnStretch(0, 0)
-        tax_layout.setColumnStretch(1, 1)
-        
-        # Taux de TVA
-        label_tax = QLabel("Taux TVA :")
-        label_tax.setMinimumWidth(120)
-        label_tax.setStyleSheet("font-weight: 500; color: #2c3e50;")
-        
-        self.tax_rate_spin = QDoubleSpinBox()
-        self.tax_rate_spin.setRange(0, 100)
-        self.tax_rate_spin.setSuffix(" %")
-        self.tax_rate_spin.setDecimals(2)
-        self.tax_rate_spin.setValue(20.0)
-        self.tax_rate_spin.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.tax_rate_spin.setMinimumHeight(32)
-        self.tax_rate_spin.setStyleSheet(self._get_spinbox_style())
-        
-        tax_layout.addWidget(label_tax, 0, 0)
-        tax_layout.addWidget(self.tax_rate_spin, 0, 1)
-        
-        # Remise par défaut
-        label_discount = QLabel("Remise :")
-        label_discount.setMinimumWidth(120)
-        label_discount.setStyleSheet("font-weight: 500; color: #2c3e50;")
-        
-        self.discount_spin = QDoubleSpinBox()
-        self.discount_spin.setRange(0, 100)
-        self.discount_spin.setSuffix(" %")
-        self.discount_spin.setDecimals(2)
-        self.discount_spin.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.discount_spin.setMinimumHeight(32)
-        self.discount_spin.setStyleSheet(self._get_spinbox_style())
-        
-        tax_layout.addWidget(label_discount, 1, 0)
-        tax_layout.addWidget(self.discount_spin, 1, 1)
-        
-        main_layout.addWidget(tax_group)
-        
-        # Groupe Numérotation
-        numbering_group = QGroupBox("Numérotation")
-        numbering_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
-        numbering_group.setStyleSheet(self._get_group_box_style())
-        
-        numbering_layout = QGridLayout(numbering_group)
-        numbering_layout.setSpacing(12)
-        numbering_layout.setContentsMargins(20, 25, 20, 20)
-        numbering_layout.setColumnStretch(0, 0)
-        numbering_layout.setColumnStretch(1, 1)
-        
-        # Préfixe
-        label_prefix = QLabel("Format facture :")
-        label_prefix.setMinimumWidth(120)
-        label_prefix.setStyleSheet("font-weight: 500; color: #2c3e50;")
-        
-        prefix_widget = QWidget()
-        prefix_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        prefix_layout = QHBoxLayout(prefix_widget)
-        prefix_layout.setContentsMargins(0, 0, 0, 0)
-        prefix_layout.setSpacing(8)
-        
-        self.invoice_prefix_input = QLineEdit()
-        self.invoice_prefix_input.setPlaceholderText("FAC")
-        self.invoice_prefix_input.setMaxLength(5)
-        self.invoice_prefix_input.setMinimumWidth(80)
-        self.invoice_prefix_input.setMaximumWidth(100)
-        self.invoice_prefix_input.setMinimumHeight(32)
-        self.invoice_prefix_input.setStyleSheet(self._get_input_style())
-        
-        self.invoice_start_spin = QSpinBox()
-        self.invoice_start_spin.setRange(1, 99999)
-        self.invoice_start_spin.setValue(1)
-        self.invoice_start_spin.setPrefix("N° ")
-        self.invoice_start_spin.setMinimumWidth(100)
-        self.invoice_start_spin.setMaximumWidth(150)
-        self.invoice_start_spin.setMinimumHeight(32)
-        self.invoice_start_spin.setStyleSheet(self._get_spinbox_style())
-        
-        prefix_layout.addWidget(self.invoice_prefix_input)
-        prefix_layout.addWidget(QLabel("-2024-"))
-        prefix_layout.addWidget(self.invoice_start_spin)
-        prefix_layout.addStretch()
-        
-        numbering_layout.addWidget(label_prefix, 0, 0)
-        numbering_layout.addWidget(prefix_widget, 0, 1)
-        
-        # Délai de paiement
-        label_payment = QLabel("Délai paiement :")
-        label_payment.setMinimumWidth(120)
-        label_payment.setStyleSheet("font-weight: 500; color: #2c3e50;")
-        
-        self.payment_terms_spin = QSpinBox()
-        self.payment_terms_spin.setRange(0, 90)
-        self.payment_terms_spin.setSuffix(" jours")
-        self.payment_terms_spin.setValue(30)
-        self.payment_terms_spin.setSpecialValueText("À réception")
-        self.payment_terms_spin.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.payment_terms_spin.setMinimumHeight(32)
-        self.payment_terms_spin.setStyleSheet(self._get_spinbox_style())
-        
-        numbering_layout.addWidget(label_payment, 1, 0)
-        numbering_layout.addWidget(self.payment_terms_spin, 1, 1)
-        
-        main_layout.addWidget(numbering_group)
-        
-        # Groupe Pied de page
-        footer_group = QGroupBox("Pied de page")
-        footer_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        footer_group.setStyleSheet(self._get_group_box_style())
-        
-        footer_inner_layout = QVBoxLayout(footer_group)
-        footer_inner_layout.setContentsMargins(20, 25, 20, 20)
-        footer_inner_layout.setSpacing(10)
-        
-        self.invoice_footer_input = QTextEdit()
-        self.invoice_footer_input.setPlaceholderText(
-            "Merci pour votre confiance.\n"
-            "Conditions de paiement : 30 jours."
-        )
-        self.invoice_footer_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.invoice_footer_input.setMinimumHeight(80)
-        self.invoice_footer_input.setMaximumHeight(120)
-        self.invoice_footer_input.setStyleSheet("""
-            QTextEdit {
-                border: 2px solid #d0d0d0;
-                border-radius: 6px;
-                padding: 10px;
-                font-size: 12px;
-                background-color: white;
-            }
-            QTextEdit:focus {
-                border-color: #3498db;
-            }
-        """)
-        
-        # Boutons templates
-        template_widget = QWidget()
-        template_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        template_layout = QHBoxLayout(template_widget)
-        template_layout.setContentsMargins(0, 0, 0, 0)
-        template_layout.setSpacing(10)
-        
-        templates = ["Standard", "Minimaliste", "Professionnel"]
-        for template in templates:
-            btn = QPushButton(template)
-            btn.setMinimumHeight(30)
-            btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            btn.clicked.connect(lambda checked, t=template: self.load_footer_template(t))
-            btn.setStyleSheet(self._get_button_style("#95a5a6", "#7f8c8d"))
-            template_layout.addWidget(btn)
-        
-        footer_inner_layout.addWidget(self.invoice_footer_input)
-        footer_inner_layout.addWidget(template_widget)
-        
-        main_layout.addWidget(footer_group)
-        
-        # Espacement flexible
-        spacer = QSpacerItem(0, 0, QSizePolicy.Minimum, QSizePolicy.Expanding)
-        main_layout.addSpacerItem(spacer)
-        
-        return tab
-    
-    def _get_group_box_style(self):
-        """Retourne le style des group boxes"""
-        return """
-            QGroupBox {
-                font-weight: bold;
-                font-size: 13px;
-                border: 2px solid #d0d0d0;
-                border-radius: 8px;
-                margin-top: 12px;
-                padding-top: 10px;
-                background-color: white;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 15px;
-                padding: 0 10px;
-                color: #2c3e50;
-            }
-        """
-    
     def _get_input_style(self):
         """Retourne le style des champs de saisie"""
         return """
             QLineEdit {
-                border: 2px solid #d0d0d0;
-                border-radius: 6px;
-                padding: 6px 10px;
-                font-size: 12px;
+                border: 2px solid #e2e8f0;
+                border-radius: 8px;
+                padding: 6px 12px;
+                font-size: 13px;
                 background-color: white;
+                color: #1e293b;
             }
             QLineEdit:focus {
-                border-color: #3498db;
+                border-color: #3b82f6;
+                background-color: #f8fafc;
             }
             QLineEdit:hover {
-                border-color: #a0a0a0;
+                border-color: #94a3b8;
+            }
+            QLineEdit::placeholder {
+                color: #94a3b8;
             }
         """
     
@@ -755,17 +758,19 @@ class SettingsView(QWidget):
         """Retourne le style des combo boxes"""
         return """
             QComboBox {
-                border: 2px solid #d0d0d0;
-                border-radius: 6px;
-                padding: 6px 10px;
-                font-size: 12px;
+                border: 2px solid #e2e8f0;
+                border-radius: 8px;
+                padding: 6px 12px;
+                font-size: 13px;
                 background-color: white;
+                color: #1e293b;
             }
             QComboBox:focus {
-                border-color: #3498db;
+                border-color: #3b82f6;
+                background-color: #f8fafc;
             }
             QComboBox:hover {
-                border-color: #a0a0a0;
+                border-color: #94a3b8;
             }
             QComboBox::drop-down {
                 border: none;
@@ -775,8 +780,16 @@ class SettingsView(QWidget):
                 image: none;
                 border-left: 5px solid transparent;
                 border-right: 5px solid transparent;
-                border-top: 5px solid #666;
-                margin-right: 5px;
+                border-top: 5px solid #64748b;
+                margin-right: 8px;
+            }
+            QComboBox QAbstractItemView {
+                border: 1px solid #e2e8f0;
+                border-radius: 8px;
+                padding: 4px;
+                background-color: white;
+                selection-background-color: #e8ecf1;
+                selection-color: #1e293b;
             }
         """
     
@@ -784,45 +797,80 @@ class SettingsView(QWidget):
         """Retourne le style des spin boxes"""
         return """
             QSpinBox, QDoubleSpinBox {
-                border: 2px solid #d0d0d0;
-                border-radius: 6px;
-                padding: 6px 10px;
-                font-size: 12px;
+                border: 2px solid #e2e8f0;
+                border-radius: 8px;
+                padding: 6px 12px;
+                font-size: 13px;
                 background-color: white;
+                color: #1e293b;
             }
             QSpinBox:focus, QDoubleSpinBox:focus {
-                border-color: #3498db;
+                border-color: #3b82f6;
+                background-color: #f8fafc;
             }
             QSpinBox:hover, QDoubleSpinBox:hover {
-                border-color: #a0a0a0;
+                border-color: #94a3b8;
             }
             QSpinBox::up-button, QDoubleSpinBox::up-button,
             QSpinBox::down-button, QDoubleSpinBox::down-button {
                 border: none;
                 background: transparent;
-                width: 20px;
+                width: 25px;
+            }
+            QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {
+                image: none;
+                border-left: 5px solid transparent;
+                border-right: 5px solid transparent;
+                border-bottom: 5px solid #64748b;
+            }
+            QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {
+                image: none;
+                border-left: 5px solid transparent;
+                border-right: 5px solid transparent;
+                border-top: 5px solid #64748b;
             }
         """
     
-    def _get_button_style(self, bg_color, hover_color):
-        """Retourne le style des boutons"""
-        return f"""
-            QPushButton {{
-                background-color: {bg_color};
+    def _get_primary_button_style(self):
+        """Retourne le style des boutons primaires"""
+        return """
+            QPushButton {
+                background-color: #3b82f6;
                 color: white;
                 border: none;
-                border-radius: 6px;
-                padding: 8px 16px;
-                font-weight: bold;
-                font-size: 12px;
-            }}
-            QPushButton:hover {{
-                background-color: {hover_color};
-            }}
-            QPushButton:disabled {{
-                background-color: #bdc3c7;
-                color: #7f8c8d;
-            }}
+                border-radius: 8px;
+                padding: 6px 18px;
+                font-weight: 600;
+                font-size: 13px;
+            }
+            QPushButton:hover {
+                background-color: #2563eb;
+            }
+            QPushButton:disabled {
+                background-color: #cbd5e1;
+                color: #94a3b8;
+            }
+        """
+    
+    def _get_danger_button_style(self):
+        """Retourne le style des boutons danger"""
+        return """
+            QPushButton {
+                background-color: #ef4444;
+                color: white;
+                border: none;
+                border-radius: 8px;
+                padding: 6px 18px;
+                font-weight: 600;
+                font-size: 13px;
+            }
+            QPushButton:hover {
+                background-color: #dc2626;
+            }
+            QPushButton:disabled {
+                background-color: #fca5a5;
+                color: #fef2f2;
+            }
         """
     
     def _connect_signals(self):
@@ -862,22 +910,24 @@ class SettingsView(QWidget):
             self.status_label.setText("⚠️ Modifications non sauvegardées")
             self.status_label.setStyleSheet("""
                 QLabel {
-                    color: #e67e22;
-                    font-weight: bold;
-                    padding: 5px 10px;
-                    background-color: #fef9e7;
-                    border-radius: 4px;
+                    color: #eab308;
+                    font-weight: 500;
+                    padding: 4px 14px;
+                    background-color: #fef9c3;
+                    border-radius: 16px;
+                    font-size: 12px;
                 }
             """)
         else:
             self.status_label.setText("✅ Aucune modification")
             self.status_label.setStyleSheet("""
                 QLabel {
-                    color: #27ae60;
-                    font-weight: bold;
-                    padding: 5px 10px;
-                    background-color: #e8f5e9;
-                    border-radius: 4px;
+                    color: #22c55e;
+                    font-weight: 500;
+                    padding: 4px 14px;
+                    background-color: #f0fdf4;
+                    border-radius: 16px;
+                    font-size: 12px;
                 }
             """)
     
@@ -918,9 +968,9 @@ class SettingsView(QWidget):
     def load_footer_template(self, template_name):
         """Charge un template de pied de page"""
         templates = {
-            "Standard": "Merci pour votre confiance.\nVeuillez régler par virement bancaire.",
-            "Minimaliste": "Merci pour votre confiance.",
-            "Professionnel": "Société XYZ\nSIRET: 123 456 789\nRCS: Paris B\nIBAN: FR76 XXXX XXXX XXXX"
+            "📝 Standard": "Merci pour votre confiance.\nVeuillez régler par virement bancaire sous 30 jours.",
+            "✨ Minimaliste": "Merci pour votre confiance.",
+            "💼 Professionnel": "Société XYZ\nSIRET: 123 456 789\nRCS: Paris B\nIBAN: FR76 XXXX XXXX XXXX\n\nMerci pour votre confiance."
         }
         
         if template_name in templates:
@@ -930,7 +980,7 @@ class SettingsView(QWidget):
         """Sélectionne un logo"""
         file_dialog = QFileDialog()
         file_dialog.setFileMode(QFileDialog.ExistingFile)
-        file_dialog.setNameFilter("Images (*.png *.jpg *.jpeg *.bmp)")
+        file_dialog.setNameFilter("Images (*.png *.jpg *.jpeg *.bmp *.svg)")
         file_dialog.setWindowTitle("Sélectionner un logo")
         
         if file_dialog.exec():
@@ -948,7 +998,7 @@ class SettingsView(QWidget):
             pixmap = QPixmap(logo_path)
             if not pixmap.isNull():
                 scaled_pixmap = pixmap.scaled(
-                    110, 110,
+                    80, 80,
                     Qt.KeepAspectRatio,
                     Qt.SmoothTransformation
                 )
@@ -963,7 +1013,7 @@ class SettingsView(QWidget):
     def clear_logo(self):
         """Efface le logo"""
         self.logo_preview.clear()
-        self.logo_preview.setText("📷 Aucun logo")
+        self.logo_preview.setText("📷")
         self.current_logo_path = ""
         self.clear_logo_btn.setEnabled(False)
         self._on_settings_changed()
@@ -1031,11 +1081,12 @@ class SettingsView(QWidget):
         self.status_label.setText("✅ Aucune modification")
         self.status_label.setStyleSheet("""
             QLabel {
-                color: #27ae60;
-                font-weight: bold;
-                padding: 5px 10px;
-                background-color: #e8f5e9;
-                border-radius: 4px;
+                color: #22c55e;
+                font-weight: 500;
+                padding: 4px 14px;
+                background-color: #f0fdf4;
+                border-radius: 16px;
+                font-size: 12px;
             }
         """)
     
@@ -1052,7 +1103,12 @@ class SettingsView(QWidget):
         
         # Sauvegarder
         if self.settings_manager.save_settings(settings_to_save):
-            QMessageBox.information(self, "✅ Succès", "Paramètres enregistrés avec succès!")
+            QMessageBox.information(
+                self,
+                "✅ Succès",
+                "Paramètres enregistrés avec succès !",
+                QMessageBox.Ok
+            )
             
             # Émettre signal
             self.settings_changed.emit(settings_to_save)
@@ -1063,4 +1119,8 @@ class SettingsView(QWidget):
             # Recharger
             self.load_current_settings()
         else:
-            QMessageBox.critical(self, "❌ Erreur", "Erreur lors de l'enregistrement des paramètres.")
+            QMessageBox.critical(
+                self,
+                "❌ Erreur",
+                "Erreur lors de l'enregistrement des paramètres."
+            )

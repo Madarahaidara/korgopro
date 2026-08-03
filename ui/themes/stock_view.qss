@@ -1,4 +1,4 @@
-/* stock_style.qss */
+/* stock_style.qss - Thème Bleu Marine */
 
 /* Police globale */
 QWidget {
@@ -49,8 +49,8 @@ QTabBar::tab {
 
 QTabBar::tab:selected {
     background-color: white;
-    color: #00674F;
-    border-bottom: 2px solid #00674F;
+    color: #2F4255;
+    border-bottom: 2px solid #2F4255;
 }
 
 QTabBar::tab:hover {
@@ -71,16 +71,16 @@ QTableWidget::item {
 
 QTableWidget::item:selected {
     background-color: #dbeafe;
-    color: #1e40af;
+    color: #061433;
 }
 
 QHeaderView::section {
-    background-color: #00674F;
+    background-color: #2F4255;
     color: white;
     padding: 10px;
     border: none;
     font-weight: bold;
-    border-right: 1px solid #008060;
+    border-right: 1px solid #1B3A7A;
 }
 
 QHeaderView::section:last {
@@ -106,12 +106,12 @@ QPushButton {
 }
 
 #editButton {
-    background-color: #00674F;
+    background-color: #2F4255;
     color: white;
 }
 
 #editButton:hover {
-    background-color: #008060;
+    background-color: #2F4255;
 }
 
 #deleteButton {
@@ -206,7 +206,7 @@ QPushButton {
 #detailsTitle {
     font-size: 16px;
     font-weight: bold;
-    color: #3b82f6;
+    color: #2F4255;
     margin-bottom: 10px;
     padding-bottom: 5px;
     border-bottom: 2px solid #dbeafe;
@@ -223,7 +223,7 @@ QPushButton {
 #reportLabel {
     padding: 8px;
     font-size: 14px;
-    border-left: 3px solid #3b82f6;
+    border-left: 3px solid #2F4255;
     margin: 2px 0;
     background-color: #f8fafc;
 }
@@ -237,7 +237,7 @@ QPushButton {
 }
 
 #searchInput:focus {
-    border-color: #3b82f6;
+    border-color: #2F4255;
     outline: none;
 }
 
@@ -259,7 +259,7 @@ QDoubleSpinBox QLineEdit {
 
 
 QLineEdit:focus, QTextEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus {
-    border-color: #3b82f6;
+    border-color: #2F4255;
 }
 
 QComboBox::drop-down {
@@ -365,9 +365,9 @@ QCheckBox::indicator:unchecked {
 }
 
 QCheckBox::indicator:checked {
-    border: 2px solid #00674F;
+    border: 2px solid #2F4255;
     border-radius: 3px;
-    background-color: #00674F;
+    background-color: #2F4255;
 }
 
 QCheckBox::indicator:checked {
@@ -410,7 +410,7 @@ StockView[darkMode="true"] {
 }
 
 StockView[darkMode="true"] #headerFrame {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #00674F, stop:1 #004F3C);
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #2F4255, stop:1 #2F4255);
 }
 
 StockView[darkMode="true"] QTableWidget {
@@ -420,12 +420,12 @@ StockView[darkMode="true"] QTableWidget {
 }
 
 StockView[darkMode="true"] QTableWidget::item:selected {
-    background-color: #00674F;
+    background-color: #2F4255;
     color: white;
 }
 
 StockView[darkMode="true"] QHeaderView::section {
-    background-color: #00674F;
+    background-color: #2F4255;
     color: white;
 }
 
@@ -486,7 +486,7 @@ QProgressBar {
 }
 
 QProgressBar::chunk {
-    background-color: #00674F;
+    background-color: #2F4255;
     border-radius: 3px;
 }
 

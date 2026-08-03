@@ -32,7 +32,7 @@ class LoadingWidget(QWidget):
         pen = QPen()
         pen.setWidth(3)
         pen.setCapStyle(Qt.RoundCap)
-        pen.setColor(QColor("#00674F"))
+        pen.setColor(QColor("#2F4255"))
         painter.setPen(pen)
         
         rect = self.rect().adjusted(3, 3, -3, -3)
@@ -192,7 +192,6 @@ class LeftPanel(QWidget):
         features = [
             "✓ Gestion des ventes",
             "✓ Contrôle de stock",
-            "✓ Facturation proforma",
             "✓ Rapports & analyses",
             "✓ Sécurité renforcée"
         ]

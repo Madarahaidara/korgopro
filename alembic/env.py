@@ -17,7 +17,7 @@ Base = declarative_base()
 
 # Importer les modèles APRÈS avoir créé la Base
 # Cela évite les imports circulaires
-from core.models.sale_models import Sale, SaleItem, Payment, SaleReturn, SaleReturnItem, ProformaInvoice, ProformaInvoiceItem
+from core.models.sale_models import Sale, SaleItem, Payment, SaleReturn, SaleReturnItem
 from core.models.stock_models import Product, Supplier, InventoryMovement, ExpenseCategory, Expense, PurchaseOrder, PurchaseOrderItem, StockAlert
 from core.models.customer import Customer
 from core.models.user import User

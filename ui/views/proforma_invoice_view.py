@@ -1,33 +1,27 @@
 # ui/views/proforma_invoice_view.py
 """
-Version complète de la gestion des factures proforma
-Séparation claire entre la saisie des produits et les informations générales
-Ajout des produits par double-clic uniquement
+Vue principale pour la gestion des factures Pro Forma et Factures Définitives
+Workflow: Brouillon → Pro Forma → Validation → Facture Définitive → Paiement
 """
 
+from enum import Enum
 from PySide6.QtCore import Qt, Signal, QTimer, QDateTime, QDate
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QLineEdit, QPushButton, QTableWidget,
-    QTableWidgetItem, QComboBox,
-    QFrame, QGroupBox, QMessageBox,
-    QTextEdit, QHeaderView, QTabWidget,
-    QDialog, QDialogButtonBox, QDateEdit, QAbstractItemView,
-    QScrollArea, QSplitter, QFileDialog, QProgressDialog, QMenu,
-    QFormLayout, QSizePolicy, QInputDialog
+    QTableWidgetItem, QComboBox, QFrame, QGroupBox, QMessageBox,
+    QTextEdit, QHeaderView, QTabWidget, QDialog, QDialogButtonBox,
+    QDateEdit, QAbstractItemView, QScrollArea, QSplitter, QMenu,
+    QFormLayout, QSizePolicy, QInputDialog, QApplication
 )
-from PySide6.QtGui import QFont, QColor, QBrush, QAction, QTextDocument, QIcon, QPixmap, QShortcut, QKeySequence, QPageSize
+from PySide6.QtGui import QFont, QColor, QBrush, QAction, QTextDocument, QIcon, QPixmap, QShortcut, QKeySequence
 from PySide6.QtPrintSupport import QPrinter, QPrintPreviewDialog
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any, Tuple
-from dataclasses import dataclass
-from enum import Enum
 import logging
-import pandas as pd
-from pathlib import Path
 
 from core.database import SessionLocal
-from core.models.sale_models import ProformaInvoice, ProformaInvoiceItem
+from core.models.sale_models import ProformaInvoice, ProformaInvoiceItem, Sale, SaleItem
 from core.models.stock_models import Product
 from core.models.customer import Customer
 from core.proforma_invoice_manager import ProformaInvoiceManager
@@ -61,12 +55,28 @@ class ProformaConfig:
 
 class InvoiceStatus(Enum):
     """Statuts des proformas"""
-    DRAFT = ("Brouillon", "#fef3c7", "#92400e")
-    SENT = ("Envoyé", "#dbeafe", "#1e40af")
-    ACCEPTED = ("Accepté", "#d1fae5", "#065f46")
-    REJECTED = ("Rejeté", "#fee2e2", "#991b1b")
-    EXPIRED = ("Expiré", "#f3f4f6", "#4b5563")
-    CONVERTED = ("Converti", "#e0e7ff", "#3730a3")
+    BROUILLON = ("Brouillon", "#fef3c7", "#92400e")
+    EN_ATTENTE = ("En attente", "#fef3c7", "#92400e")
+    ENVOYEE = ("Envoyé", "#dbeafe", "#1e40af")
+    ACCEPTEE = ("Accepté", "#d1fae5", "#065f46")
+    REFUSEE = ("Refusé", "#fee2e2", "#991b1b")
+    EXPIREE = ("Expiré", "#f3f4f6", "#4b5563")
+    CONVERTIE = ("Converti", "#e0e7ff", "#3730a3")
+    
+    def __init__(self, label, bg_color, fg_color):
+        self.label = label
+        self.bg_color = bg_color
+        self.fg_color = fg_color
+
+
+class FactureStatus(Enum):
+    """Statuts des factures définitives"""
+    BROUILLON = ("Brouillon", "#fef3c7", "#92400e")
+    EMISE = ("Émise", "#dbeafe", "#1e40af")
+    PARTIELLEMENT_PAYEE = ("Partiellement payée", "#fef3c7", "#92400e")
+    PAYEE = ("Payée", "#d1fae5", "#065f46")
+    EN_RETARD = ("En retard", "#fee2e2", "#991b1b")
+    ANNULEE = ("Annulée", "#f3f4f6", "#4b5563")
     
     def __init__(self, label, bg_color, fg_color):
         self.label = label
@@ -122,12 +132,20 @@ class ProformaService:
     def get_proforma(self, proforma_id: int) -> Optional[ProformaInvoice]:
         return self.manager.get_proforma(proforma_id)
     
-    def convert_to_sale(self, proforma_id: int, user_id: int) -> Tuple[bool, Optional[Any], str]:
+    def get_proforma_by_number(self, number: str) -> Optional[ProformaInvoice]:
+        try:
+            return self.db_session.query(ProformaInvoice).filter(
+                ProformaInvoice.proforma_number == number
+            ).first()
+        except Exception as e:
+            logger.error(f"Erreur recherche proforma par numéro: {e}")
+            return None
+    
+    def convert_to_sale(self, proforma_id: int, user_id: int) -> Tuple[bool, Optional[Sale], str]:
         """Convertit une proforma en vente"""
         try:
-            from core.models.sale_models import Sale
             sale = self.manager.convert_to_sale(proforma_id, user_id)
-            return True, sale, f"Proforma convertie en vente {sale.sale_number}"
+            return True, sale, f"Proforma convertie en facture {sale.sale_number}"
         except Exception as e:
             logger.error(f"Erreur conversion proforma: {e}")
             return False, None, str(e)
@@ -162,7 +180,7 @@ class ProformaService:
         count = self.db_session.query(ProformaInvoice).filter(
             ProformaInvoice.created_date >= today.date()
         ).count()
-        return f"PROFORMA/{today.year}/{count + 1:04d}"
+        return f"PF-{today.year}-{count + 1:06d}"
 
 
 class CustomerService:
@@ -413,19 +431,22 @@ class ProformaPreviewWidget(QWidget):
     def setup_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(5)
         
+        # Barre d'outils compacte
         toolbar = QHBoxLayout()
         self.zoom_combo = QComboBox()
-        for zoom in ["50%", "75%", "100%", "125%", "150%", "200%"]:
+        for zoom in ["50%", "60%", "70%", "80%", "90%", "100%", "125%", "150%"]:
             self.zoom_combo.addItem(zoom)
-        self.zoom_combo.setCurrentText("100%")
+        self.zoom_combo.setCurrentText("70%")  # Zoom par défaut réduit
         self.zoom_combo.currentTextChanged.connect(self.change_zoom)
         
         self.print_btn = QPushButton("🖨️ Imprimer")
         self.print_btn.clicked.connect(self.print_preview)
+        self.print_btn.setMaximumHeight(30)
         
         self.page_size_label = QLabel("📄 Format: A4")
-        self.page_size_label.setStyleSheet("color: #6b7280; font-size: 10px;")
+        self.page_size_label.setStyleSheet("color: #6b7280; font-size: 9px;")
         
         toolbar.addWidget(QLabel("Zoom:"))
         toolbar.addWidget(self.zoom_combo)
@@ -436,24 +457,25 @@ class ProformaPreviewWidget(QWidget):
         
         # Zone d'aperçu avec fond gris pour simuler le papier
         preview_container = QWidget()
-        preview_container.setStyleSheet("background-color: #e5e7eb; padding: 20px;")
+        preview_container.setStyleSheet("background-color: #e5e7eb; padding: 10px;")
         preview_layout = QVBoxLayout(preview_container)
         preview_layout.setAlignment(Qt.AlignCenter)
+        preview_layout.setContentsMargins(5, 5, 5, 5)
         
-        # Widget qui simule la page A4
+        # Widget qui simule la page A4 - taille réduite pour l'écran
         self.preview = QTextEdit()
         self.preview.setReadOnly(True)
         self.preview.setStyleSheet("""
             QTextEdit {
                 background-color: white;
                 border: 1px solid #9ca3af;
-                border-radius: 4px;
-                padding: 20px;
+                border-radius: 3px;
+                padding: 10px;
             }
         """)
-        # Taille A4 en pixels (à 96 DPI) : 794 x 1123
-        self.preview.setMinimumSize(794, 1123)
-        self.preview.setMaximumSize(794, 1123)
+        # Taille réduite (environ 55% de A4)
+        self.preview.setMinimumSize(500, 700)
+        self.preview.setMaximumSize(500, 700)
         
         preview_layout.addWidget(self.preview)
         
@@ -512,7 +534,7 @@ class ProformaPreviewWidget(QWidget):
         return " ".join(result)
     
     def generate_html(self, proforma: ProformaInvoice) -> str:
-        """Génère une facture proforma format A4 avec des polices adaptées à l'impression"""
+        """Génère une facture proforma format A4 avec filigrane et mentions comptables"""
         company_info = self.settings_manager.get_company_info_for_invoice()
 
         logo_path = company_info.get("company_logo", "")
@@ -656,6 +678,28 @@ class ProformaPreviewWidget(QWidget):
         background-color: #f9fafb;
         border-left: 3px solid #1a5490;
     }}
+    .watermark {{
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%) rotate(-45deg);
+        font-size: 72pt;
+        font-weight: bold;
+        color: rgba(239, 68, 68, 0.15);
+        border: 8px solid rgba(239, 68, 68, 0.3);
+        padding: 20px 60px;
+        z-index: 1000;
+        pointer-events: none;
+    }}
+    .no-accounting {{
+        background-color: #fef3c7;
+        border: 2px solid #f59e0b;
+        padding: 10px;
+        text-align: center;
+        font-weight: bold;
+        color: #92400e;
+        margin: 15px 0;
+    }}
     .customer-info {{
         margin: 8px 0;
         font-size: 10pt;
@@ -667,6 +711,9 @@ class ProformaPreviewWidget(QWidget):
 </style>
 </head>
 <body>
+
+<!-- Filigrane PRO FORMA -->
+<div class="watermark">PRO FORMA</div>
 
 <!-- En-tête -->
 <table class="header-table">
@@ -689,6 +736,11 @@ class ProformaPreviewWidget(QWidget):
     </td>
 </tr>
 </table>
+
+<!-- Mention document sans valeur comptable -->
+<div class="no-accounting">
+    ⚠️ DOCUMENT SANS VALEUR COMPTABLE - Ce document ne peut être utilisé pour des déclarations fiscales
+</div>
 
 <!-- Informations client -->
 <div class="info-block">
@@ -771,22 +823,30 @@ class ProformaPreviewWidget(QWidget):
     def change_zoom(self, value: str):
         """Change le zoom de l'aperçu"""
         zoom = int(value.replace("%", ""))
-        # Ajuster la taille de la page en fonction du zoom
-        base_width = 794
-        base_height = 1123
+        # Taille de base réduite
+        base_width = 500
+        base_height = 700
         new_width = int(base_width * zoom / 100)
         new_height = int(base_height * zoom / 100)
+        
+        # Limiter la taille maximale
+        max_width = 700
+        max_height = 980
+        new_width = min(new_width, max_width)
+        new_height = min(new_height, max_height)
+        
         self.preview.setMinimumSize(new_width, new_height)
         self.preview.setMaximumSize(new_width, new_height)
+        
         # Ajuster la taille de police pour le zoom
         font_size = int(10 * zoom / 100)
         self.preview.setStyleSheet(f"""
             QTextEdit {{
                 background-color: white;
                 border: 1px solid #9ca3af;
-                border-radius: 4px;
-                padding: 20px;
-                font-size: {font_size}pt;
+                border-radius: 3px;
+                padding: 10px;
+                font-size: {max(7, font_size)}pt;
             }}
         """)
         # Recharger le contenu pour appliquer le zoom
@@ -799,10 +859,9 @@ class ProformaPreviewWidget(QWidget):
             return
         
         printer = QPrinter(QPrinter.HighResolution)
-        # Utiliser QPageSize pour définir le format A4
+        from PySide6.QtGui import QPageSize
         page_size = QPageSize(QPageSize.A4)
         printer.setPageSize(page_size)
-        # Ne pas définir de marges personnalisées, utiliser les marges par défaut
         printer.setFullPage(False)
         
         preview = QPrintPreviewDialog(printer, self)
@@ -816,7 +875,7 @@ class ProformaPreviewWidget(QWidget):
         html = self.generate_html(self.current_proforma)
         document.setHtml(html)
         
-        # Définir la police par défaut pour l'impression
+        from PySide6.QtGui import QFont
         font = QFont("Times New Roman", 10)
         document.setDefaultFont(font)
         
@@ -841,13 +900,14 @@ class ProductsWidget(QWidget):
     
     def setup_ui(self):
         layout = QVBoxLayout(self)
-        layout.setSpacing(10)
+        layout.setSpacing(8)
+        layout.setContentsMargins(5, 5, 5, 5)
         
         # Barre de recherche
         search_layout = QHBoxLayout()
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("🔍 Rechercher un produit par nom ou code...")
-        self.search_input.setMinimumHeight(35)
+        self.search_input.setMinimumHeight(30)
         self.search_input.textChanged.connect(self.filter_products)
         search_layout.addWidget(self.search_input, 1)
         
@@ -857,28 +917,26 @@ class ProductsWidget(QWidget):
         
         # Bouton rafraîchir
         self.refresh_btn = QPushButton("🔄")
-        self.refresh_btn.setFixedSize(35, 35)
+        self.refresh_btn.setFixedSize(30, 30)
         self.refresh_btn.setToolTip("Rafraîchir la liste")
         self.refresh_btn.clicked.connect(self.refresh)
         search_layout.addWidget(self.refresh_btn)
         
         layout.addLayout(search_layout)
         
-        # Liste des produits (4 colonnes, plus de colonne Action)
+        # Liste des produits
         self.products_list = QTableWidget()
         self.products_list.setColumnCount(4)
         self.products_list.setHorizontalHeaderLabels(["Code", "Nom", "Prix", "Stock"])
-        self.products_list.setColumnWidth(0, 100)
-        self.products_list.setColumnWidth(1, 350)
-        self.products_list.setColumnWidth(2, 100)
-        self.products_list.setColumnWidth(3, 80)
+        self.products_list.setColumnWidth(0, 80)
+        self.products_list.setColumnWidth(1, 280)
+        self.products_list.setColumnWidth(2, 90)
+        self.products_list.setColumnWidth(3, 70)
         self.products_list.setSelectionBehavior(QTableWidget.SelectRows)
         self.products_list.setAlternatingRowColors(True)
         
         # Connecter le double-clic pour ajouter
         self.products_list.doubleClicked.connect(self.add_selected_product)
-        
-        # Tooltip pour indiquer le double-clic
         self.products_list.setToolTip("Double-cliquer sur un produit pour l'ajouter au panier")
         
         layout.addWidget(self.products_list)
@@ -902,10 +960,10 @@ class ProductsWidget(QWidget):
         # Info stock faible et indication double-clic
         info_layout = QHBoxLayout()
         self.stock_info = QLabel("")
-        self.stock_info.setStyleSheet("color: #f59e0b; font-size: 11px;")
+        self.stock_info.setStyleSheet("color: #f59e0b; font-size: 10px;")
         
-        self.double_click_info = QLabel("💡 Double-cliquez sur un produit pour l'ajouter")
-        self.double_click_info.setStyleSheet("color: #6b7280; font-size: 11px; font-style: italic;")
+        self.double_click_info = QLabel("💡 Double-cliquez pour ajouter")
+        self.double_click_info.setStyleSheet("color: #6b7280; font-size: 10px; font-style: italic;")
         
         info_layout.addWidget(self.stock_info)
         info_layout.addStretch()
@@ -960,7 +1018,6 @@ class ProductsWidget(QWidget):
             if product.quantity <= 0:
                 stock_item.setForeground(QColor("#ef4444"))
                 stock_item.setToolTip("Rupture de stock - Impossible d'ajouter")
-                # Désactiver visuellement les produits en rupture
                 for col in range(4):
                     item = self.products_list.item(row, col)
                     if item:
@@ -986,14 +1043,14 @@ class ProductsWidget(QWidget):
         out_stock_count = len([p for p in self.all_products if p.quantity <= 0])
         
         if out_stock_count > 0:
-            self.stock_info.setText(f"⚠️ {out_stock_count} produit(s) en rupture, {low_stock_count} en stock bas")
-            self.stock_info.setStyleSheet("color: #ef4444; font-size: 11px;")
+            self.stock_info.setText(f"⚠️ {out_stock_count} ruptures, {low_stock_count} bas")
+            self.stock_info.setStyleSheet("color: #ef4444; font-size: 10px;")
         elif low_stock_count > 0:
             self.stock_info.setText(f"⚠️ {low_stock_count} produit(s) en stock bas")
-            self.stock_info.setStyleSheet("color: #f59e0b; font-size: 11px;")
+            self.stock_info.setStyleSheet("color: #f59e0b; font-size: 10px;")
         else:
             self.stock_info.setText("✅ Stock OK")
-            self.stock_info.setStyleSheet("color: #10b981; font-size: 11px;")
+            self.stock_info.setStyleSheet("color: #10b981; font-size: 10px;")
     
     def add_product(self, product: Product):
         """Ajoute un produit avec demande de quantité"""
@@ -1020,14 +1077,14 @@ class ProductsWidget(QWidget):
                 "discount_percent": 0
             }
             self.product_added.emit(item_data)
-            self.show_temp_message(f"✓ {product.name} x{quantity} ajouté au panier")
+            self.show_temp_message(f"✓ {product.name} x{quantity} ajouté")
     
     def show_temp_message(self, message: str):
         """Affiche un message temporaire"""
         original_text = self.stock_info.text()
         original_style = self.stock_info.styleSheet()
         self.stock_info.setText(message)
-        self.stock_info.setStyleSheet("color: #10b981; font-size: 11px; font-weight: bold;")
+        self.stock_info.setStyleSheet("color: #10b981; font-size: 10px; font-weight: bold;")
         QTimer.singleShot(2000, lambda: self.restore_stock_info(original_text, original_style))
     
     def restore_stock_info(self, original_text: str, original_style: str):
@@ -1080,14 +1137,15 @@ class CartWidget(QWidget):
     
     def setup_ui(self):
         layout = QVBoxLayout(self)
-        layout.setSpacing(10)
+        layout.setSpacing(8)
+        layout.setContentsMargins(5, 5, 5, 5)
         
         # En-tête
         header_layout = QHBoxLayout()
-        title = QLabel("🛒 Articles de la proforma")
-        title.setStyleSheet("font-size: 14px; font-weight: bold;")
+        title = QLabel("🛒 Panier")
+        title.setStyleSheet("font-size: 13px; font-weight: bold;")
         self.count_label = QLabel("0 article")
-        self.count_label.setStyleSheet("color: #6b7280; background-color: #f3f4f6; padding: 4px 8px; border-radius: 12px;")
+        self.count_label.setStyleSheet("color: #6b7280; background-color: #f3f4f6; padding: 2px 8px; border-radius: 10px; font-size: 10px;")
         
         header_layout.addWidget(title)
         header_layout.addStretch()
@@ -1098,23 +1156,23 @@ class CartWidget(QWidget):
         self.table = QTableWidget()
         self.table.setColumnCount(6)
         self.table.setHorizontalHeaderLabels(["Produit", "Désignation", "Qté", "Prix U.", "Remise %", "Total"])
-        self.table.setColumnWidth(0, 120)
-        self.table.setColumnWidth(1, 280)
-        self.table.setColumnWidth(2, 80)
-        self.table.setColumnWidth(3, 100)
-        self.table.setColumnWidth(4, 80)
-        self.table.setColumnWidth(5, 120)
+        self.table.setColumnWidth(0, 100)
+        self.table.setColumnWidth(1, 200)
+        self.table.setColumnWidth(2, 60)
+        self.table.setColumnWidth(3, 80)
+        self.table.setColumnWidth(4, 60)
+        self.table.setColumnWidth(5, 100)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.setAlternatingRowColors(True)
         layout.addWidget(self.table)
         
         # Boutons gestion
         btn_layout = QHBoxLayout()
-        self.modify_btn = QPushButton("✏️ Modifier quantité")
+        self.modify_btn = QPushButton("✏️ Quantité")
         self.modify_btn.clicked.connect(self.modify_quantity)
         self.remove_btn = QPushButton("🗑️ Supprimer")
         self.remove_btn.clicked.connect(self.remove_selected)
-        self.clear_btn = QPushButton("🧹 Vider tout")
+        self.clear_btn = QPushButton("🧹 Vider")
         self.clear_btn.clicked.connect(self.clear_all)
         
         btn_layout.addWidget(self.modify_btn)
@@ -1124,8 +1182,8 @@ class CartWidget(QWidget):
         layout.addLayout(btn_layout)
         
         # Indication
-        info_label = QLabel("💡 Sélectionnez une ligne puis cliquez sur Modifier pour changer la quantité")
-        info_label.setStyleSheet("color: #6b7280; font-size: 10px; font-style: italic;")
+        info_label = QLabel("💡 Sélectionnez une ligne puis Modifier pour changer la quantité")
+        info_label.setStyleSheet("color: #6b7280; font-size: 9px; font-style: italic;")
         layout.addWidget(info_label)
     
     def update_display(self):
@@ -1232,16 +1290,18 @@ class ProformaInfoWidget(QWidget):
     
     def setup_ui(self):
         layout = QVBoxLayout(self)
-        layout.setSpacing(15)
+        layout.setSpacing(10)
+        layout.setContentsMargins(5, 5, 5, 5)
         
         # Section Client
         client_group = QGroupBox("Informations client")
         client_layout = QVBoxLayout(client_group)
+        client_layout.setSpacing(8)
         
         # Sélection client
         select_layout = QHBoxLayout()
         self.customer_combo = QComboBox()
-        self.customer_combo.setMinimumHeight(35)
+        self.customer_combo.setMinimumHeight(30)
         self.customer_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         
         self.select_customer_btn = QPushButton("Sélectionner/Créer")
@@ -1254,7 +1314,7 @@ class ProformaInfoWidget(QWidget):
         
         # Info client
         self.client_info = QLabel("Aucun client sélectionné")
-        self.client_info.setStyleSheet("color: #6b7280; padding: 5px; background-color: #f9fafb; border-radius: 4px;")
+        self.client_info.setStyleSheet("color: #6b7280; padding: 4px; background-color: #f9fafb; border-radius: 4px; font-size: 10px;")
         self.client_info.setWordWrap(True)
         client_layout.addWidget(self.client_info)
         
@@ -1263,6 +1323,7 @@ class ProformaInfoWidget(QWidget):
         # Section Informations facture
         info_group = QGroupBox("Informations facture")
         info_layout = QGridLayout(info_group)
+        info_layout.setSpacing(8)
         
         # Numéro
         info_layout.addWidget(QLabel("N° Proforma:"), 0, 0)
@@ -1275,6 +1336,7 @@ class ProformaInfoWidget(QWidget):
         self.date_edit = QDateEdit()
         self.date_edit.setDate(QDate.currentDate())
         self.date_edit.setCalendarPopup(True)
+        self.date_edit.setMaximumWidth(120)
         info_layout.addWidget(self.date_edit, 0, 3)
         
         # Validité
@@ -1282,6 +1344,7 @@ class ProformaInfoWidget(QWidget):
         self.valid_until = QDateEdit()
         self.valid_until.setDate(QDate.currentDate().addDays(30))
         self.valid_until.setCalendarPopup(True)
+        self.valid_until.setMaximumWidth(120)
         info_layout.addWidget(self.valid_until, 1, 3)
         
         # Objet
@@ -1295,25 +1358,26 @@ class ProformaInfoWidget(QWidget):
         # Section Totaux
         totals_group = QGroupBox("Totaux")
         totals_layout = QGridLayout(totals_group)
+        totals_layout.setSpacing(8)
         
         # TVA
         totals_layout.addWidget(QLabel("TVA (%):"), 0, 0)
         self.tax_input = QLineEdit("18")
-        self.tax_input.setMaximumWidth(80)
+        self.tax_input.setMaximumWidth(70)
         self.tax_input.textChanged.connect(self.info_changed.emit)
         totals_layout.addWidget(self.tax_input, 0, 1)
         
         # Remise
         totals_layout.addWidget(QLabel("Remise (%):"), 0, 2)
         self.discount_input = QLineEdit("0")
-        self.discount_input.setMaximumWidth(80)
+        self.discount_input.setMaximumWidth(70)
         self.discount_input.textChanged.connect(self.info_changed.emit)
         totals_layout.addWidget(self.discount_input, 0, 3)
         
         # Total
         totals_layout.addWidget(QLabel("Total TTC:"), 1, 2)
         self.total_label = QLabel("0 FCFA")
-        self.total_label.setStyleSheet("font-weight: bold; font-size: 18px; color: #1a5490;")
+        self.total_label.setStyleSheet("font-weight: bold; font-size: 16px; color: #1a5490;")
         self.total_label.setAlignment(Qt.AlignRight)
         totals_layout.addWidget(self.total_label, 1, 3)
         
@@ -1323,7 +1387,7 @@ class ProformaInfoWidget(QWidget):
         notes_group = QGroupBox("Notes")
         notes_layout = QVBoxLayout(notes_group)
         self.notes = QTextEdit()
-        self.notes.setMaximumHeight(100)
+        self.notes.setMaximumHeight(80)
         notes_layout.addWidget(self.notes)
         layout.addWidget(notes_group)
     
@@ -1362,7 +1426,7 @@ class ProformaInfoWidget(QWidget):
         if customer.email:
             info_text += f" | Email: {customer.email}"
         self.client_info.setText(info_text)
-        self.client_info.setStyleSheet("color: #059669; padding: 5px; background-color: #ecfdf5; border-radius: 4px;")
+        self.client_info.setStyleSheet("color: #059669; padding: 4px; background-color: #ecfdf5; border-radius: 4px; font-size: 10px;")
     
     def set_proforma_number(self, number: str):
         self.number_label.setText(number)
@@ -1421,19 +1485,40 @@ class ProformaDialog(QDialog):
     
     def setup_ui(self):
         self.setWindowTitle("Facture Proforma")
-        self.resize(1400, 900)
         
+        # Récupérer la taille de l'écran
+        screen = QApplication.primaryScreen()
+        if screen:
+            screen_geometry = screen.availableGeometry()
+            max_height = screen_geometry.height() - 80
+            max_width = screen_geometry.width() - 80
+        else:
+            max_height = 700
+            max_width = 1200
+        
+        # Définir une taille adaptée (70% de l'écran)
+        width = min(1300, max_width)
+        height = min(750, max_height)
+        self.resize(width, height)
+        
+        # Permettre le redimensionnement avec des limites minimales
+        self.setMinimumSize(900, 550)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        
+        # Layout principal
         main_layout = QVBoxLayout(self)
-        main_layout.setSpacing(10)
+        main_layout.setSpacing(8)
+        main_layout.setContentsMargins(8, 8, 8, 8)
         
         # Barre d'outils
         toolbar = QHBoxLayout()
         self.save_btn = QPushButton("💾 Enregistrer")
-        self.save_btn.setMinimumHeight(35)
-        self.save_btn.setStyleSheet("background-color: #1a5490; color: white; font-weight: bold; border-radius: 6px;")
+        self.save_btn.setMinimumHeight(32)
+        self.save_btn.setStyleSheet("background-color: #1a5490; color: white; font-weight: bold; border-radius: 6px; padding: 6px 16px;")
         self.print_btn = QPushButton("🖨️ Imprimer")
-        self.print_btn.setMinimumHeight(35)
+        self.print_btn.setMinimumHeight(32)
         self.print_btn.setEnabled(False)
+        self.print_btn.setStyleSheet("padding: 6px 16px;")
         
         toolbar.addWidget(self.save_btn)
         toolbar.addWidget(self.print_btn)
@@ -1442,6 +1527,7 @@ class ProformaDialog(QDialog):
         
         # Onglets principaux
         self.tab_widget = QTabWidget()
+        self.tab_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         
         # Onglet 1: Produits
         self.products_tab = QWidget()
@@ -1464,13 +1550,47 @@ class ProformaDialog(QDialog):
         btn_box.rejected.connect(self.reject)
         main_layout.addWidget(btn_box)
         
+        # Ajuster la taille de l'aperçu en fonction de la taille de la fenêtre
+        QTimer.singleShot(100, self.adjust_preview_size)
+        
         self.apply_styles()
+    
+    def adjust_preview_size(self):
+        """Ajuste la taille de l'aperçu en fonction de la taille de la fenêtre"""
+        # Récupérer la hauteur disponible pour l'aperçu
+        tab_height = self.tab_widget.height()
+        if tab_height > 0:
+            # L'aperçu prend environ 65% de la hauteur des onglets
+            preview_height = int(tab_height * 0.65)
+            preview_width = int(preview_height * 0.707)  # Ratio A4 (1/√2)
+            
+            # Limiter les dimensions
+            max_width = 700
+            max_height = 990
+            min_width = 400
+            min_height = 560
+            
+            preview_width = max(min_width, min(preview_width, max_width))
+            preview_height = max(min_height, min(preview_height, max_height))
+            
+            # Appliquer à l'aperçu si accessible
+            if hasattr(self, 'preview_widget') and self.preview_widget:
+                preview = self.preview_widget.preview
+                if preview:
+                    preview.setMinimumSize(preview_width, preview_height)
+                    preview.setMaximumSize(preview_width, preview_height)
+    
+    def resizeEvent(self, event):
+        """Appelé quand la fenêtre est redimensionnée"""
+        super().resizeEvent(event)
+        # Réajuster la taille de l'aperçu après un délai
+        QTimer.singleShot(50, self.adjust_preview_size)
     
     def setup_products_tab(self):
         """Onglet dédié aux produits"""
         layout = QVBoxLayout(self.products_tab)
-        layout.setSpacing(10)
-        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(8)
+        layout.setContentsMargins(8, 8, 8, 8)
         
         # Splitter pour séparer liste produits et panier
         splitter = QSplitter(Qt.Horizontal)
@@ -1483,8 +1603,8 @@ class ProformaDialog(QDialog):
         self.cart_widget = CartWidget()
         splitter.addWidget(self.cart_widget)
         
-        # Proportions
-        splitter.setSizes([600, 500])
+        # Proportions avec des tailles adaptées
+        splitter.setSizes([550, 450])
         
         layout.addWidget(splitter)
     
@@ -1607,7 +1727,7 @@ class ProformaDialog(QDialog):
                 self.accept()
             else:
                 QMessageBox.critical(self, "Erreur", message)
-                
+            
         except Exception as e:
             logger.error(f"Erreur sauvegarde: {e}")
             QMessageBox.critical(self, "Erreur", str(e))
@@ -1626,8 +1746,8 @@ class ProformaDialog(QDialog):
                 font-weight: bold;
                 border: 1px solid #ddd;
                 border-radius: 5px;
-                margin-top: 10px;
-                padding-top: 10px;
+                margin-top: 8px;
+                padding-top: 8px;
             }
             QGroupBox::title {
                 subcontrol-origin: margin;
@@ -1635,7 +1755,7 @@ class ProformaDialog(QDialog):
                 padding: 0 5px;
             }
             QPushButton {
-                padding: 8px 16px;
+                padding: 6px 14px;
                 border-radius: 4px;
             }
             QPushButton:hover {
@@ -1646,7 +1766,7 @@ class ProformaDialog(QDialog):
                 color: white;
             }
             QLineEdit, QComboBox, QDateEdit, QTextEdit {
-                padding: 6px;
+                padding: 5px;
                 border: 1px solid #ddd;
                 border-radius: 4px;
             }
@@ -1658,7 +1778,7 @@ class ProformaDialog(QDialog):
                 border-radius: 5px;
             }
             QTabBar::tab {
-                padding: 10px 20px;
+                padding: 8px 16px;
                 background-color: #f5f5f5;
                 margin-right: 2px;
             }
@@ -1704,7 +1824,7 @@ class EnhancedProformaInvoiceView(QWidget):
         layout.setSpacing(10)
         
         # Header
-        header = QLabel("Factures Proforma")
+        header = QLabel("Factures Pro Forma")
         header.setStyleSheet("font-size: 18px; font-weight: bold; color: #1a5490;")
         layout.addWidget(header)
         
@@ -1758,12 +1878,12 @@ class EnhancedProformaInvoiceView(QWidget):
         self.table.customContextMenuRequested.connect(self.show_context_menu)
         
         # Définir les largeurs de colonnes
-        self.table.setColumnWidth(0, 100)  # N°
-        self.table.setColumnWidth(1, 150)  # Client
-        self.table.setColumnWidth(2, 100)  # Date
-        self.table.setColumnWidth(3, 100)  # Échéance
-        self.table.setColumnWidth(4, 100)  # Montant
-        self.table.setColumnWidth(5, 100)  # Statut
+        self.table.setColumnWidth(0, 100)
+        self.table.setColumnWidth(1, 150)
+        self.table.setColumnWidth(2, 100)
+        self.table.setColumnWidth(3, 100)
+        self.table.setColumnWidth(4, 100)
+        self.table.setColumnWidth(5, 100)
         
         layout.addWidget(self.table)
         
@@ -1808,152 +1928,51 @@ class EnhancedProformaInvoiceView(QWidget):
         self.load_proformas()
     
     def load_proformas(self):
-        try:
-            proformas = self.service.list_proformas(self.current_filters)
-            
-            # Dashboard
-            total_count = len(proformas)
-            draft_count = len([p for p in proformas if p.status == "DRAFT"])
-            accepted_count = len([p for p in proformas if p.status == "ACCEPTED"])
-            total_amount = sum(p.total_amount for p in proformas)
-            
-            self.total_label.setText(f"Total: {total_count}")
-            self.draft_label.setText(f"Brouillons: {draft_count}")
-            self.accepted_label.setText(f"Acceptées: {accepted_count}")
-            self.amount_label.setText(f"Montant: {total_amount:,.0f} FCFA")
-            
-            # Tableau
-            self.table.setRowCount(len(proformas))
-            
-            for row, p in enumerate(proformas):
-                num_item = QTableWidgetItem(p.proforma_number)
-                num_item.setData(Qt.UserRole, p.id)
-                self.table.setItem(row, 0, num_item)
-                
-                customer_name = p.customer.full_name if p.customer else "N/A"
-                self.table.setItem(row, 1, QTableWidgetItem(customer_name))
-                self.table.setItem(row, 2, QTableWidgetItem(p.created_date.strftime("%d/%m/%Y")))
-                
-                if p.valid_until:
-                    self.table.setItem(row, 3, QTableWidgetItem(p.valid_until.strftime("%d/%m/%Y")))
-                else:
-                    self.table.setItem(row, 3, QTableWidgetItem("N/A"))
-                
-                amount_item = QTableWidgetItem(f"{p.total_amount:,.0f} FCFA")
-                amount_item.setTextAlignment(Qt.AlignRight)
-                self.table.setItem(row, 4, amount_item)
-                
-                status_info = InvoiceStatus[p.status] if p.status in InvoiceStatus.__members__ else None
-                if status_info:
-                    status_item = QTableWidgetItem(status_info.label)
-                    status_item.setBackground(QBrush(QColor(status_info.bg_color)))
-                    status_item.setForeground(QBrush(QColor(status_info.fg_color)))
-                else:
-                    status_item = QTableWidgetItem(p.status)
-                status_item.setTextAlignment(Qt.AlignCenter)
-                self.table.setItem(row, 5, status_item)
-            
-            # Ajuster la hauteur des lignes pour les boutons
-            self.table.resizeRowsToContents()
-            self.table.resizeColumnsToContents()
-            self.status_label.setText(f"{len(proformas)} proforma(s)")
-            
-        except Exception as e:
-            logger.error(f"Erreur chargement: {e}")
-            self.status_label.setText(f"Erreur: {e}")
-    
-    def show_context_menu(self, position):
-        """Affiche le menu contextuel pour changer le statut"""
-        item = self.table.itemAt(position)
-        if not item:
-            return
+        proformas = self.service.list_proformas(self.current_filters)
         
-        row = item.row()
-        proforma_id = self.table.item(row, 0).data(Qt.UserRole)
+        # Dashboard
+        total_count = len(proformas)
+        draft_count = len([p for p in proformas if p.status == "BROUILLON"])
+        accepted_count = len([p for p in proformas if p.status == "ACCEPTEE"])
+        total_amount = sum(p.total_amount for p in proformas)
         
-        if not proforma_id:
-            return
+        # Update dashboard
+        self.total_label.setText(f"Total: {total_count}")
+        self.draft_label.setText(f"Brouillons: {draft_count}")
+        self.accepted_label.setText(f"Acceptées: {accepted_count}")
+        self.amount_label.setText(f"Montant: {total_amount:,.0f} FCFA")
         
-        proforma = self.service.get_proforma(proforma_id)
-        if not proforma:
-            return
+        # Update table
+        self.table.setRowCount(len(proformas))
         
-        menu = QMenu(self)
-        
-        # Ajouter les options de statut
-        statuses = {
-            "DRAFT": "📝 Brouillon",
-            "SENT": "📧 Envoyé",
-            "ACCEPTED": "✅ Accepté",
-            "REJECTED": "❌ Rejeté",
-            "EXPIRED": "⏰ Expiré",
-            "CONVERTED": "💰 Converti"
-        }
-        
-        for status_value, label in statuses.items():
-            action = QAction(label, self)
-            # Marquer le statut actuel
-            if proforma.status == status_value:
-                action.setText(f"✓ {label}")
-                action.setEnabled(False)
+        for row, p in enumerate(proformas):
+            # N°
+            num_item = QTableWidgetItem(p.proforma_number)
+            self.table.setItem(row, 0, num_item)
             
-            action.triggered.connect(lambda checked, s=status_value, p_id=proforma_id: self.change_proforma_status(p_id, s))
-            menu.addAction(action)
-        
-        menu.addSeparator()
-        
-        # Ajouter les actions supplémentaires
-        edit_action = QAction("✏️ Modifier", self)
-        edit_action.triggered.connect(lambda: self.edit_proforma_by_id(proforma_id))
-        menu.addAction(edit_action)
-        
-        print_action = QAction("🖨️ Imprimer", self)
-        print_action.triggered.connect(lambda: self.print_proforma(proforma_id))
-        menu.addAction(print_action)
-        
-        if proforma.status not in ["CONVERTED", "EXPIRED", "REJECTED"]:
-            menu.addSeparator()
-            convert_action = QAction("💰 Convertir en vente", self)
-            convert_action.triggered.connect(lambda: self.convert_to_sale(proforma_id))
-            menu.addAction(convert_action)
-        
-        menu.exec(self.table.mapToGlobal(position))
-    
-    def change_proforma_status(self, proforma_id: int, new_status: str):
-        """Change le statut d'une proforma"""
-        try:
-            proforma = self.service.get_proforma(proforma_id)
-            if not proforma:
-                QMessageBox.warning(self, "Erreur", "Proforma non trouvée")
-                return
+            # Client
+            customer_name = p.customer.full_name if p.customer else "N/A"
+            self.table.setItem(row, 1, QTableWidgetItem(customer_name))
             
-            # Empêcher certaines transitions
-            if proforma.status == "CONVERTED":
-                QMessageBox.warning(self, "Erreur", "Une proforma convertie ne peut pas changer de statut")
-                return
+            # Date
+            date_str = p.created_date.strftime("%d/%m/%Y") if p.created_date else ""
+            self.table.setItem(row, 2, QTableWidgetItem(date_str))
             
-            if new_status == "EXPIRED" and proforma.status not in ["DRAFT", "SENT"]:
-                QMessageBox.warning(self, "Erreur", "Seules les proformas en brouillon ou envoyées peuvent être marquées comme expirées")
-                return
+            # Échéance
+            valid_str = p.valid_until.strftime("%d/%m/%Y") if p.valid_until else ""
+            self.table.setItem(row, 3, QTableWidgetItem(valid_str))
             
-            # Confirmer la conversion
-            if new_status == "CONVERTED":
-                self.convert_to_sale(proforma_id)
-                return
+            # Montant
+            amount_item = QTableWidgetItem(f"{p.total_amount:,.0f}")
+            amount_item.setTextAlignment(Qt.AlignRight)
+            self.table.setItem(row, 4, amount_item)
             
-            # Mettre à jour le statut
-            try:
-                updated = self.service.manager.change_proforma_status(proforma_id, new_status)
-                status_label = InvoiceStatus[new_status].label if new_status in InvoiceStatus.__members__ else new_status
-                QMessageBox.information(self, "Succès", 
-                    f"Statut changé à {status_label}")
-                self.load_proformas()
-            except Exception as e:
-                raise e
-            
-        except Exception as e:
-            logger.error(f"Erreur changement statut: {e}")
-            QMessageBox.critical(self, "Erreur", f"Erreur: {str(e)}")
+            # Statut
+            status_item = QTableWidgetItem(p.status)
+            self.table.setItem(row, 5, status_item)
+        
+        self.table.resizeColumnsToContents()
+        self.status_label.setText(f"{len(proformas)} proforma(s)")
     
     def create_new(self):
         dialog = ProformaDialog(user_id=self.current_user_id, parent=self)
@@ -1961,72 +1980,109 @@ class EnhancedProformaInvoiceView(QWidget):
             self.load_proformas()
     
     def edit_proforma(self):
-        selected = self.table.selectedItems()
-        if selected:
-            row = selected[0].row()
-            proforma_id = self.table.item(row, 0).data(Qt.UserRole)
-            self.edit_proforma_by_id(proforma_id)
+        row = self.table.currentRow()
+        if row < 0:
+            return
+        
+        proforma_number = self.table.item(row, 0).text()
+        proforma = self.service.get_proforma_by_number(proforma_number)
+        
+        if proforma:
+            self.edit_proforma_by_id(proforma.id)
     
     def edit_proforma_by_id(self, proforma_id: int):
         dialog = ProformaDialog(user_id=self.current_user_id, proforma_id=proforma_id, parent=self)
         if dialog.exec() == QDialog.Accepted:
             self.load_proformas()
     
-    def print_proforma(self, proforma_id: int):
-        proforma = self.service.get_proforma(proforma_id)
-        if proforma:
-            preview = ProformaPreviewWidget()
-            preview.display_proforma(proforma)
-            preview.print_preview()
+    def show_context_menu(self, position):
+        row = self.table.currentRow()
+        if row < 0:
+            return
+        
+        proforma_number = self.table.item(row, 0).text()
+        proforma = self.service.get_proforma_by_number(proforma_number)
+        
+        if not proforma:
+            return
+        
+        menu = QMenu()
+        
+        # Actions selon le statut
+        if proforma.status == "BROUILLON":
+            edit_action = QAction("✏️ Modifier", self)
+            edit_action.triggered.connect(lambda: self.edit_proforma_by_id(proforma.id))
+            menu.addAction(edit_action)
+            
+            delete_action = QAction("🗑️ Supprimer", self)
+            delete_action.triggered.connect(lambda: self.delete_proforma(proforma.id))
+            menu.addAction(delete_action)
+        
+        if proforma.status in ["BROUILLON", "EN_ATTENTE", "ENVOYEE"]:
+            send_action = QAction("📧 Envoyer", self)
+            send_action.triggered.connect(lambda: self.change_status(proforma.id, "ENVOYEE"))
+            menu.addAction(send_action)
+        
+        if proforma.status in ["ENVOYEE"]:
+            accept_action = QAction("✅ Accepter", self)
+            accept_action.triggered.connect(lambda: self.change_status(proforma.id, "ACCEPTEE"))
+            menu.addAction(accept_action)
+            
+            reject_action = QAction("❌ Refuser", self)
+            reject_action.triggered.connect(lambda: self.change_status(proforma.id, "REFUSEE"))
+            menu.addAction(reject_action)
+        
+        if proforma.status == "ACCEPTEE":
+            convert_action = QAction("💰 Convertir en facture", self)
+            convert_action.triggered.connect(lambda: self.convert_to_sale(proforma.id))
+            menu.addAction(convert_action)
+        
+        print_action = QAction("🖨️ Imprimer", self)
+        print_action.triggered.connect(lambda: self.print_proforma(proforma.id))
+        menu.addAction(print_action)
+        
+        menu.exec(self.table.viewport().mapToGlobal(position))
+    
+    def change_status(self, proforma_id: int, new_status: str):
+        try:
+            self.service.manager.change_proforma_status(proforma_id, new_status)
+            self.load_proformas()
+            QMessageBox.information(self, "Succès", f"Statut changé à {new_status}")
+        except Exception as e:
+            QMessageBox.critical(self, "Erreur", str(e))
+    
+    def delete_proforma(self, proforma_id: int):
+        try:
+            self.service.manager.delete_proforma(proforma_id)
+            self.load_proformas()
+            QMessageBox.information(self, "Succès", "Proforma supprimée")
+        except Exception as e:
+            QMessageBox.critical(self, "Erreur", str(e))
     
     def convert_to_sale(self, proforma_id: int):
-        """Convertit une proforma en vente"""
-        proforma = self.service.get_proforma(proforma_id)
-        if not proforma:
-            QMessageBox.warning(self, "Erreur", "Proforma non trouvée")
-            return
-        
-        # Vérifier si la proforma peut être convertie
-        if proforma.status == "CONVERTED":
-            QMessageBox.information(self, "Information", "Cette proforma a déjà été convertie en vente")
-            return
-        
-        if proforma.status == "EXPIRED":
-            QMessageBox.warning(self, "Erreur", "Cette proforma est expirée et ne peut pas être convertie")
-            return
-        
-        if proforma.status == "REJECTED":
-            QMessageBox.warning(self, "Erreur", "Cette proforma a été rejetée et ne peut pas être convertie")
-            return
-        
-        if not proforma.customer:
-            reply = QMessageBox.question(self, "Confirmation", 
-                "La proforma n'a pas de client associé. Voulez-vous continuer ?",
-                QMessageBox.Yes | QMessageBox.No)
-            if reply == QMessageBox.No:
-                return
-        
-        # Confirmer la conversion
-        reply = QMessageBox.question(self, "Confirmation", 
-            f"Convertir la proforma {proforma.proforma_number} en vente ?\n\n"
-            f"Montant: {proforma.total_amount:,.0f} FCFA\n"
-            f"Client: {proforma.customer.full_name if proforma.customer else 'Aucun'}",
-            QMessageBox.Yes | QMessageBox.No)
-        
-        if reply == QMessageBox.No:
-            return
-        
-        # Effectuer la conversion
-        success, sale, message = self.service.convert_to_sale(proforma_id, self.current_user_id)
-        
-        if success:
-            QMessageBox.information(self, "Succès", 
-                f"Proforma convertie avec succès !\n\n"
-                f"Numéro de vente: {sale.sale_number}\n"
-                f"Montant: {sale.total_amount:,.0f} FCFA")
-            self.load_proformas()
-        else:
-            QMessageBox.critical(self, "Erreur", f"Erreur lors de la conversion:\n{message}")
+        try:
+            reply = QMessageBox.question(
+                self, "Confirmation",
+                "Convertir cette proforma en facture définitive ?\n"
+                "Cette action est irréversible.",
+                QMessageBox.Yes | QMessageBox.No
+            )
+            
+            if reply == QMessageBox.Yes:
+                success, sale, message = self.service.convert_to_sale(proforma_id, self.current_user_id)
+                if success:
+                    QMessageBox.information(self, "Succès", message)
+                    self.load_proformas()
+                else:
+                    QMessageBox.critical(self, "Erreur", message)
+        except Exception as e:
+            QMessageBox.critical(self, "Erreur", str(e))
     
-# Alias de compatibilité
-ProformaInvoiceView = EnhancedProformaInvoiceView
+    def print_proforma(self, proforma_id: int):
+        try:
+            proforma = self.service.get_proforma(proforma_id)
+            if proforma:
+                dialog = ProformaDialog(user_id=self.current_user_id, proforma_id=proforma_id, parent=self)
+                dialog.print_proforma()
+        except Exception as e:
+            QMessageBox.critical(self, "Erreur", str(e))

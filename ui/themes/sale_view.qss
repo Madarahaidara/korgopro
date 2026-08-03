@@ -1,4 +1,4 @@
-/* ===== QSS SAINT - QUE DES PROPRIÉTÉS VALIDES ===== */
+/* ===== QSS VENTES - Thème Bleu Marine ===== */
 
 /* Police globale */
 QWidget {
@@ -7,7 +7,6 @@ QWidget {
 
 /* === RÉINITIALISATION COMPLÈTE === */
 QLineEdit#amount_paid_input {
-    /* Supprimer TOUS les styles hérités */
     border: none;
     background: none;
     margin: 0;
@@ -20,7 +19,6 @@ QLineEdit#amount_paid_input {
 
 /* === STYLE BASIQUE ET GARANTI === */
 QLineEdit#amount_paid_input {
-    /* Style minimal et visible */
     border: 2px solid #000000;
     background-color: #ffffff;
     color: #000000;
@@ -31,9 +29,9 @@ QLineEdit#amount_paid_input {
     border-radius: 0;
 }
 
-/* État focus - très visible */
+/* État focus */
 QLineEdit#amount_paid_input:focus {
-    border: 2px solid #0000ff;
+    border: 2px solid #2F4255;
     background-color: #ffffff;
 }
 
@@ -53,9 +51,8 @@ QLineEdit#amount_paid_input:disabled {
 SaleView QLineEdit#amount_paid_input,
 QWidget QLineEdit#amount_paid_input,
 * QLineEdit#amount_paid_input {
-    /* Ces propriétés seront appliquées quoi qu'il arrive */
-    border: 3px solid #ff0000 !important;
-    background-color: #ffff00 !important;
+    border: 3px solid #2F4255 !important;
+    background-color: #ffffff !important;
     color: #000000 !important;
     padding: 10px !important;
     font-size: 16px !important;
@@ -63,7 +60,6 @@ QWidget QLineEdit#amount_paid_input,
 }
 
 /* === POUR ÊTRE SAIN, ON STYLE RIEEN D'AUTRE === */
-/* (mais au cas où) */
 QPushButton,
 QComboBox,
 QSpinBox,
@@ -71,4 +67,4 @@ QDoubleSpinBox,
 QTextEdit {
     border: 1px solid #ccc;
     background: white;
-} 
+}

@@ -78,8 +78,6 @@ class DatabaseManager:
                 "payments": None,
                 "sale_returns": None,
                 "sale_return_items": None,
-                "proforma_invoices": None,
-                "proforma_invoice_items": None,
                 "inventory_movements": None,
                 "expenses": None,
                 "expense_categories": None,

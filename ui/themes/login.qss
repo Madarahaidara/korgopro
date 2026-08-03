@@ -1,5 +1,5 @@
 /* ============================================================
-   KORGO PRO - THÈME CONNEXION PROFESSIONNEL
+   KORGO PRO - THÈME CONNEXION BLEU MARINE
    Design moderne avec micro-interactions et élégance
    ============================================================ */
 
@@ -19,10 +19,9 @@ LoginView {
     border-radius: 20px;
 }
 
-/* ---- Panneau gauche (branding avec gradient premium) ---- */
+/* ---- Panneau gauche (branding avec gradient bleu marine) ---- */
 #LeftPanel {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-        stop:0 #00674F, stop:0.5 #008060, stop:1 #00A676);
+    background-color: #2F4255;
     border-top-left-radius: 20px;
     border-bottom-left-radius: 20px;
 }
@@ -98,17 +97,17 @@ QLineEdit {
     font-size: 13px;
     font-weight: 400;
     min-height: 20px;
-    selection-background-color: #00674F;
+    selection-background-color: #2F4255;
     selection-color: white;
 }
 
 QLineEdit:focus {
-    border: 2px solid #00674F;
+    border: 2px solid #2F4255;
     background-color: #ffffff;
-    border-bottom: 2px solid #00A676;
+    border-bottom: 2px solid #2F4255;
 }
 
-QLineEdit:hover:!focus {
+QLineEdit:hover {
     border: 2px solid #d1d5db;
     background-color: #ffffff;
 }
@@ -121,8 +120,7 @@ QLineEdit:disabled {
 
 /* ---- Bouton de connexion premium ---- */
 #LoginButton {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-        stop:0 #00674F, stop:1 #008060);
+    background-color: #2F4255;
     color: white;
     border: none;
     border-radius: 10px;
@@ -134,13 +132,11 @@ QLineEdit:disabled {
 }
 
 #LoginButton:hover {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-        stop:0 #008060, stop:1 #00A676);
+    background-color: #2F4255;
 }
 
 #LoginButton:pressed {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-        stop:0 #004F3C, stop:1 #00674F);
+    background-color: #2F4255;
     padding-top: 12px;
     padding-bottom: 8px;
 }
@@ -231,23 +227,23 @@ QCheckBox::indicator {
 }
 
 QCheckBox::indicator:checked {
-    background-color: #00674F;
-    border: 2px solid #00674F;
+    background-color: #2F4255;
+    border: 2px solid #2F4255;
 }
 
 QCheckBox::indicator:hover {
-    border: 2px solid #00674F;
+    border: 2px solid #2F4255;
 }
 
 /* ---- Lien "Mot de passe oublié" ---- */
 #ForgotPasswordLink {
-    color: #00674F;
+    color: #2F4255;
     font-size: 12px;
     font-weight: 500;
 }
 
 #ForgotPasswordLink:hover {
-    color: #00A676;
+    color: #3A6B9F;
 }
 
 /* ---- Séparateur décoratif ---- */
