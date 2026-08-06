@@ -133,6 +133,14 @@ class SettingsManager(QObject):
         info.update({
             'tax_rate': self.get_setting('tax_rate', 20.0),
             'currency': self.get_setting('currency', 'FCFA'),
-            'invoice_footer': self.get_setting('invoice_footer', 'Merci de votre confiance !')
+            'invoice_footer': self.get_setting('invoice_footer', 'Merci de votre confiance !'),
+            'company_name': self.get_setting('company_name'),
+            'company_address': self.get_setting('company_address'),
+            'company_phone': self.get_setting('company_phone'),
+            'company_email': self.get_setting('company_email'),
+            'company_logo': self.get_setting('company_logo'),
+            'company_ifu': self.get_setting('company_ifu', ''),
+            'company_rccm': self.get_setting('company_rccm', ''),
+            'company_po_box': self.get_setting('company_po_box', '')
         })
         return info

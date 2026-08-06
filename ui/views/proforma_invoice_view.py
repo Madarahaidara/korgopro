@@ -579,7 +579,7 @@ class ProformaPreviewWidget(QWidget):
 <style>
     @page {{
         size: A4;
-        margin: 15mm 15mm 15mm 15mm;
+        margin: 10mm 10mm 10mm 10mm;
     }}
     body {{
         font-family: 'Times New Roman', Times, serif;
@@ -691,15 +691,6 @@ class ProformaPreviewWidget(QWidget):
         z-index: 1000;
         pointer-events: none;
     }}
-    .no-accounting {{
-        background-color: #fef3c7;
-        border: 2px solid #f59e0b;
-        padding: 10px;
-        text-align: center;
-        font-weight: bold;
-        color: #92400e;
-        margin: 15px 0;
-    }}
     .customer-info {{
         margin: 8px 0;
         font-size: 10pt;
@@ -718,13 +709,8 @@ class ProformaPreviewWidget(QWidget):
 <!-- En-tête -->
 <table class="header-table">
 <tr>
-    <td width="45%">
+    <td width="50%">
         <div class="company-name">{company_info.get("name", "MON ENTREPRISE")}</div>
-        <div style="font-size:8pt;color:#4b5563;">
-            {company_info.get("address", "Ouagadougou")}<br>
-            Tél: {company_info.get("phone", "+226 XX XX XX XX")}<br>
-            Email: {company_info.get("email", "contact@entreprise.com")}
-        </div>
     </td>
     <td width="55%" style="text-align:right;">
         <div style="font-size:10pt;color:#4b5563;">Ouagadougou, le {date_str}</div>
@@ -737,28 +723,13 @@ class ProformaPreviewWidget(QWidget):
 </tr>
 </table>
 
-<!-- Mention document sans valeur comptable -->
-<div class="no-accounting">
-    ⚠️ DOCUMENT SANS VALEUR COMPTABLE - Ce document ne peut être utilisé pour des déclarations fiscales
-</div>
-
-<!-- Informations client -->
+<!-- Informations client - tout à gauche -->
 <div class="info-block">
-    <table style="width:100%;">
-        <tr>
-            <td style="width:50%;vertical-align:top;">
-                <b><u>DOIT :</u></b><br>
-                <span style="font-size:11pt;font-weight:bold;">{customer_name}</span><br>
-                <span style="font-size:9pt;color:#4b5563;">{customer_address}</span>
-            </td>
-            <td style="width:50%;vertical-align:top;text-align:right;">
-                <span style="font-size:9pt;color:#4b5563;">
-                    {f"Tél: {customer_phone}" if customer_phone else ""}<br>
-                    {f"Email: {customer_email}" if customer_email else ""}
-                </span>
-            </td>
-        </tr>
-    </table>
+    <b><u>DOIT :</u></b><br>
+    <span style="font-size:11pt;font-weight:bold;">{customer_name}</span><br>
+    <span style="font-size:9pt;color:#4b5563;">{customer_address}</span><br>
+    {f'<span style="font-size:9pt;color:#4b5563;">Tél: {customer_phone}</span><br>' if customer_phone else ''}
+    {f'<span style="font-size:9pt;color:#4b5563;">Email: {customer_email}</span>' if customer_email else ''}
 </div>
 
 <!-- Objet -->
@@ -807,7 +778,10 @@ class ProformaPreviewWidget(QWidget):
 
 <!-- Pied de page -->
 <div class="footer">
-    {ProformaConfig.DEFAULTS.get("footer_text", "Merci de votre confiance")}
+    {ProformaConfig.DEFAULTS.get("footer_text", "Merci de votre confiance")}<br>
+    {company_info.get("address", "")}<br>
+    Tél: {company_info.get("phone", "")} | Email: {company_info.get("email", "")}<br>
+    BP: {company_info.get("company_po_box", "")} | IFU: {company_info.get("company_ifu", "")} | RCCM: {company_info.get("company_rccm", "")}
 </div>
 
 </body>

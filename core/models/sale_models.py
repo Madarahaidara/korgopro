@@ -5,6 +5,7 @@ from sqlalchemy.sql import func
 from core.database import Base
 from core.models.customer import Customer
 from core.models.sale_log import SaleLog
+from core.models.stock_models import Product
 
 class Sale(Base):
     """Modèle pour les factures définitives"""
