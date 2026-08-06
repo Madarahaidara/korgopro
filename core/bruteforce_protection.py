@@ -14,10 +14,13 @@ class BruteForceProtection:
         return cls._instance
 
     def __init__(self):
+        if hasattr(self, '_initialized'):
+            return
         self.failed_attempts = defaultdict(list)
         self.lockout_durations = {}
         self.max_attempts = 5
         self.lockout_duration = timedelta(minutes=15)
+        self._initialized = True
 
     def is_locked_out(self, username: str) -> bool:
         now = datetime.utcnow()

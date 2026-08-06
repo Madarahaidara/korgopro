@@ -15,7 +15,7 @@ class SaleService:
 
     def __init__(self, db_session: Session):
         self.db_session = db_session
-        self.log_manager = SaleLogManager()
+        self.log_manager = SaleLogManager(db_session)
 
     def create_sale(self, sale_data: Dict[str, Any], currency: str = "FCFA", user_info: Dict = None) -> Tuple[bool, Optional[Sale], str]:
         try:
@@ -151,8 +151,10 @@ class SaleService:
 
     def generate_sale_number(self) -> str:
         today = datetime.now().date()
-        count = self.db_session.query(Sale).filter(Sale.sale_date >= today).count()
-        return f"S{datetime.now().strftime('%Y%m%d')}{count + 1:04d}"
+        # Récupérer le dernier ID pour garantir l'unicité
+        last_sale = self.db_session.query(Sale).order_by(Sale.id.desc()).first()
+        next_num = (last_sale.id + 1) if last_sale else 1
+        return f"S{datetime.now().strftime('%Y%m%d')}{next_num:04d}"
 
 
 class ProductService:

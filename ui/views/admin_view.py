@@ -1664,6 +1664,89 @@ class AdminView(QWidget):
                 self.db_session.rollback()
                 QMessageBox.critical(self, "Erreur", f"Erreur lors de la réinitialisation: {str(e)}")
     
+    def change_user_password(self, user):
+        """Modifier le mot de passe d'un utilisateur (pour admin)"""
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"Modifier le mot de passe - {user.username}")
+        dialog.setMinimumWidth(450)
+        
+        layout = QVBoxLayout(dialog)
+        
+        # Formulaire
+        form_layout = QFormLayout()
+        form_layout.setLabelAlignment(Qt.AlignRight)
+        
+        new_password_input = QLineEdit()
+        new_password_input.setEchoMode(QLineEdit.Password)
+        new_password_input.setMinimumHeight(36)
+        new_password_input.setPlaceholderText("Nouveau mot de passe")
+        
+        confirm_password_input = QLineEdit()
+        confirm_password_input.setEchoMode(QLineEdit.Password)
+        confirm_password_input.setMinimumHeight(36)
+        confirm_password_input.setPlaceholderText("Confirmer le mot de passe")
+        
+        form_layout.addRow("Nouveau mot de passe:", new_password_input)
+        form_layout.addRow("Confirmer:", confirm_password_input)
+        
+        layout.addLayout(form_layout)
+        
+        # Boutons
+        button_layout = QHBoxLayout()
+        
+        cancel_btn = QPushButton("Annuler")
+        cancel_btn.clicked.connect(dialog.reject)
+        
+        save_btn = QPushButton("Modifier le mot de passe")
+        save_btn.clicked.connect(lambda: self._save_new_password(dialog, user, new_password_input.text(), confirm_password_input.text()))
+        
+        button_layout.addStretch()
+        button_layout.addWidget(cancel_btn)
+        button_layout.addWidget(save_btn)
+        
+        layout.addLayout(button_layout)
+        
+        dialog.exec()
+    
+    def _save_new_password(self, dialog, user, new_password, confirm_password):
+        """Sauvegarde le nouveau mot de passe"""
+        if not new_password or not confirm_password:
+            QMessageBox.warning(dialog, "Erreur", "Veuillez remplir tous les champs.")
+            return
+        
+        if new_password != confirm_password:
+            QMessageBox.warning(dialog, "Erreur", "Les mots de passe ne correspondent pas.")
+            return
+        
+        if len(new_password) < 6:
+            QMessageBox.warning(dialog, "Erreur", "Le mot de passe doit contenir au moins 6 caractères.")
+            return
+        
+        try:
+            password_hash = self.hash_password(new_password)
+            user.password_hash = password_hash
+            user.must_change_password = False
+            self.db_session.commit()
+            
+            self.log_activity(
+                user_id=self.get_current_user_id(),
+                username=self.get_current_username(),
+                action="Modification mot de passe",
+                details=f"Modification du mot de passe de {user.username} par l'administrateur"
+            )
+            
+            QMessageBox.information(
+                dialog,
+                "Succès",
+                f"Mot de passe de {user.username} modifié avec succès!"
+            )
+            
+            dialog.accept()
+            
+        except Exception as e:
+            self.db_session.rollback()
+            QMessageBox.critical(dialog, "Erreur", f"Erreur lors de la modification: {str(e)}")
+    
     def view_user_permissions(self, user):
         """Afficher les permissions d'un utilisateur"""
         from ui.views.admin_view import PermissionsDialog
@@ -2053,8 +2136,12 @@ class UserDialog(QDialog):
         return ''.join(password_list)
     
     def copy_password(self):
-        import pyperclip
-        pyperclip.copy(self.temp_password)
+        try:
+            import pyperclip
+            pyperclip.copy(self.temp_password)
+        except ImportError:
+            from PySide6.QtWidgets import QApplication
+            QApplication.clipboard().setText(self.temp_password)
         QMessageBox.information(self, "Copié", "Mot de passe copié dans le presse-papier!")
 
 

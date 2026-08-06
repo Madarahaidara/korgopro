@@ -562,8 +562,10 @@ class LockScreen(QDialog):
         """)
 
     def reject(self):
-
-        pass
+        # Permettre la fermeture via le bouton X de la fenêtre
+        if self.worker and self.worker.isRunning():
+            return
+        super().reject()
 
     def closeEvent(
         self,

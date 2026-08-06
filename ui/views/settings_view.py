@@ -122,6 +122,7 @@ class SettingsView(QWidget):
         tabs.addTab(self._create_company_tab(), "🏢 Entreprise")
         tabs.addTab(self._create_general_tab(), "⚙️ Général")
         tabs.addTab(self._create_billing_tab(), "📄 Facturation")
+        tabs.addTab(self._create_security_tab(), "🔒 Sécurité")
         
         return tabs
     
@@ -830,6 +831,124 @@ class SettingsView(QWidget):
                 border-top: 5px solid #64748b;
             }
         """
+    
+    def _create_security_tab(self):
+        """Crée l'onglet Sécurité"""
+        tab = QWidget()
+        tab.setStyleSheet("background-color: #f8fafc;")
+        
+        main_layout = QVBoxLayout(tab)
+        main_layout.setContentsMargins(30, 20, 30, 20)
+        main_layout.setSpacing(20)
+        
+        # Carte 1: Modification du mot de passe
+        password_card = self._create_card("Modifier le mot de passe", QWidget())
+        password_content = password_card.findChild(QWidget)
+        password_layout = QVBoxLayout(password_content)
+        password_layout.setContentsMargins(25, 20, 25, 20)
+        password_layout.setSpacing(12)
+        
+        # Mot de passe actuel
+        current_pwd_layout = QHBoxLayout()
+        current_pwd_layout.addWidget(QLabel("🔑 Mot de passe actuel:"))
+        self.current_password_input = QLineEdit()
+        self.current_password_input.setEchoMode(QLineEdit.Password)
+        self.current_password_input.setMinimumHeight(36)
+        self.current_password_input.setStyleSheet(self._get_input_style())
+        current_pwd_layout.addWidget(self.current_password_input)
+        password_layout.addLayout(current_pwd_layout)
+        
+        # Nouveau mot de passe
+        new_pwd_layout = QHBoxLayout()
+        new_pwd_layout.addWidget(QLabel("🆕 Nouveau mot de passe:"))
+        self.new_password_input = QLineEdit()
+        self.new_password_input.setEchoMode(QLineEdit.Password)
+        self.new_password_input.setMinimumHeight(36)
+        self.new_password_input.setStyleSheet(self._get_input_style())
+        new_pwd_layout.addWidget(self.new_password_input)
+        password_layout.addLayout(new_pwd_layout)
+        
+        # Confirmation
+        confirm_pwd_layout = QHBoxLayout()
+        confirm_pwd_layout.addWidget(QLabel("✅ Confirmer le mot de passe:"))
+        self.confirm_password_input = QLineEdit()
+        self.confirm_password_input.setEchoMode(QLineEdit.Password)
+        self.confirm_password_input.setMinimumHeight(36)
+        self.confirm_password_input.setStyleSheet(self._get_input_style())
+        confirm_pwd_layout.addWidget(self.confirm_password_input)
+        password_layout.addLayout(confirm_pwd_layout)
+        
+        # Bouton de modification
+        change_pwd_btn = QPushButton("🔒 Modifier le mot de passe")
+        change_pwd_btn.setMinimumHeight(40)
+        change_pwd_btn.clicked.connect(self.change_password)
+        change_pwd_btn.setStyleSheet(self._get_primary_button_style())
+        password_layout.addWidget(change_pwd_btn)
+        
+        main_layout.addWidget(password_card)
+        
+        # Carte 2: Informations de sécurité
+        info_card = self._create_card("Informations de sécurité", QWidget())
+        info_content = info_card.findChild(QWidget)
+        info_layout = QVBoxLayout(info_content)
+        info_layout.setContentsMargins(25, 20, 25, 20)
+        
+        username_label = QLabel(f"👤 Utilisateur: {self.user_data.get('username', 'N/A')}")
+        role_label = QLabel(f"🔑 Rôle: {self.user_data.get('role', 'N/A')}")
+        
+        info_layout.addWidget(username_label)
+        info_layout.addWidget(role_label)
+        
+        main_layout.addWidget(info_card)
+        main_layout.addStretch()
+        
+        return tab
+    
+    def change_password(self):
+        """Modifie le mot de passe de l'utilisateur"""
+        current = self.current_password_input.text()
+        new = self.new_password_input.text()
+        confirm = self.confirm_password_input.text()
+        
+        if not current or not new or not confirm:
+            QMessageBox.warning(self, "Erreur", "Veuillez remplir tous les champs.")
+            return
+        
+        if new != confirm:
+            QMessageBox.warning(self, "Erreur", "Les mots de passe ne correspondent pas.")
+            return
+        
+        if len(new) < 6:
+            QMessageBox.warning(self, "Erreur", "Le mot de passe doit contenir au moins 6 caractères.")
+            return
+        
+        # Vérifier le mot de passe actuel
+        from controllers.auth_controller import AuthController
+        auth = AuthController()
+        if not auth.verify_password(self.user_data.get('username'), current):
+            QMessageBox.warning(self, "Erreur", "Mot de passe actuel incorrect.")
+            return
+        
+        # Mettre à jour le mot de passe
+        try:
+            from core.database import SessionLocal
+            from core.models.user import User
+            import bcrypt
+            
+            db = SessionLocal()
+            user = db.query(User).filter(User.username == self.user_data.get('username')).first()
+            if user:
+                user.password_hash = bcrypt.hashpw(new.encode(), bcrypt.gensalt()).decode()
+                db.commit()
+                QMessageBox.information(self, "Succès", "Mot de passe modifié avec succès!")
+                
+                # Vider les champs
+                self.current_password_input.clear()
+                self.new_password_input.clear()
+                self.confirm_password_input.clear()
+            db.close()
+        except Exception as e:
+            QMessageBox.critical(self, "Erreur", f"Erreur lors de la modification: {str(e)}")
     
     def _get_primary_button_style(self):
         """Retourne le style des boutons primaires"""

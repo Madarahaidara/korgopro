@@ -41,6 +41,18 @@ class AuthController:
             print(f"Erreur d'authentification: {e}")
             return None
 
+    def verify_password(self, username: str, password: str) -> bool:
+        """Vérifie si le mot de passe fourni correspond à l'utilisateur"""
+        try:
+            with SessionLocal() as session:
+                user = session.query(User).filter(User.username == username).first()
+                if not user:
+                    return False
+                return verify_password(password, user.password_hash)
+        except Exception as e:
+            print(f"Erreur lors de la vérification du mot de passe: {e}")
+            return False
+    
     def get_user_by_id(self, user_id: int):
         """Récupérer un utilisateur par son ID"""
         try:

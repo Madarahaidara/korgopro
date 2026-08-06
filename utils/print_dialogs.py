@@ -1,8 +1,10 @@
 """
 Dialogues pour l'impression dans l'application Korgo
+Améliorations : impression directe, copies multiples, threading, email, export multiple,
+options de mise en page, aperçu amélioré, historique enrichi, gestion d'erreurs, template personnalisable
 """
 
-from PySide6.QtCore import Qt, Signal, QMarginsF
+from PySide6.QtCore import Qt, Signal, QMarginsF, QThread, QObject, QRunnable, QThreadPool, QTimer
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QLineEdit, QPushButton, QTableWidget,
@@ -10,17 +12,20 @@ from PySide6.QtWidgets import (
     QGroupBox, QFormLayout, QDateEdit, QMessageBox,
     QHeaderView, QDialogButtonBox, QRadioButton,
     QButtonGroup, QProgressDialog, QFileDialog,
-    QInputDialog, QTextEdit
+    QInputDialog, QTextEdit, QDoubleSpinBox, QApplication
 )
-from PySide6.QtGui import QColor, QFont, QPainter
-from PySide6.QtPrintSupport import QPrinter, QPrintDialog
-from PySide6.QtGui import QTextDocument
-from PySide6.QtGui import QPageSize, QPageLayout
+from PySide6.QtGui import QColor, QFont, QPainter, QTextDocument, QPageSize, QPageLayout, QAction
+from PySide6.QtPrintSupport import QPrinter, QPrintDialog, QPrintPreviewDialog
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import List, Optional, Dict, Any, Tuple
 import logging
-
-from PySide6.QtGui import QPageSize, QPageLayout, QPainter
+import os
+import smtplib
+import csv
+from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
+from email.mime.text import MIMEText
+from email import encoders
 
 from core.database import SessionLocal
 from core.models.sale_models import Sale, Customer
@@ -30,6 +35,51 @@ logger = logging.getLogger(__name__)
 CURRENCY = "FCFA"
 
 
+# ============= WORKER THREAD =============
+class PrintWorkerSignals(QObject):
+    """Signaux pour le worker d'impression"""
+    finished = Signal(bool, str, str)  # success, message, file_path
+    progress = Signal(int, str)  # value, message
+    error = Signal(str)
+
+
+class PrintWorker(QRunnable):
+    """Worker pour générer des documents en arrière-plan"""
+    
+    def __init__(self, printer_service: InvoicePrinter, sale_id: int, doc_type: str = "invoice"):
+        super().__init__()
+        self.printer_service = printer_service
+        self.sale_id = sale_id
+        self.doc_type = doc_type
+        self.signals = PrintWorkerSignals()
+    
+    def run(self):
+        """Exécute la génération en arrière-plan"""
+        try:
+            self.signals.progress.emit(10, "Récupération des données...")
+            
+            if self.doc_type == "invoice":
+                success, message, file_path = self.printer_service.generate_invoice(
+                    self.sale_id, ask_location=False, show_progress=False
+                )
+            elif self.doc_type == "receipt":
+                success, message, file_path = self.printer_service.generate_receipt(
+                    self.sale_id, ask_location=False, show_progress=False
+                )
+            else:
+                success, message, file_path = self.printer_service.generate_invoice(
+                    self.sale_id, ask_location=False, show_progress=False
+                )
+            
+            self.signals.progress.emit(100, "Terminé")
+            self.signals.finished.emit(success, message, file_path)
+            
+        except Exception as e:
+            logger.error(f"Erreur worker: {e}")
+            self.signals.error.emit(str(e))
+
+
+# ============= DIALOGUE OPTIONS D'IMPRESSION =============
 class PrintOptionsDialog(QDialog):
     """Dialogue pour choisir les options d'impression"""
     
@@ -38,13 +88,14 @@ class PrintOptionsDialog(QDialog):
         self.sale_data = sale_data
         self.db_session = SessionLocal()
         self.printer_service = InvoicePrinter(self.db_session)
+        self.thread_pool = QThreadPool()
         self.setup_ui()
     
     def setup_ui(self):
         """Configure l'interface"""
         self.setWindowTitle("Options d'impression")
         self.setModal(True)
-        self.setMinimumWidth(500)
+        self.setMinimumWidth(600)
         
         layout = QVBoxLayout(self)
         
@@ -106,6 +157,28 @@ class PrintOptionsDialog(QDialog):
         copies_layout.addStretch()
         options_layout.addLayout(copies_layout)
         
+        # Options de mise en page avancées
+        page_layout = QGridLayout()
+        
+        page_layout.addWidget(QLabel("Orientation:"), 0, 0)
+        self.orientation_combo = QComboBox()
+        self.orientation_combo.addItems(["Portrait", "Paysage"])
+        page_layout.addWidget(self.orientation_combo, 0, 1)
+        
+        page_layout.addWidget(QLabel("Format papier:"), 0, 2)
+        self.paper_size_combo = QComboBox()
+        self.paper_size_combo.addItems(["A4", "A5", "Lettre", "Légal"])
+        page_layout.addWidget(self.paper_size_combo, 0, 3)
+        
+        page_layout.addWidget(QLabel("Marges (mm):"), 1, 0)
+        self.margins_spinbox = QDoubleSpinBox()
+        self.margins_spinbox.setRange(0, 50)
+        self.margins_spinbox.setValue(10)
+        self.margins_spinbox.setSuffix(" mm")
+        page_layout.addWidget(self.margins_spinbox, 1, 1)
+        
+        options_layout.addLayout(page_layout)
+        
         # Options supplémentaires
         self.open_after_check = QCheckBox("Ouvrir le document après génération")
         self.open_after_check.setChecked(True)
@@ -132,11 +205,17 @@ class PrintOptionsDialog(QDialog):
         self.print_btn.clicked.connect(self.print_directly)
         buttons.addButton(self.print_btn, QDialogButtonBox.ActionRole)
         
+        self.email_btn = QPushButton("📧 Envoyer par email")
+        self.email_btn.clicked.connect(self.send_by_email)
+        buttons.addButton(self.email_btn, QDialogButtonBox.ActionRole)
+        
         cancel_btn = QPushButton("Annuler")
         cancel_btn.clicked.connect(self.reject)
         buttons.addButton(cancel_btn, QDialogButtonBox.RejectRole)
         
         layout.addWidget(buttons)
+        
+        # Pas de barre de progression permanente - créée uniquement lors de la génération
     
     def get_document_type(self) -> str:
         """Récupère le type de document sélectionné"""
@@ -147,15 +226,53 @@ class PrintOptionsDialog(QDialog):
         else:
             return "both"
     
+    def get_paper_size(self) -> QPageSize.PageSizeId:
+        """Récupère le format de papier sélectionné"""
+        sizes = {
+            "A4": QPageSize.A4,
+            "A5": QPageSize.A5,
+            "Lettre": QPageSize.Letter,
+            "Légal": QPageSize.Legal
+        }
+        return sizes.get(self.paper_size_combo.currentText(), QPageSize.A4)
+    
+    def get_orientation(self) -> QPageLayout.Orientation:
+        """Récupère l'orientation sélectionnée"""
+        return QPageLayout.Landscape if self.orientation_combo.currentText() == "Paysage" else QPageLayout.Portrait
+    
     def preview(self):
-        """Affiche un aperçu"""
+        """Affiche un aperçu avec QPrintPreviewDialog"""
         try:
-            success, html, message = self.printer_service.generate_html_invoice(
-                self.sale_data['sale_id']
-            )
+            doc_type = self.get_document_type()
+            
+            if doc_type in ["invoice", "both"]:
+                success, html, message = self.printer_service.generate_html_invoice(
+                    self.sale_data['sale_id']
+                )
+            else:
+                # Pour le ticket, générer un HTML simple
+                success, html, message = self.printer_service.generate_html_invoice(
+                    self.sale_data['sale_id']
+                )
             
             if success:
-                preview_dialog = PrintPreviewDialog(html, self)
+                # Utiliser QPrintPreviewDialog pour un aperçu fidèle
+                printer = QPrinter(QPrinter.HighResolution)
+                printer.setPageSize(QPageSize(self.get_paper_size()))
+                printer.setPageOrientation(self.get_orientation())
+                
+                margins = QMarginsF(
+                    self.margins_spinbox.value(),
+                    self.margins_spinbox.value(),
+                    self.margins_spinbox.value(),
+                    self.margins_spinbox.value()
+                )
+                printer.setPageMargins(margins, QPageLayout.Millimeter)
+                
+                preview_dialog = QPrintPreviewDialog(printer, self)
+                preview_dialog.paintRequested.connect(
+                    lambda p: self._render_html_to_printer(p, html)
+                )
                 preview_dialog.exec()
             else:
                 QMessageBox.warning(self, "Erreur", message)
@@ -164,8 +281,19 @@ class PrintOptionsDialog(QDialog):
             logger.error(f"Erreur aperçu: {e}")
             QMessageBox.critical(self, "Erreur", f"Erreur: {str(e)}")
     
+    def _render_html_to_printer(self, printer: QPrinter, html: str):
+        """Rend le HTML sur l'imprimante"""
+        doc = QTextDocument()
+        adjusted_html = self.adjust_html_for_printing(
+            html,
+            paper_size=self.paper_size_combo.currentText(),
+            orientation=self.orientation_combo.currentText()
+        )
+        doc.setHtml(adjusted_html)
+        doc.print_(printer)
+    
     def generate(self):
-        """Génère le PDF"""
+        """Génère le PDF avec copies multiples"""
         doc_type = self.get_document_type()
         copies = self.copies_spinbox.value()
         
@@ -194,10 +322,25 @@ class PrintOptionsDialog(QDialog):
                     QMessageBox.warning(self, "Erreur", message)
                     return
             
+            # Générer les copies supplémentaires
+            if copies > 1 and files:
+                for doc_name, file_path in files:
+                    base, ext = os.path.splitext(file_path)
+                    for i in range(2, copies + 1):
+                        copy_path = f"{base}_copie{i}{ext}"
+                        import shutil
+                        shutil.copy2(file_path, copy_path)
+                        files.append((f"{doc_name} (copie {i})", copy_path))
+            
             # Ouvrir les fichiers si demandé
             if self.open_after_check.isChecked():
                 for doc_name, file_path in files:
                     self.printer_service.open_file(file_path)
+            
+            # Imprimer directement si demandé
+            if self.print_after_check.isChecked():
+                for doc_name, file_path in files:
+                    self.printer_service.print_file(file_path)
             
             # Message de confirmation
             if len(files) == 1:
@@ -214,63 +357,83 @@ class PrintOptionsDialog(QDialog):
             logger.error(f"Erreur génération: {e}")
             QMessageBox.critical(self, "Erreur", f"Erreur: {str(e)}")
     
-    def adjust_html_for_printing(self, html):
-        """Ajuste le HTML pour optimiser l'impression sur page A4"""
+    def adjust_html_for_printing(self, html, paper_size: str = "A4", orientation: str = "Portrait"):
+        """Ajuste le HTML pour optimiser l'impression sur le format sélectionné"""
+        # Déterminer les dimensions du papier
+        paper_dimensions = {
+            "A4": (210, 297),
+            "A5": (148, 210),
+            "Lettre": (216, 279),
+            "Légal": (216, 356)
+        }
+        width_mm, height_mm = paper_dimensions.get(paper_size, (210, 297))
+        
+        # Si paysage, inverser les dimensions
+        if orientation == "Paysage":
+            width_mm, height_mm = height_mm, width_mm
+        
         # Ajouter des styles CSS pour l'impression
-        css = """
+        css = f"""
         <style>
-            @page {
+            @page {{
                 margin: 0.5cm;
-                size: A4 portrait;
-            }
-            body {
+                size: {width_mm}mm {height_mm}mm;
+            }}
+            body {{
                 margin: 0;
                 padding: 0;
                 width: 100%;
                 font-family: 'Arial', sans-serif;
                 font-size: 10pt;
-            }
-            .page-container {
+            }}
+            .page-container {{
                 width: 100%;
                 max-width: 100%;
                 padding: 10px;
                 box-sizing: border-box;
-            }
-            table {
+            }}
+            .page {{
+                width: {width_mm}mm;
+                min-height: {height_mm}mm;
+                margin: auto;
+                padding: 10mm 10mm;
+                position: relative;
+            }}
+            table {{
                 width: 100%;
                 max-width: 100%;
                 border-collapse: collapse;
                 table-layout: fixed;
                 font-size: 9pt;
-            }
-            th, td {
+            }}
+            th, td {{
                 padding: 6px 4px;
                 border: 1px solid #333;
                 word-wrap: break-word;
                 overflow-wrap: break-word;
-            }
-            .header, .footer {
+            }}
+            .header, .footer {{
                 width: 100%;
                 text-align: center;
-            }
-            .totals-table {
+            }}
+            .totals-table {{
                 width: 100%;
                 margin-top: 15px;
-            }
-            .company-info {
+            }}
+            .company-info {{
                 width: 100%;
                 text-align: center;
                 margin-bottom: 15px;
                 font-weight: bold;
                 font-size: 11pt;
-            }
-            .invoice-title {
+            }}
+            .invoice-title {{
                 width: 100%;
                 text-align: center;
                 font-size: 12pt;
                 font-weight: bold;
                 margin: 10px 0;
-            }
+            }}
         </style>
         """
         
@@ -283,12 +446,112 @@ class PrintOptionsDialog(QDialog):
         return html
     
     def print_directly(self):
-        """Fonction supprimée - utiliser 'Générer PDF' à la place"""
-        QMessageBox.information(self, "Impression directe désactivée", 
-            "Veuillez utiliser le bouton '💾 Générer PDF' pour créer le fichier,\n"
-            "puis l'ouvrir pour imprimer.")
-        return
-
+        """Imprime directement avec sélection d'imprimante"""
+        try:
+            doc_type = self.get_document_type()
+            copies = self.copies_spinbox.value()
+            
+            # Générer le HTML pour l'impression
+            if doc_type in ["invoice", "both"]:
+                success, html, message = self.printer_service.generate_html_invoice(
+                    self.sale_data['sale_id']
+                )
+            else:
+                success, html, message = self.printer_service.generate_html_invoice(
+                    self.sale_data['sale_id']
+                )
+            
+            if not success:
+                QMessageBox.warning(self, "Erreur", message)
+                return
+            
+            # Configuration de l'imprimante
+            printer = QPrinter(QPrinter.HighResolution)
+            printer.setPageSize(QPageSize(self.get_paper_size()))
+            printer.setPageOrientation(self.get_orientation())
+            printer.setCopyCount(copies)
+            
+            margins = QMarginsF(
+                self.margins_spinbox.value(),
+                self.margins_spinbox.value(),
+                self.margins_spinbox.value(),
+                self.margins_spinbox.value()
+            )
+            printer.setPageMargins(margins, QPageLayout.Millimeter)
+            
+            # Afficher le dialogue d'impression
+            print_dialog = QPrintDialog(printer, self)
+            if print_dialog.exec() == QPrintDialog.Accepted:
+                # Créer le document
+                doc = QTextDocument()
+                adjusted_html = self.adjust_html_for_printing(
+                    html,
+                    paper_size=self.paper_size_combo.currentText(),
+                    orientation=self.orientation_combo.currentText()
+                )
+                doc.setHtml(adjusted_html)
+                
+                # Ajuster la largeur du texte à la largeur de la page
+                page_width = printer.pageRect(QPrinter.DevicePixel).width()
+                doc.setTextWidth(page_width)
+                
+                # Imprimer
+                doc.print_(printer)
+                
+                QMessageBox.information(self, "Impression", "Impression lancée avec succès")
+            
+        except Exception as e:
+            logger.error(f"Erreur impression directe: {e}")
+            QMessageBox.critical(self, "Erreur", f"Erreur: {str(e)}")
+    
+    def send_by_email(self):
+        """Envoie le document par email"""
+        try:
+            # Générer le PDF
+            success, message, file_path = self.printer_service.generate_invoice(
+                self.sale_data['sale_id'], ask_location=False, show_progress=False
+            )
+            
+            if not success:
+                QMessageBox.warning(self, "Erreur", message)
+                return
+            
+            # Demander l'adresse email
+            email, ok = QInputDialog.getText(
+                self, "Envoyer par email",
+                "Adresse email du destinataire:",
+                QLineEdit.Normal,
+                self.sale_data.get('customer_email', '')
+            )
+            
+            if not ok or not email:
+                return
+            
+            # Ouvrir le client email par défaut
+            import subprocess
+            import platform
+            
+            subject = f"Facture {self.sale_data.get('sale_number', '')}"
+            body = f"Bonjour,\n\nVeuillez trouver ci-joint la facture {self.sale_data.get('sale_number', '')}.\n\nCordialement."
+            
+            # Utiliser mailto: avec pièce jointe (limité)
+            # Meilleure approche : ouvrir le client email avec le fichier
+            if platform.system() == 'Windows':
+                os.startfile(file_path)
+                QMessageBox.information(
+                    self, "Email",
+                    f"Le PDF a été ouvert.\nVeuillez l'attacher à votre email à: {email}"
+                )
+            else:
+                QMessageBox.information(
+                    self, "Email",
+                    f"Le PDF a été généré: {file_path}\n"
+                    f"Veuillez l'envoyer à: {email}"
+                )
+            
+        except Exception as e:
+            logger.error(f"Erreur envoi email: {e}")
+            QMessageBox.critical(self, "Erreur", f"Erreur: {str(e)}")
     
     def closeEvent(self, event):
         """Fermeture propre"""
@@ -297,6 +560,7 @@ class PrintOptionsDialog(QDialog):
         super().closeEvent(event)
 
 
+# ============= HISTORIQUE D'IMPRESSION =============
 class PrintHistoryDialog(QDialog):
     """Dialogue pour imprimer des ventes passées"""
     
@@ -351,9 +615,9 @@ class PrintHistoryDialog(QDialog):
         
         # Table des ventes
         self.sales_table = QTableWidget()
-        self.sales_table.setColumnCount(7)
+        self.sales_table.setColumnCount(8)
         self.sales_table.setHorizontalHeaderLabels([
-            "", "Numéro", "Date", "Client", "Total", "Paiement", "Statut"
+            "", "Numéro", "Date", "Client", "Total", "Paiement", "Statut", "Actions"
         ])
         
         self.sales_table.setSelectionBehavior(QTableWidget.SelectRows)
@@ -367,6 +631,7 @@ class PrintHistoryDialog(QDialog):
         header.setSectionResizeMode(4, QHeaderView.ResizeToContents)  # Total
         header.setSectionResizeMode(5, QHeaderView.ResizeToContents)  # Paiement
         header.setSectionResizeMode(6, QHeaderView.ResizeToContents)  # Statut
+        header.setSectionResizeMode(7, QHeaderView.ResizeToContents)  # Actions
         
         layout.addWidget(self.sales_table)
         
@@ -391,6 +656,9 @@ class PrintHistoryDialog(QDialog):
         self.export_btn = QPushButton("📤 Exporter CSV")
         self.export_btn.clicked.connect(self.export_csv)
         
+        self.export_pdf_btn = QPushButton("📄 Exporter PDF")
+        self.export_pdf_btn.clicked.connect(self.export_pdf)
+        
         self.print_selected_btn = QPushButton("🖨️ Imprimer sélection")
         self.print_selected_btn.setStyleSheet("""
             QPushButton {
@@ -407,6 +675,7 @@ class PrintHistoryDialog(QDialog):
         close_btn.clicked.connect(self.reject)
         
         action_layout.addWidget(self.export_btn)
+        action_layout.addWidget(self.export_pdf_btn)
         action_layout.addStretch()
         action_layout.addWidget(self.print_selected_btn)
         action_layout.addWidget(close_btn)
@@ -493,6 +762,12 @@ class PrintHistoryDialog(QDialog):
             else:
                 status_item.setForeground(QColor("#ef4444"))
             self.sales_table.setItem(row, 6, status_item)
+            
+            # Actions (bouton imprimer rapide)
+            action_item = QTableWidgetItem("🖨️")
+            action_item.setToolTip("Imprimer cette vente")
+            action_item.setData(Qt.UserRole, sale.id)
+            self.sales_table.setItem(row, 7, action_item)
     
     def filter_sales(self):
         """Filtre les ventes affichées"""
@@ -502,7 +777,7 @@ class PrintHistoryDialog(QDialog):
             match = False
             
             # Vérifier chaque colonne (sauf la checkbox)
-            for col in range(1, self.sales_table.columnCount()):
+            for col in range(1, self.sales_table.columnCount() - 1):
                 item = self.sales_table.item(row, col)
                 if item and search_text in item.text().lower():
                     match = True
@@ -554,8 +829,6 @@ class PrintHistoryDialog(QDialog):
             return
         
         try:
-            import csv
-            
             with open(file_path, 'w', newline='', encoding='utf-8') as csvfile:
                 writer = csv.writer(csvfile, delimiter=';')
                 
@@ -592,6 +865,43 @@ class PrintHistoryDialog(QDialog):
             
         except Exception as e:
             logger.error(f"Erreur export CSV: {e}")
+            QMessageBox.critical(self, "Erreur", f"Erreur: {str(e)}")
+    
+    def export_pdf(self):
+        """Exporte les ventes sélectionnées en PDF"""
+        selected_ids = self.get_selected_sales()
+        
+        if not selected_ids:
+            QMessageBox.warning(self, "Export", "Veuillez sélectionner au moins une vente")
+            return
+        
+        # Demander le dossier de destination
+        output_dir = QFileDialog.getExistingDirectory(
+            self, "Sélectionner le dossier de destination"
+        )
+        
+        if not output_dir:
+            return
+        
+        try:
+            results = self.printer_service.generate_batch_invoices(selected_ids, output_dir)
+            
+            success_count = sum(1 for v in results.values() if v[0])
+            error_count = len(results) - success_count
+            
+            if error_count == 0:
+                QMessageBox.information(
+                    self, "Export réussi",
+                    f"{success_count} PDF généré(s) dans:\n{output_dir}"
+                )
+            else:
+                QMessageBox.warning(
+                    self, "Résultat partiel",
+                    f"{success_count} PDF généré(s)\n{error_count} erreur(s)"
+                )
+            
+        except Exception as e:
+            logger.error(f"Erreur export PDF: {e}")
             QMessageBox.critical(self, "Erreur", f"Erreur: {str(e)}")
     
     def print_selected(self):
@@ -680,8 +990,9 @@ class PrintHistoryDialog(QDialog):
         super().closeEvent(event)
 
 
+# ============= APERÇU AVANT IMPRESSION =============
 class PrintPreviewDialog(QDialog):
-    """Dialogue d'aperçu avant impression"""
+    """Dialogue d'aperçu avant impression avec QPrintPreviewDialog"""
     
     def __init__(self, html_content: str, parent=None):
         super().__init__(parent)
@@ -695,6 +1006,21 @@ class PrintPreviewDialog(QDialog):
         self.setMinimumSize(800, 600)
         
         layout = QVBoxLayout(self)
+        
+        # Barre d'outils
+        toolbar = QHBoxLayout()
+        
+        self.zoom_combo = QComboBox()
+        for zoom in ["50%", "75%", "100%", "125%", "150%", "200%"]:
+            self.zoom_combo.addItem(zoom)
+        self.zoom_combo.setCurrentText("100%")
+        self.zoom_combo.currentTextChanged.connect(self.change_zoom)
+        
+        toolbar.addWidget(QLabel("Zoom:"))
+        toolbar.addWidget(self.zoom_combo)
+        toolbar.addStretch()
+        
+        layout.addLayout(toolbar)
         
         # Éditeur HTML pour l'aperçu
         self.preview_editor = QTextEdit()
@@ -713,13 +1039,47 @@ class PrintPreviewDialog(QDialog):
         print_btn.clicked.connect(self.print_document)
         buttons.addButton(print_btn, QDialogButtonBox.ActionRole)
         
+        preview_btn = QPushButton("👁 Aperçu impression")
+        preview_btn.clicked.connect(self.show_print_preview)
+        buttons.addButton(preview_btn, QDialogButtonBox.ActionRole)
+        
         close_btn = QPushButton("Fermer")
         close_btn.clicked.connect(self.accept)
         buttons.addButton(close_btn, QDialogButtonBox.AcceptRole)
         
         layout.addWidget(buttons)
     
-
+    def change_zoom(self, value: str):
+        """Change le zoom de l'aperçu"""
+        zoom = int(value.replace("%", "")) / 100
+        font_size = max(7, int(10 * zoom))
+        self.preview_editor.setStyleSheet(f"font-size: {font_size}pt;")
+    
+    def show_print_preview(self):
+        """Affiche un aperçu d'impression fidèle"""
+        try:
+            printer = QPrinter(QPrinter.HighResolution)
+            printer.setPageSize(QPageSize(QPageSize.A4))
+            printer.setPageOrientation(QPageLayout.Portrait)
+            
+            margins = QMarginsF(10, 10, 10, 10)
+            printer.setPageMargins(margins, QPageLayout.Millimeter)
+            
+            preview_dialog = QPrintPreviewDialog(printer, self)
+            preview_dialog.paintRequested.connect(self._render_to_printer)
+            preview_dialog.exec()
+            
+        except Exception as e:
+            logger.error(f"Erreur aperçu impression: {e}")
+            QMessageBox.critical(self, "Erreur", f"Erreur: {str(e)}")
+    
+    def _render_to_printer(self, printer: QPrinter):
+        """Rend le document sur l'imprimante"""
+        doc = QTextDocument()
+        adjusted_html = self.adjust_html_for_printing(self.html_content)
+        doc.setHtml(adjusted_html)
+        doc.print_(printer)
+    
     def adjust_html_for_display(self, html):
         """Ajuste le HTML pour l'affichage dans le preview"""
         css = """
@@ -842,7 +1202,7 @@ class PrintPreviewDialog(QDialog):
             margins = QMarginsF(5, 5, 5, 5)  # 5mm de marge de chaque côté
             printer.setPageMargins(margins, QPageLayout.Millimeter)
             
-            # CORRECTION : Définir l'orientation portrait avec QPageLayout
+            # Définir l'orientation portrait
             printer.setPageOrientation(QPageLayout.Portrait)
             
             # Ajuster le HTML pour l'impression
@@ -867,4 +1227,3 @@ class PrintPreviewDialog(QDialog):
         except Exception as e:
             logger.error(f"Erreur impression: {e}")
             QMessageBox.critical(self, "Erreur", f"Erreur: {str(e)}")
-

@@ -256,12 +256,26 @@ class MainWindow(QMainWindow):
             # CAISSIER: PAS d'accès aux documents, stock, admin, paramètres
             self.stack.setCurrentWidget(self.dashboard_view)
 
-        elif role == "GERANT":
+        elif role in ("GERANT", "GESTIONNAIRE"):
             btn_sale.show()
             btn_proforma.show()
             btn_stock.show()
         
-            # GERANT: PAS d'accès aux paramètres
+            # GERANT/GESTIONNAIRE: PAS d'accès aux paramètres
+            self.stack.setCurrentWidget(self.dashboard_view)
+
+        elif role == "SUPERVISEUR":
+            btn_sale.show()
+            btn_proforma.show()
+            btn_stock.show()
+            btn_admin.show()
+            # SUPERVISEUR: PAS d'accès aux paramètres
+            self.stack.setCurrentWidget(self.dashboard_view)
+
+        elif role == "ASSISTANT":
+            btn_sale.show()
+            btn_proforma.show()
+            # ASSISTANT: accès limité aux ventes et proformas
             self.stack.setCurrentWidget(self.dashboard_view)
 
         elif role == "ADMIN":

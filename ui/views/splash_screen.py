@@ -2,6 +2,7 @@
 from PySide6.QtWidgets import QSplashScreen, QProgressBar, QLabel, QVBoxLayout, QWidget
 from PySide6.QtCore import Qt, QTimer, QPropertyAnimation
 from PySide6.QtGui import QPixmap, QColor
+from utils.resource_path import resource_path
 
 class ModernSplashScreen(QSplashScreen):
     def __init__(self, app):
@@ -44,7 +45,7 @@ class ModernSplashScreen(QSplashScreen):
         self.logo_label = QLabel()
         self.logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         # Chargement et redimensionnement propre du logo reçu
-        logo_pixmap = QPixmap("logo.ico") # Assurez-vous que le chemin est correct
+        logo_pixmap = QPixmap(resource_path("logo.ico"))
         if not logo_pixmap.isNull():
             self.logo_label.setPixmap(logo_pixmap.scaled(100, 100, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
         else:

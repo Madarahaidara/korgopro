@@ -192,11 +192,11 @@ class IconManager:
             app_icon = cls.get_app_icon()
             if not app_icon.isNull():
                 app.setWindowIcon(app_icon)
-                print("✓ Icône d'application définie avec succès")
+                print("[OK] Icône d'application définie avec succès")
                 cls._app_initialized = True
                 return True
             else:
-                print("⚠ Avertissement: Impossible de charger l'icône de l'application")
+                print("[WARN] Impossible de charger l'icône de l'application")
         return False
     
     @classmethod

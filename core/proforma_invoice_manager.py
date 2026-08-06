@@ -29,9 +29,10 @@ class ProformaInvoiceManager:
         year = datetime.now().year
         prefix = f"PF-{year}"
         
-        # Compter le nombre de proformas créées cette année
+        # Compter le nombre de proformas créées cette année (compatible SQLite)
         count = self.session.query(func.count(ProformaInvoice.id)).filter(
-            func.extract('year', ProformaInvoice.created_date) == year
+            ProformaInvoice.created_date >= datetime(year, 1, 1),
+            ProformaInvoice.created_date < datetime(year + 1, 1, 1)
         ).scalar() or 0
         
         return f"{prefix}-{count + 1:06d}"
@@ -41,9 +42,10 @@ class ProformaInvoiceManager:
         year = datetime.now().year
         prefix = f"FAC-{year}"
         
-        # Compter le nombre de factures créées cette année
+        # Compter le nombre de factures créées cette année (compatible SQLite)
         count = self.session.query(func.count(Sale.id)).filter(
-            func.extract('year', Sale.sale_date) == year
+            Sale.sale_date >= datetime(year, 1, 1),
+            Sale.sale_date < datetime(year + 1, 1, 1)
         ).scalar() or 0
         
         return f"{prefix}-{count + 1:06d}"
@@ -322,6 +324,7 @@ class ProformaInvoiceManager:
                         product.quantity -= proforma_item.quantity
             
             self.session.add(sale)
+            self.session.flush()  # IMPORTANT: flush pour obtenir sale.id
             
             # Marquer la proforma comme convertie
             proforma.status = "CONVERTIE"

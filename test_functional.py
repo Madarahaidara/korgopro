@@ -43,7 +43,8 @@ try:
     print(f"   Tables trouvees: {len(tables)}")
     for t in sorted(tables):
         cols = [c["name"] for c in inspector.get_columns(t)]
-        pk = [c["name"] for c in inspector.get_pk_constraint(t).get("constrained_columns", [])]
+        pk_info = inspector.get_pk_constraint(t)
+        pk = pk_info.get("constrained_columns", []) if isinstance(pk_info, dict) else []
         print(f"      - {t} ({len(cols)} cols, PK: {pk})")
 except Exception as e:
     print(f"   FAIL DB inspect: {e}")
