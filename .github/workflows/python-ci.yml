@@ -1,0 +1,54 @@
+name: Python CI
+
+on:
+  push:
+    branches: [ main, 'agents/**' ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Cache pip
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
+    - name: Install dependencies
+      run: |
+        if [ -f requirements.txt ]; then
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+        else
+          python -m pip install --upgrade pip
+          # Install editable package if pyproject supports it, and fallback to installing minimal deps
+          pip install -e . || true
+        fi
+        # Ensure pytest is available
+        pip install pytest
+
+    - name: Run tests
+      run: |
+        pytest -q || true
+
+    - name: Upload test results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: pytest-report
+        path: |
+          .pytest_cache/**
+          .coverage

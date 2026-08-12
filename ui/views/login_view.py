@@ -143,6 +143,12 @@ class LeftPanel(QWidget):
         self.logo_label.setMinimumSize(140, 140)
         self.logo_label.setMaximumSize(180, 180)
         self.logo_label.setAlignment(Qt.AlignCenter)
+        # Accessibilité
+        try:
+            self.logo_label.setAccessibleName("Logo Korgo Pro")
+            self.logo_label.setAccessibleDescription("Logo de l'application Korgo Pro")
+        except Exception:
+            pass
         
         # Charger le logo depuis le fichier
         logo_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "icons", "logo.ico")
@@ -233,6 +239,13 @@ class LoginInputField(QWidget):
         self.input = QLineEdit()
         self.input.setPlaceholderText(placeholder)
         self.input.setEchoMode(echo_mode)
+        
+        # Accessibilité : nom et description accessibles
+        try:
+            self.input.setAccessibleName(placeholder)
+            self.input.setAccessibleDescription(f"Champ de saisie : {placeholder}")
+        except Exception:
+            pass
         
         # Style déjà géré par le QSS
         self.input.setObjectName("LoginInput")
@@ -371,6 +384,11 @@ class LoginView(QWidget):
         self.btn_login.setCursor(Qt.PointingHandCursor)
         self.btn_login.setFixedHeight(44)
         self.btn_login.setFixedWidth(140)
+        try:
+            self.btn_login.setAccessibleName("Bouton Se connecter")
+            self.btn_login.setAccessibleDescription("Valider les identifiants et se connecter à l'application")
+        except Exception:
+            pass
         btn_layout.addWidget(self.btn_login)
         
         # Bouton Quitter
@@ -379,6 +397,11 @@ class LoginView(QWidget):
         self.btn_cancel.setCursor(Qt.PointingHandCursor)
         self.btn_cancel.setFixedHeight(44)
         self.btn_cancel.setFixedWidth(140)
+        try:
+            self.btn_cancel.setAccessibleName("Bouton Quitter")
+            self.btn_cancel.setAccessibleDescription("Fermer l'application")
+        except Exception:
+            pass
         btn_layout.addWidget(self.btn_cancel)
         
         btn_layout.addStretch()

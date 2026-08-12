@@ -85,11 +85,21 @@ class DashboardView(QWidget):
         
         self.company_name_label = QLabel(company_name)
         self.company_name_label.setObjectName("companyName")
+        try:
+            self.company_name_label.setAccessibleName("Nom de la société")
+            self.company_name_label.setAccessibleDescription(f"Nom de la société: {company_name}")
+        except Exception:
+            pass
         
         company_address = company_info.get('address', '')
         if company_address:
             self.company_address_label = QLabel(company_address)
             self.company_address_label.setObjectName("companyAddress")
+            try:
+                self.company_address_label.setAccessibleName("Adresse de la société")
+                self.company_address_label.setAccessibleDescription(company_address)
+            except Exception:
+                pass
             company_layout.addWidget(self.company_address_label)
             
         company_layout.addWidget(self.company_name_label)
@@ -107,12 +117,22 @@ class DashboardView(QWidget):
         
         self.user_label = QLabel(f"Connecté en tant que : {username}")
         self.user_label.setObjectName("userInfo")
+        try:
+            self.user_label.setAccessibleName("Utilisateur connecté")
+            self.user_label.setAccessibleDescription(f"Connecté en tant que {username}")
+        except Exception:
+            pass
         
         # Date et heure actuelle
         from PySide6.QtCore import QDate
         current_date = QDate.currentDate().toString("dddd d MMMM yyyy")
         self.date_label = QLabel(current_date)
         self.date_label.setObjectName("currentDate")
+        try:
+            self.date_label.setAccessibleName("Date actuelle")
+            self.date_label.setAccessibleDescription(current_date)
+        except Exception:
+            pass
         
         user_layout.addWidget(self.user_label)
         user_layout.addWidget(self.date_label)
@@ -171,6 +191,11 @@ class DashboardView(QWidget):
         chart_container_frame = QFrame()
         chart_container_frame.setObjectName("chartContainer")
         chart_container_frame.setMinimumHeight(400)
+        try:
+            chart_container_frame.setAccessibleName("Conteneur du graphique")
+            chart_container_frame.setAccessibleDescription("Conteneur affichant le graphique des revenus des 30 derniers jours")
+        except Exception:
+            pass
         chart_container_frame.setStyleSheet("""
             #chartContainer {
                 background-color: white;
@@ -232,6 +257,11 @@ class DashboardView(QWidget):
         
         self.top_products_table = QTableWidget()
         self.top_products_table.setObjectName("productsTable")
+        try:
+            self.top_products_table.setAccessibleName("Table des produits les plus vendus")
+            self.top_products_table.setAccessibleDescription("Table listant les produits les plus vendus et le revenu associé")
+        except Exception:
+            pass
         self.top_products_table.setColumnCount(3)
         self.top_products_table.setHorizontalHeaderLabels(["Produit", "Quantité", "Revenu"])
         self.top_products_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
@@ -261,6 +291,11 @@ class DashboardView(QWidget):
         
         self.recent_sales_table = QTableWidget()
         self.recent_sales_table.setObjectName("salesTable")
+        try:
+            self.recent_sales_table.setAccessibleName("Table des ventes récentes")
+            self.recent_sales_table.setAccessibleDescription("Liste des dernières ventes avec numéro, client et statut")
+        except Exception:
+            pass
         self.recent_sales_table.setColumnCount(3)
         self.recent_sales_table.setHorizontalHeaderLabels(["N° Vente", "Client", "Statut"])
         self.recent_sales_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
