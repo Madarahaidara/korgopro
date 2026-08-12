@@ -7,3 +7,7 @@ __pycache__/
 build/
 dist/
 *.spec
+
+# Ignorer la base SQLite locale et le dossier de données
+korgo_pro.db
+/data/
