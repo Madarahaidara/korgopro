@@ -24,6 +24,14 @@ class SaleService:
                 if not product or item["quantity"] > product.quantity:
                     return False, None, f"Stock insuffisant pour {item.get('product_name', 'produit')}"
 
+            # Garantir l'unicité du numéro de vente (contre les collisions après
+            # suppression/renumérotation). Si le numéro affiché est déjà utilisé,
+            # on en régénère un autre avant insertion.
+            guard = 0
+            while guard < 100 and self._sale_number_exists(sale_data["sale_number"]):
+                sale_data["sale_number"] = self.generate_sale_number()
+                guard += 1
+
             sale = Sale(
                 sale_number=sale_data["sale_number"],
                 customer_id=sale_data.get("customer_id"),
@@ -149,12 +157,29 @@ class SaleService:
             logger.error(f"Erreur annulation vente: {e}")
             return False, f"Erreur: {str(e)}"
 
+    def _sale_number_exists(self, sale_number: str) -> bool:
+        """Vérifie si un numéro de vente existe déjà en base."""
+        return self.db_session.query(Sale.id).filter(Sale.sale_number == sale_number).first() is not None
+
     def generate_sale_number(self) -> str:
-        today = datetime.now().date()
-        # Récupérer le dernier ID pour garantir l'unicité
-        last_sale = self.db_session.query(Sale).order_by(Sale.id.desc()).first()
-        next_num = (last_sale.id + 1) if last_sale else 1
-        return f"S{datetime.now().strftime('%Y%m%d')}{next_num:04d}"
+        """Génère un numéro de vente unique à partir de la séquence déjà utilisée.
+
+        Le numéro dérive du préfixe du jour + 1 du dernier numéro effectivement
+        attribué (et non de l'id auto-incrémenté), ce qui reste unique même après
+        suppression de ventes ou en cas d'écart entre id et numéro.
+        """
+        prefix = f"S{datetime.now().strftime('%Y%m%d')}"
+        prefix_len = len(prefix)
+        # Récupérer tous les numéros du jour pour en déduire la séquence max réelle
+        numbers = self.db_session.query(Sale.sale_number).filter(
+            Sale.sale_number.like(f"{prefix}%")
+        ).all()
+        max_seq = 0
+        for (num,) in numbers:
+            suffix = num[prefix_len:]
+            if suffix.isdigit():
+                max_seq = max(max_seq, int(suffix))
+        return f"{prefix}{max_seq + 1:04d}"
 
 
 class ProductService:

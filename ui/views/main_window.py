@@ -146,7 +146,7 @@ class MainWindow(QMainWindow):
             "Vente", "btn_sale", IconManager.get_menu_icon("sale")
         )
         self.btn_proforma = self._create_menu_button(
-            "Pro Forma", "btn_proforma", IconManager.get_menu_icon("sale")
+            "Document", "btn_proforma", IconManager.get_menu_icon("document")
         )
         self.btn_stock = self._create_menu_button(
             "Stock", "btn_stock", IconManager.get_menu_icon("stock")
@@ -435,7 +435,7 @@ class MainWindow(QMainWindow):
                     # Afficher le label d'image
                     self.logo_image_label.show()
                     
-                    print(f"✓ Logo chargé: {logo_path}")
+                    print(f"[OK] Logo charge: {logo_path}")
                     return
             except Exception as e:
                 print(f"Erreur lors du chargement du logo: {e}")
@@ -443,7 +443,7 @@ class MainWindow(QMainWindow):
         # Si pas de logo ou erreur, cacher le label d'image
         self.logo_image_label.clear()
         self.logo_image_label.hide()
-        print("ℹ Affichage du nom de l'entreprise sans logo")
+        print("[INFO] Affichage du nom de l'entreprise sans logo")
     
     def update_company_name(self, company_name):
         """Met à jour le nom de l'entreprise dans le header et le titre"""

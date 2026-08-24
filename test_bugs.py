@@ -60,7 +60,7 @@ from core.database import SessionLocal
 from core.models.user import User
 from sqlalchemy import text
 
-managed_roles = {"ADMIN", "CAISSIER", "GERANT"}
+managed_roles = {"ADMIN", "CAISSIER", "GERANT", "GESTIONNAIRE", "SUPERVISEUR", "ASSISTANT"}
 with SessionLocal() as session:
     roles = session.execute(text("SELECT DISTINCT role FROM users")).fetchall()
     db_roles = set(r[0] for r in roles)
@@ -78,6 +78,8 @@ with SessionLocal() as session:
     print(f"   Permissions pour GESTIONNAIRE: {allowed}")
     if not allowed:
         print("   BUG: Le role GESTIONNAIRE n'a aucune permission dans sale_view.py")
+    else:
+        print("   OK: Le role GESTIONNAIRE a des permissions definies")
 
     # Verifier que le user 'manager' existe
     manager = session.query(User).filter(User.username == 'manager').first()
@@ -85,20 +87,32 @@ with SessionLocal() as session:
         print(f"   User manager: role={manager.role}")
         if manager.role not in managed_roles:
             print(f"   BUG: L'utilisateur 'manager' a le role '{manager.role}' non gere par le code")
+        else:
+            print(f"   OK: Le role '{manager.role}' est gere par le code")
 
 # ===== BUG 4: convert_to_sale id =====
 print("\n4. TEST CONVERT_TO_SALE ID...")
 try:
     from core.database import SessionLocal
     from core.models.sale_models import ProformaInvoice
+    import inspect
+    from core.proforma_invoice_manager import ProformaInvoiceManager
+
+    # Vérifier que le code appelle bien session.flush() avant d'utiliser sale.id
+    source = inspect.getsource(ProformaInvoiceManager.convert_to_sale)
+    has_flush = "self.session.flush()" in source
+    flush_before_id = source.find("self.session.flush()") < source.find("converted_to_sale_id = sale.id")
+    
+    if has_flush and flush_before_id:
+        print("   OK: session.flush() est appele AVANT l'utilisation de sale.id")
+    else:
+        print("   BUG: sale.id est utilise sans flush prealable")
 
     session = SessionLocal()
     try:
         proforma = session.query(ProformaInvoice).first()
         if proforma:
             print(f"   Proforma trouvee: {proforma.proforma_number} (status: {proforma.status})")
-            print("   Analyse du code: proforma.converted_to_sale_id = sale.id est appelle AVANT session.flush()")
-            print("   BUG POTENTIEL: sale.id sera None si pas de flush avant")
         else:
             print("   Aucune proforma trouvee en DB")
     finally:

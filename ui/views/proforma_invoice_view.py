@@ -176,11 +176,23 @@ class ProformaService:
         return proformas
     
     def generate_proforma_number(self) -> str:
+        """Génère un numéro de proforma unique PF-YYYY-NNNNNN
+
+        Déduit du suffixe numérique max effectivement utilisé pour l'année
+        courante (et non du nombre de lignes), donc unique après suppressions.
+        """
         today = datetime.now()
-        count = self.db_session.query(ProformaInvoice).filter(
-            ProformaInvoice.created_date >= today.date()
-        ).count()
-        return f"PF-{today.year}-{count + 1:06d}"
+        prefix = f"PF-{today.year}"
+        prefix_len = len(prefix) + 1  # +1 pour le tiret
+        numbers = self.db_session.query(ProformaInvoice.proforma_number).filter(
+            ProformaInvoice.proforma_number.like(f"{prefix}%")
+        ).all()
+        max_seq = 0
+        for (num,) in numbers:
+            suffix = num[prefix_len:]
+            if suffix.isdigit():
+                max_seq = max(max_seq, int(suffix))
+        return f"{prefix}-{max_seq + 1:06d}"
 
 
 class CustomerService:

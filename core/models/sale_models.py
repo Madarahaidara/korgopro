@@ -42,7 +42,7 @@ class Sale(Base):
     customer = relationship("Customer", backref="sales")
     cashier = relationship("User", backref="ventes_caisse", foreign_keys=[cashier_id])
     items = relationship("SaleItem", backref="sale", cascade="all, delete-orphan")
-    logs = relationship("core.models.sale_log.SaleLog", backref="sale", cascade="all, delete-orphan")
+    logs = relationship("core.models.sale_log.SaleLog", backref="sale", cascade="save-update, merge")
     # Lien vers la proforma source (relation unidirectionnelle)
     origine_proforma = relationship("ProformaInvoice", foreign_keys=[origine_proforma_id])
     utilisateur_conversion_rel = relationship("User", backref="ventes_converties", foreign_keys=[utilisateur_conversion])

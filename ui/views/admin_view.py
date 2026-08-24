@@ -793,6 +793,12 @@ class AdminView(QWidget):
                 elif log.action == "REFUND":
                     action_item.setForeground(QColor(255, 193, 7))
                     action_item.setToolTip("Remboursement")
+                elif log.action == "DELETE":
+                    action_item.setForeground(QColor(255, 0, 0))
+                    action_item.setToolTip("Vente supprimée définitivement")
+                elif log.action == "PAID":
+                    action_item.setForeground(QColor(0, 123, 255))
+                    action_item.setToolTip("Vente à crédit encaissée en espèces")
                 elif log.action == "PRINT":
                     action_item.setForeground(QColor(0, 123, 255))
                     action_item.setToolTip("Facture imprimée")
@@ -932,6 +938,10 @@ class AdminView(QWidget):
                 action_label.setStyleSheet("color: #ef4444;")
             elif action == "REFUND":
                 action_label.setStyleSheet("color: #f59e0b;")
+            elif action == "DELETE":
+                action_label.setStyleSheet("color: #ff0000;")
+            elif action == "PAID":
+                action_label.setStyleSheet("color: #007bff;")
             actions_layout.addWidget(action_label)
         
         actions_group.setLayout(actions_layout)
@@ -2040,6 +2050,11 @@ class UserDialog(QDialog):
         self.role_combo.currentIndexChanged.connect(self.update_role_description)
         
         if mode == "create":
+            # Option pour utiliser un mot de passe personnalisé
+            self.use_custom_password = QCheckBox("Utiliser un mot de passe personnalisé")
+            self.use_custom_password.toggled.connect(self.toggle_custom_password)
+            
+            # Mot de passe temporaire généré automatiquement
             self.password_label = QLabel("Mot de passe temporaire:")
             self.password_display = QLineEdit()
             self.password_display.setReadOnly(True)
@@ -2055,6 +2070,19 @@ class UserDialog(QDialog):
             password_layout = QHBoxLayout()
             password_layout.addWidget(self.password_display)
             password_layout.addWidget(copy_btn)
+            
+            # Nouveau mot de passe personnalisé
+            self.custom_password_label = QLabel("Nouveau mot de passe:")
+            self.custom_password_input = QLineEdit()
+            self.custom_password_input.setEchoMode(QLineEdit.Password)
+            self.custom_password_input.setPlaceholderText("Laisser vide pour utiliser le mot de passe temporaire")
+            self.custom_password_input.setEnabled(False)
+            
+            self.confirm_password_label = QLabel("Confirmer le mot de passe:")
+            self.confirm_password_input = QLineEdit()
+            self.confirm_password_input.setEchoMode(QLineEdit.Password)
+            self.confirm_password_input.setPlaceholderText("Confirmer le mot de passe")
+            self.confirm_password_input.setEnabled(False)
         
         if user:
             self.username_input.setText(user.username)
@@ -2074,8 +2102,13 @@ class UserDialog(QDialog):
         form_layout.addRow("", self.role_desc_label)
         
         if mode == "create":
+            form_layout.addRow(self.use_custom_password)
             form_layout.addRow(self.password_label)
             form_layout.addRow(password_layout)
+            form_layout.addRow(self.custom_password_label)
+            form_layout.addRow(self.custom_password_input)
+            form_layout.addRow(self.confirm_password_label)
+            form_layout.addRow(self.confirm_password_input)
         
         layout.addLayout(form_layout)
         
@@ -2102,6 +2135,16 @@ class UserDialog(QDialog):
         
         layout.addLayout(button_layout)
     
+    def toggle_custom_password(self, checked):
+        """Activer/désactiver le mode mot de passe personnalisé"""
+        self.password_display.setEnabled(not checked)
+        self.custom_password_input.setEnabled(checked)
+        self.confirm_password_input.setEnabled(checked)
+        
+        if not checked:
+            self.custom_password_input.clear()
+            self.confirm_password_input.clear()
+    
     def update_role_description(self):
         role_key = self.role_combo.currentData()
         if role_key and role_key in self.roles_dict:
@@ -2117,11 +2160,20 @@ class UserDialog(QDialog):
         
         role_key = self.role_combo.currentData()
         
+        # Déterminer le mot de passe à utiliser
+        temp_password = getattr(self, 'temp_password', None)
+        
+        if self.mode == "create" and hasattr(self, 'use_custom_password'):
+            if self.use_custom_password.isChecked():
+                custom_password = self.custom_password_input.text()
+                if custom_password:
+                    temp_password = custom_password
+        
         return {
             "username": self.username_input.text(),
             "email": email,
             "role": role_key or self.role_combo.currentText(),
-            "temp_password": getattr(self, 'temp_password', None)
+            "temp_password": temp_password
         }
     
     def generate_temp_password(self, length=10):

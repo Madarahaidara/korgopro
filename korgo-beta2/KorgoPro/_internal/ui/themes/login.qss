@@ -1,0 +1,261 @@
+/* ============================================================
+   KORGO PRO - THÈME CONNEXION BLEU MARINE
+   Design moderne avec micro-interactions et élégance
+   ============================================================ */
+
+/* ---- Police globale ---- */
+LoginView, LoginView * {
+    font-family: 'Segoe UI', -apple-system, 'Helvetica Neue', Arial, sans-serif;
+    font-size: 14px;
+}
+
+LoginView {
+    background-color: #eef2f7;
+}
+
+/* ---- Conteneur principal avec ombre portée ---- */
+#LoginContainer {
+    background-color: white;
+    border-radius: 20px;
+}
+
+/* ---- Panneau gauche (branding avec gradient bleu marine) ---- */
+#LeftPanel {
+    background-color: #2F4255;
+    border-top-left-radius: 20px;
+    border-bottom-left-radius: 20px;
+}
+
+/* ---- Panneau droit (formulaire) ---- */
+#RightPanel {
+    background-color: white;
+    border-top-right-radius: 20px;
+    border-bottom-right-radius: 20px;
+}
+
+/* ---- Titre du panneau gauche ---- */
+#BrandTitle {
+    color: #111827;
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: 4px;
+    background-color: transparent;
+}
+
+#BrandSubtitle {
+    color: #374151;
+    font-size: 14px;
+    font-weight: 400;
+    background-color: transparent;
+}
+
+#BrandDescription {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 13px;
+}
+
+/* ---- Icône de marque avec effet glassmorphism ---- */
+#BrandIcon {
+    background-color: rgba(255, 255, 255, 0.15);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 22px;
+    min-width: 76px;
+    min-height: 76px;
+    max-width: 76px;
+    max-height: 76px;
+}
+
+/* ---- Titre du formulaire ---- */
+#FormTitle {
+    color: #111827;
+    font-size: 20px;
+    font-weight: 700;
+}
+
+#FormSubtitle {
+    color: #6b7280;
+    font-size: 12px;
+    font-weight: 400;
+}
+
+/* ---- Labels des champs ---- */
+#FieldLabel {
+    color: #374151;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+}
+
+/* ---- Champs de saisie avec design moderne ---- */
+QLineEdit {
+    background-color: #f9fafb;
+    border: 2px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 10px 14px 10px 40px;
+    color: #111827;
+    font-size: 13px;
+    font-weight: 400;
+    min-height: 20px;
+    selection-background-color: #2F4255;
+    selection-color: white;
+}
+
+QLineEdit:focus {
+    border: 2px solid #2F4255;
+    background-color: #ffffff;
+    border-bottom: 2px solid #2F4255;
+}
+
+QLineEdit:hover {
+    border: 2px solid #d1d5db;
+    background-color: #ffffff;
+}
+
+QLineEdit:disabled {
+    background-color: #f3f4f6;
+    color: #9ca3af;
+    border: 2px solid #e5e7eb;
+}
+
+/* ---- Bouton de connexion premium ---- */
+#LoginButton {
+    background-color: #2F4255;
+    color: white;
+    border: none;
+    border-radius: 10px;
+    padding: 10px 20px;
+    font-size: 13px;
+    font-weight: 600;
+    min-height: 18px;
+    letter-spacing: 0.3px;
+}
+
+#LoginButton:hover {
+    background-color: #2F4255;
+}
+
+#LoginButton:pressed {
+    background-color: #2F4255;
+    padding-top: 12px;
+    padding-bottom: 8px;
+}
+
+#LoginButton:disabled {
+    background: #d1d5db;
+    color: #9ca3af;
+}
+
+/* ---- Bouton Quitter élégant ---- */
+#CancelButton {
+    background-color: transparent;
+    color: #6b7280;
+    border: 2px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 10px 16px;
+    font-size: 13px;
+    font-weight: 500;
+    min-height: 18px;
+}
+
+#CancelButton:hover {
+    background-color: #f9fafb;
+    border: 2px solid #d1d5db;
+    color: #374151;
+}
+
+#CancelButton:pressed {
+    background-color: #f3f4f6;
+    border: 2px solid #9ca3af;
+}
+
+/* ---- Message d'erreur avec style moderne ---- */
+#ErrorLabel {
+    color: #dc2626;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 12px 18px;
+    background-color: #fef2f2;
+    border: 1px solid #fecaca;
+    border-radius: 10px;
+}
+
+/* ---- Label de sécurité ---- */
+#SecureLabel {
+    color: #9ca3af;
+    font-size: 11px;
+    font-weight: 400;
+}
+
+/* ---- Loading widget ---- */
+#LoadingWidget {
+    background-color: transparent;
+}
+
+/* ---- Version info ---- */
+#VersionLabel {
+    color: #6b7280;
+    font-size: 11px;
+    font-weight: 400;
+}
+
+/* ---- Features list avec style épuré ---- */
+#FeatureItem {
+    color: #111827;
+    font-size: 14px;
+    font-weight: 500;
+    padding: 6px 0px;
+    background-color: rgba(0, 0, 0, 0.05);
+    border-radius: 8px;
+    margin: 0px 10px;
+}
+
+/* ---- Checkbox "Se souvenir de moi" ---- */
+QCheckBox {
+    color: #6b7280;
+    font-size: 13px;
+    font-weight: 400;
+    spacing: 8px;
+}
+
+QCheckBox::indicator {
+    width: 18px;
+    height: 18px;
+    border: 2px solid #d1d5db;
+    border-radius: 4px;
+    background-color: #f9fafb;
+}
+
+QCheckBox::indicator:checked {
+    background-color: #2F4255;
+    border: 2px solid #2F4255;
+}
+
+QCheckBox::indicator:hover {
+    border: 2px solid #2F4255;
+}
+
+/* ---- Lien "Mot de passe oublié" ---- */
+#ForgotPasswordLink {
+    color: #2F4255;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+#ForgotPasswordLink:hover {
+    color: #3A6B9F;
+}
+
+/* ---- Séparateur décoratif ---- */
+#Divider {
+    background-color: #e5e7eb;
+    max-height: 1px;
+    min-height: 1px;
+}
+
+/* ---- Pied de page du formulaire ---- */
+#FormFooter {
+    color: #9ca3af;
+    font-size: 11px;
+    font-weight: 400;
+}

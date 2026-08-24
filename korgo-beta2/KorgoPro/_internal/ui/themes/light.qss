@@ -1,0 +1,44 @@
+/* light.qss - Thème Bleu Marine */
+
+
+/* Police globale */
+QWidget {
+    font-family: 'Segoe UI', 'Arial', sans-serif;
+}
+
+
+#LoginView {
+    background-color: #f8fafc;
+    border-radius: 10px;
+}
+
+#LoginTitle {
+    font-size: 26px;
+    font-weight: bold;
+    color: #1e293b;
+    qproperty-alignment: AlignCenter;
+}
+
+#LoginView QLineEdit {
+    height: 38px;
+    padding: 8px;
+    border-radius: 6px;
+    background-color: #ffffff;
+    border: 1px solid #cbd5e1;
+    color: #1e293b;
+}
+
+#LoginButton {
+    height: 40px;
+    border-radius: 6px;
+    background-color: #2F4255;
+    color: white;
+}
+
+#LoginButton:hover {
+    background-color: #2F4255;
+}
+
+#LoginError {
+    color: #ef4444;
+}

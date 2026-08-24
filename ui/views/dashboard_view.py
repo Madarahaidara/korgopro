@@ -232,13 +232,20 @@ class DashboardView(QWidget):
         
         self.top_products_table = QTableWidget()
         self.top_products_table.setObjectName("productsTable")
-        self.top_products_table.setColumnCount(3)
-        self.top_products_table.setHorizontalHeaderLabels(["Produit", "Quantité", "Revenu"])
-        self.top_products_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.top_products_table.setColumnCount(4)
+        self.top_products_table.setHorizontalHeaderLabels(["#", "Produit", "Qté", "Revenu"])
+        # Politique de redimensionnement des colonnes
+        header = self.top_products_table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)  # # : taille automatique
+        header.setSectionResizeMode(1, QHeaderView.Stretch)            # Produit : prend tout l'espace
+        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)  # Qté : taille automatique
+        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)  # Revenu : taille automatique
         self.top_products_table.setMinimumHeight(150)
         self.top_products_table.setAlternatingRowColors(True)
         self.top_products_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.top_products_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.top_products_table.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.top_products_table.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         
         top_products_layout.addWidget(self.top_products_table)
         right_column_layout.addWidget(top_products_container)
@@ -261,13 +268,20 @@ class DashboardView(QWidget):
         
         self.recent_sales_table = QTableWidget()
         self.recent_sales_table.setObjectName("salesTable")
-        self.recent_sales_table.setColumnCount(3)
-        self.recent_sales_table.setHorizontalHeaderLabels(["N° Vente", "Client", "Statut"])
-        self.recent_sales_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.recent_sales_table.setColumnCount(4)
+        self.recent_sales_table.setHorizontalHeaderLabels(["N° Vente", "Date", "Client", "Statut"])
+        # Politique de redimensionnement des colonnes
+        header = self.recent_sales_table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)  # N° Vente : taille auto
+        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)  # Date : taille auto
+        header.setSectionResizeMode(2, QHeaderView.Stretch)            # Client : prend l'espace
+        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)  # Statut : taille auto
         self.recent_sales_table.setMinimumHeight(200)
         self.recent_sales_table.setAlternatingRowColors(True)
         self.recent_sales_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.recent_sales_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.recent_sales_table.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.recent_sales_table.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         
         recent_sales_layout.addWidget(self.recent_sales_table)
         right_column_layout.addWidget(recent_sales_container)
@@ -612,9 +626,14 @@ class DashboardView(QWidget):
             self.top_products_table.setRowCount(len(top_products))
             
             for row, product in enumerate(top_products):
-                self.top_products_table.setItem(row, 0, QTableWidgetItem(product.name))
-                self.top_products_table.setItem(row, 1, QTableWidgetItem(f"{product.total_quantity}"))
-                self.top_products_table.setItem(row, 2, QTableWidgetItem(f"{product.total_revenue:,.0f} {currency}"))
+                # # (colonne 0) : rang
+                self.top_products_table.setItem(row, 0, QTableWidgetItem(str(row + 1)))
+                # Produit (colonne 1)
+                self.top_products_table.setItem(row, 1, QTableWidgetItem(product.name))
+                # Qté (colonne 2)
+                self.top_products_table.setItem(row, 2, QTableWidgetItem(f"{product.total_quantity}"))
+                # Revenu (colonne 3)
+                self.top_products_table.setItem(row, 3, QTableWidgetItem(f"{product.total_revenue:,.0f} {currency}"))
             
         except Exception as e:
             print(f"Erreur lors du chargement des produits: {e}")
@@ -643,12 +662,29 @@ class DashboardView(QWidget):
                 # N° Vente (colonne 0)
                 self.recent_sales_table.setItem(row, 0, QTableWidgetItem(sale.sale_number))
                 
-                # Client (colonne 1)
-                customer_name = sale.customer.full_name if sale.customer else "Non renseigné"
-                self.recent_sales_table.setItem(row, 1, QTableWidgetItem(customer_name))
+                # Date (colonne 1) - format court
+                if sale.sale_date:
+                    date_str = sale.sale_date.strftime("%d/%m/%Y %H:%M")
+                else:
+                    date_str = "-"
+                self.recent_sales_table.setItem(row, 1, QTableWidgetItem(date_str))
                 
-                # Statut avec couleur (colonne 2)
-                status_item = QTableWidgetItem(sale.payment_status)
+                # Client (colonne 2)
+                customer_name = sale.customer.full_name if sale.customer else "Non renseigné"
+                self.recent_sales_table.setItem(row, 2, QTableWidgetItem(customer_name))
+                
+                # Statut avec couleur (colonne 3)
+                status_text = sale.payment_status
+                # Traduire le statut en français
+                status_map = {
+                    "PAID": "Payé",
+                    "PENDING": "En attente",
+                    "PARTIAL": "Partiel",
+                    "CANCELLED": "Annulé"
+                }
+                display_status = status_map.get(status_text, status_text)
+                status_item = QTableWidgetItem(display_status)
+                status_item.setTextAlignment(Qt.AlignCenter)
                 if sale.payment_status == "PAID":
                     status_item.setBackground(QColor(220, 252, 231))  # Vert clair
                 elif sale.payment_status == "PENDING":
@@ -657,7 +693,7 @@ class DashboardView(QWidget):
                     status_item.setBackground(QColor(254, 249, 195))  # Jaune clair
                 elif sale.payment_status == "CANCELLED":
                     status_item.setBackground(QColor(229, 231, 235))  # Gris clair
-                self.recent_sales_table.setItem(row, 2, status_item)
+                self.recent_sales_table.setItem(row, 3, status_item)
             
         except Exception as e:
             print(f"Erreur lors du chargement des ventes récentes: {e}")

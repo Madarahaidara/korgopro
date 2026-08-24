@@ -6,7 +6,6 @@ Séparation de la logique métier de la couche UI
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any, Tuple
 from sqlalchemy.orm import Session
-from sqlalchemy import func
 from core.models.sale_models import ProformaInvoice, ProformaInvoiceItem, Sale, SaleItem
 from core.models.customer import Customer
 from core.models.stock_models import Product
@@ -25,30 +24,59 @@ class ProformaInvoiceManager:
         self.sale_log_manager = SaleLogManager(session)
     
     def generate_proforma_number(self) -> str:
-        """Génère un numéro de facture proforma unique PF-YYYY-NNNNNN"""
+        """Génère un numéro de facture proforma unique PF-YYYY-NNNNNN
+
+        Le numéro dérive du suffixe max déjà utilisé pour l'année en cours
+        (et non du nombre de lignes), ce qui garantit l'unicité même après
+        suppression de proformas.
+        """
         year = datetime.now().year
         prefix = f"PF-{year}"
-        
-        # Compter le nombre de proformas créées cette année (compatible SQLite)
-        count = self.session.query(func.count(ProformaInvoice.id)).filter(
-            ProformaInvoice.created_date >= datetime(year, 1, 1),
-            ProformaInvoice.created_date < datetime(year + 1, 1, 1)
-        ).scalar() or 0
-        
-        return f"{prefix}-{count + 1:06d}"
-    
+        prefix_len = len(prefix) + 1  # +1 pour le tiret séparant l'année du numéro
+
+        numbers = self.session.query(ProformaInvoice.proforma_number).filter(
+            ProformaInvoice.proforma_number.like(f"{prefix}%")
+        ).all()
+        max_seq = 0
+        for (num,) in numbers:
+            suffix = num[prefix_len:]
+            if suffix.isdigit():
+                max_seq = max(max_seq, int(suffix))
+
+        return f"{prefix}-{max_seq + 1:06d}"
+
+    def _proforma_number_exists(self, proforma_number: str) -> bool:
+        """Vérifie si un numéro de proforma existe déjà en base."""
+        return self.session.query(ProformaInvoice.id).filter(
+            ProformaInvoice.proforma_number == proforma_number
+        ).first() is not None
+
     def generate_sale_number(self) -> str:
-        """Génère un numéro de facture définitive unique FAC-YYYY-NNNNNN"""
+        """Génère un numéro de facture définitive unique FAC-YYYY-NNNNNN
+
+        Déduit du suffixe numérique max effectivement utilisé pour l'année
+        courante (et non du nombre de lignes), donc unique après suppressions.
+        """
         year = datetime.now().year
         prefix = f"FAC-{year}"
-        
-        # Compter le nombre de factures créées cette année (compatible SQLite)
-        count = self.session.query(func.count(Sale.id)).filter(
-            Sale.sale_date >= datetime(year, 1, 1),
-            Sale.sale_date < datetime(year + 1, 1, 1)
-        ).scalar() or 0
-        
-        return f"{prefix}-{count + 1:06d}"
+        prefix_len = len(prefix) + 1  # +1 pour le tiret
+
+        numbers = self.session.query(Sale.sale_number).filter(
+            Sale.sale_number.like(f"{prefix}%")
+        ).all()
+        max_seq = 0
+        for (num,) in numbers:
+            suffix = num[prefix_len:]
+            if suffix.isdigit():
+                max_seq = max(max_seq, int(suffix))
+
+        return f"{prefix}-{max_seq + 1:06d}"
+
+    def _sale_number_exists(self, sale_number: str) -> bool:
+        """Vérifie si un numéro de vente existe déjà en base."""
+        return self.session.query(Sale.id).filter(
+            Sale.sale_number == sale_number
+        ).first() is not None
     
     def create_proforma(
         self,
@@ -85,8 +113,15 @@ class ProformaInvoiceManager:
             # Déterminer la date de validité
             validity_date = valid_until if valid_until is not None else (datetime.now() + timedelta(days=valid_days))
 
+            # Garantir l'unicité du numéro de proforma (contre les collisions après suppression)
+            proforma_number = self.generate_proforma_number()
+            guard = 0
+            while guard < 100 and self._proforma_number_exists(proforma_number):
+                proforma_number = self.generate_proforma_number()
+                guard += 1
+
             proforma = ProformaInvoice(
-                proforma_number=self.generate_proforma_number(),
+                proforma_number=proforma_number,
                 customer_id=customer_id,
                 created_by=created_by_id,
                 created_date=datetime.now(),
@@ -280,8 +315,12 @@ class ProformaInvoiceManager:
                             f"disponible {product.quantity}, requis {item.quantity}"
                         )
             
-            # Générer le numéro de vente
+            # Générer le numéro de vente (unique, même après suppression de ventes)
             sale_number = self.generate_sale_number()
+            guard = 0
+            while guard < 100 and self._sale_number_exists(sale_number):
+                sale_number = self.generate_sale_number()
+                guard += 1
             
             # Créer la vente
             sale = Sale(

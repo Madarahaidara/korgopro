@@ -1,0 +1,185 @@
+/* dashboard.qss - Thème Bleu Marine */
+
+/* Police globale */
+QWidget {
+    font-family: 'Segoe UI', 'Arial', sans-serif;
+}
+
+
+#statCard {
+    background-color: white;
+    border-radius: 12px;
+    padding: 10px;
+    border: 1px solid #e0e0e0;
+}
+
+#statCard:hover {
+    background-color: #f8f9fa;
+    border: 1px solid #2F4255;
+}
+
+#statTitle {
+    font-size: 14px;
+    color: #7f8c8d;
+    font-weight: 500;
+    margin-bottom: 5px;
+}
+
+#statValue {
+    font-size: 28px;
+    font-weight: bold;
+    color: #2F4255;
+}
+
+#chartContainer {
+    background-color: white;
+    border-radius: 12px;
+    padding: 20px;
+    border: 1px solid #e0e0e0;
+}
+
+#sectionTitle {
+    font-size: 18px;
+    font-weight: bold;
+    color: #2F4255;
+    margin-bottom: 15px;
+}
+
+#updateLabel {
+    font-size: 12px;
+    color: #95a5a6;
+    font-style: italic;
+}
+
+#legendText {
+    font-size: 14px;
+    color: #7f8c8d;
+    font-weight: 500;
+}
+
+#productsTable {
+    background-color: white;
+    border-radius: 10px;
+    border: 1px solid #e0e0e0;
+    alternate-background-color: #f8f9fa;
+}
+
+#salesTable {
+    background-color: white;
+    border-radius: 10px;
+    border: 1px solid #e0e0e0;
+    alternate-background-color: #f8f9fa;
+}
+
+#productsTable::item, 
+#salesTable::item {
+    padding: 12px;
+}
+
+#productsTable QHeaderView::section, 
+#salesTable QHeaderView::section {
+    background-color: #f8f9fa;
+    padding: 15px;
+    border: none;
+    font-weight: bold;
+    color: #2F4255;
+    font-size: 14px;
+    border-bottom: 2px solid #2F4255;
+}
+
+QTableWidget {
+    gridline-color: #e0e0e0;
+    selection-background-color: #2F4255;
+    selection-color: white;
+}
+
+QTableWidget::item:selected {
+    background-color: #2F4255;
+    color: white;
+    font-weight: bold;
+}
+
+/* Style pour les cellules avec couleurs spécifiques */
+QTableWidgetItem[background="#dcfce7"] {  /* PAID - Vert */
+    color: #166534;
+    font-weight: 500;
+}
+
+QTableWidgetItem[background="#fee2e2"] {  /* PENDING - Rouge */
+    color: #991b1b;
+    font-weight: 500;
+}
+
+QTableWidgetItem[background="#fef9c3"] {  /* PARTIAL - Jaune */
+    color: #854d0e;
+    font-weight: 500;
+}
+
+QTableWidgetItem[background="#e5e7eb"] {  /* CANCELLED - Gris */
+    color: #4b5563;
+    font-weight: 500;
+}
+
+/* Style pour les en-têtes des tables */
+QHeaderView {
+    background-color: #f8f9fa;
+}
+
+QHeaderView::section {
+    background-color: #f8f9fa;
+    padding: 10px;
+    border: none;
+    border-bottom: 2px solid #2F4255;
+    font-weight: bold;
+    color: #2F4255;
+}
+
+/* Style pour le graphique */
+QChartView {
+    background-color: transparent;
+}
+
+/* Style pour les labels */
+QLabel {
+    font-family: "Segoe UI", "Arial", sans-serif;
+}
+
+QLabel#title {
+    font-size: 24px;
+    font-weight: bold;
+    color: #2F4255;
+}
+
+QLabel#sectionTitle {
+    font-size: 16px;
+    font-weight: bold;
+    color: #2F4255;
+}
+
+/* Style pour les cadres */
+QFrame {
+    background-color: white;
+}
+
+QFrame#chartContainer {
+    border: 1px solid #cfd8dc;
+    border-radius: 8px;
+}
+
+/* Style pour les boutons */
+QPushButton {
+    background-color: #2F4255;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    font-weight: 500;
+}
+
+QPushButton:hover {
+    background-color: #2F4255;
+}
+
+QPushButton:pressed {
+    background-color: #2F4255;
+}

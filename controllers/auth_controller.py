@@ -22,7 +22,7 @@ class AuthController:
                     # Migration automatique SHA256 → bcrypt si nécessaire
                     if not _is_bcrypt_hash(user.password_hash):
                         user.password_hash = migrate_old_hash(password, user.password_hash)
-                        print(f"ℹ Mot de passe de '{user.username}' migré SHA256 → bcrypt")
+                        print(f"[INFO] Mot de passe de '{user.username}' migre SHA256 vers bcrypt")
                     
                     session.commit()
 

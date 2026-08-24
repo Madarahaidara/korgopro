@@ -4,7 +4,7 @@ from PySide6.QtWidgets import (
     QLabel, QFrame, QComboBox, QGroupBox, QDoubleSpinBox, QGridLayout,
     QDateEdit, QTextEdit, QTabWidget, QSplitter, QFormLayout,
     QSpinBox, QCheckBox, QDialog, QDialogButtonBox, QStyle, QProgressDialog, QScrollArea,
-    QFileDialog
+    QFileDialog, QMenu
 )
 from PySide6.QtCore import Qt, Signal, QDate, QTimer
 from PySide6.QtGui import QFont, QColor, QIcon, QPixmap, QAction
@@ -22,7 +22,9 @@ import openpyxl
 from core.database import SessionLocal
 from core.models.stock_models import Product, Supplier, InventoryMovement, Expense, ExpenseCategory, PurchaseOrder, StockAlert
 from core.models.user import User
-from core.models.sale_models import Sale, SaleItem, Customer  # Ajout des modèles de vente
+from core.models.sale_models import Sale, SaleItem, Customer, Payment  # Ajout des modèles de vente
+from core.sale_log_manager import SaleLogManager
+from controllers.auth_controller import AuthController
 
 # Import des dialogues d'impression
 from utils.print_dialogs import PrintOptionsDialog, PrintHistoryDialog
@@ -759,6 +761,17 @@ Pour {quantity} unités:
         self.delete_sale_btn.clicked.connect(self.delete_selected_sale)
         self.delete_sale_btn.setEnabled(False)
         
+        # Bouton convertir une vente à crédit en espèces
+        self.convert_cash_btn = QPushButton("💵 Encaisser (espèces)")
+        self.convert_cash_btn.setObjectName("convertCashButton")
+        self.convert_cash_btn.setIcon(self.style().standardIcon(QStyle.SP_DialogYesButton))
+        self.convert_cash_btn.setToolTip(
+            "Convertir une vente à crédit en paiement en espèces.\n"
+            "Le montant total est encaissé et la dette du client est soldée."
+        )
+        self.convert_cash_btn.clicked.connect(self.convert_selected_sale_to_cash)
+        self.convert_cash_btn.setEnabled(False)
+        
         # Bouton rafraîchir
         refresh_btn = QPushButton("🔄 Actualiser")
         refresh_btn.setObjectName("refreshButton")
@@ -773,6 +786,7 @@ Pour {quantity} unités:
         
         actions_layout.addWidget(self.print_sale_btn)
         actions_layout.addWidget(self.delete_sale_btn)
+        actions_layout.addWidget(self.convert_cash_btn)
         actions_layout.addWidget(refresh_btn)
         actions_layout.addWidget(export_btn)
         actions_layout.addStretch()
@@ -813,6 +827,10 @@ Pour {quantity} unités:
         # Connecter la sélection pour activer/désactiver les boutons
         self.sales_table.itemSelectionChanged.connect(self.on_sale_selection_changed)
         
+        # Activer le menu contextuel (clic droit) sur le tableau des ventes
+        self.sales_table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.sales_table.customContextMenuRequested.connect(self.show_sale_context_menu)
+        
         layout.addWidget(self.sales_table, 1)
         
         # Charger les données initiales
@@ -828,11 +846,58 @@ Pour {quantity} unités:
                 self.print_sale_btn.setEnabled(True)
             if self.delete_sale_btn:
                 self.delete_sale_btn.setEnabled(True)
+            if hasattr(self, 'convert_cash_btn') and self.convert_cash_btn:
+                self.convert_cash_btn.setEnabled(True)
         else:
             if self.print_sale_btn:
                 self.print_sale_btn.setEnabled(False)
             if self.delete_sale_btn:
                 self.delete_sale_btn.setEnabled(False)
+            if hasattr(self, 'convert_cash_btn') and self.convert_cash_btn:
+                self.convert_cash_btn.setEnabled(False)
+    
+    def show_sale_context_menu(self, pos):
+        """Affiche un menu contextuel (clic droit) sur une ligne du tableau des ventes."""
+        index = self.sales_table.indexAt(pos)
+        if not index.isValid():
+            return
+
+        # Sélectionner la ligne cliquée (déclenche aussi l'activation des boutons)
+        self.sales_table.selectRow(index.row())
+
+        row = index.row()
+        num_item = self.sales_table.item(row, 0)
+        if not num_item:
+            return
+        sale_number = num_item.text()
+        payment_item = self.sales_table.item(row, 8)   # colonne "Paiement"
+        status_item = self.sales_table.item(row, 9)    # colonne "Statut"
+        payment_method = payment_item.text() if payment_item else ""
+        status = status_item.text() if status_item else ""
+
+        menu = QMenu(self)
+
+        # Encaisser une vente à crédit (convertir crédit -> espèces)
+        is_credit = (payment_method == "CRÉDIT" or "Crédit" in payment_method or "CREDIT" in payment_method)
+        is_cancelled = ("Annulée" in status or "CANCELLED" in status)
+        if is_credit and not is_cancelled:
+            action_cash = menu.addAction("💵 Encaisser en espèces (crédit → paiement)")
+            action_cash.triggered.connect(self.convert_selected_sale_to_cash)
+        else:
+            action_cash = menu.addAction("💵 Encaisser en espèces (crédit → paiement)")
+            action_cash.setEnabled(False)
+
+        menu.addSeparator()
+
+        # Imprimer la facture
+        action_print = menu.addAction("🖨️ Imprimer la facture")
+        action_print.triggered.connect(self.print_selected_sale)
+
+        # Supprimer (annulation douce)
+        action_delete = menu.addAction("🗑️ Supprimer (annuler la vente)")
+        action_delete.triggered.connect(self.delete_selected_sale)
+
+        menu.exec(self.sales_table.viewport().mapToGlobal(pos))
     
     def get_selected_sale_data(self):
         """Récupérer les données de la vente sélectionnée"""
@@ -881,8 +946,202 @@ Pour {quantity} unités:
             return None
     
     
+    def _require_admin_password(self, action_label: str) -> bool:
+        """Demande le mot de passe admin et vérifie qu'il est valide.
+
+        Retourne True si l'utilisateur a saisi un mot de passe d'un compte
+        administrateur valide, False sinon (annulé ou incorrect).
+        """
+        # Déterminer le compte admin à utiliser : l'utilisateur courant s'il est
+        # admin, sinon le premier compte administrateur de la base.
+        admin_username = None
+        if isinstance(self.user, dict) and self.user.get("role") == "ADMIN":
+            admin_username = self.user.get("username")
+        elif not isinstance(self.user, dict) and getattr(self.user, "role", None) == "ADMIN":
+            admin_username = getattr(self.user, "username", None)
+
+        if not admin_username:
+            admin = self.db_session.query(User).filter(User.role == "ADMIN").first()
+            if not admin:
+                QMessageBox.critical(
+                    self, "Erreur",
+                    "Aucun compte administrateur trouvé. Action refusée."
+                )
+                return False
+            admin_username = admin.username
+
+        dialog = QInputDialog(self)
+        dialog.setWindowTitle("Autorisation administrateur")
+        dialog.setLabelText(
+            f"{action_label}\n\nEntrez le mot de passe administrateur "
+            f"({admin_username}) pour confirmer :"
+        )
+        dialog.setTextEchoMode(QLineEdit.Password)
+        dialog.setInputMode(QInputDialog.TextInput)
+
+        if dialog.exec() != QDialog.Accepted:
+            return False
+
+        password = dialog.textValue()
+
+        auth = AuthController()
+        valid = auth.verify_password(admin_username, password)
+
+        if not valid:
+            QMessageBox.warning(
+                self, "Accès refusé",
+                "Mot de passe administrateur incorrect. Action annulée."
+            )
+        return valid
+
+    def convert_selected_sale_to_cash(self):
+        """Convertit une vente à crédit en règlement en espèces.
+
+        Le montant total est encaissé : la dette du client (balance) est soldée,
+        la vente passe en mode de paiement ESPÈCES / statut PAID, un paiement
+        cash est enregistré et l'opération est journalisée.
+        """
+        selected = self.sales_table.selectedItems()
+        if not selected:
+            QMessageBox.warning(self, "Sélection", "Veuillez sélectionner une vente")
+            return
+
+        row = selected[0].row()
+        sale_number_item = self.sales_table.item(row, 0)
+        if not sale_number_item:
+            return
+
+        sale_number = sale_number_item.text()
+
+        try:
+            sale = self.db_session.query(Sale)\
+                .options(
+                    joinedload(Sale.customer),
+                    joinedload(Sale.cashier)
+                )\
+                .filter(Sale.sale_number == sale_number)\
+                .first()
+
+            if not sale:
+                QMessageBox.warning(self, "Erreur", "Vente non trouvée!")
+                return
+
+            if sale.sale_status in ("CANCELLED", "REFUNDED"):
+                QMessageBox.information(
+                    self, "Info",
+                    f"La vente #{sale_number} est annulée/remboursée, impossible à encaisser."
+                )
+                return
+
+            if sale.payment_method != "CRÉDIT":
+                QMessageBox.information(
+                    self, "Info",
+                    f"La vente #{sale_number} n'est pas une vente à crédit "
+                    f"(mode: {sale.payment_method})."
+                )
+                return
+
+            if sale.payment_status == "PAID":
+                QMessageBox.information(
+                    self, "Info",
+                    f"La vente #{sale_number} est déjà payée."
+                )
+                return
+
+            total = sale.total_amount
+
+            confirm = QMessageBox.question(
+                self, "Confirmation",
+                f"Convertir la vente à crédit #{sale_number} en paiement en espèces ?\n\n"
+                f"Montant à encaisser : {total:,.0f} {self.currency}\n"
+                f"La dette du client sera soldée et la vente passera en statut 'PAYÉ'.",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+
+            if confirm != QMessageBox.Yes:
+                return
+
+            # Exiger le mot de passe administrateur avant d'encaisser
+            if not self._require_admin_password(
+                f"Conversion de la vente à crédit {sale_number} en espèces."
+            ):
+                return
+
+            # Récupérer les infos utilisateur pour la journalisation
+            if isinstance(self.user, dict):
+                user_id = self.user.get("id")
+                username = self.user.get("username", "unknown")
+                user_role = self.user.get("role", "CAISSIER")
+            else:
+                user_id = getattr(self.user, "id", None)
+                username = getattr(self.user, "username", "unknown")
+                user_role = getattr(self.user, "role", "CAISSIER")
+
+            customer_name = sale.customer.full_name if sale.customer else None
+
+            # Réduire la dette du client (crédit soldé)
+            if sale.customer:
+                sale.customer.balance -= total
+
+            # Passer la vente en espèces / payée
+            sale.payment_method = "ESPÈCES"
+            sale.payment_status = "PAID"
+            sale.statut = "PAYEE"
+            sale.amount_paid = total
+            sale.change_amount = 0
+
+            # Enregistrer le paiement en espèces
+            payment = Payment(
+                sale_id=sale.id,
+                amount=total,
+                payment_method="ESPÈCES",
+                collected_by=user_id,
+                notes=f"Conversion crédit -> espèces pour {sale_number}"
+            )
+            self.db_session.add(payment)
+
+            # Journaliser la conversion
+            log_manager = SaleLogManager(self.db_session)
+            log_manager.add_sale_log(
+                sale_id=sale.id,
+                sale_number=sale.sale_number,
+                action="PAID",
+                user_id=user_id,
+                username=username,
+                user_role=user_role,
+                customer_id=sale.customer_id,
+                customer_name=customer_name,
+                total_amount=total,
+                payment_method="ESPÈCES",
+                details=f"Vente à crédit convertie en espèces - encaissement de {total:,.2f}"
+            )
+
+            self.db_session.commit()
+
+            # Rafraîchir l'affichage
+            self.load_sales_table()
+            self.update_stats()
+
+            QMessageBox.information(
+                self, "Succès",
+                f"La vente à crédit #{sale_number} a été encaissée en espèces "
+                f"({total:,.2f}). Le client est soldé."
+            )
+
+        except Exception as e:
+            self.db_session.rollback()
+            QMessageBox.critical(self, "Erreur", f"Erreur lors de la conversion: {str(e)}")
+            import traceback
+            traceback.print_exc()
+
     def delete_selected_sale(self):
-        """Supprimer la vente sélectionnée avec restauration du stock"""
+        """Suppression douce d'une vente sélectionnée.
+
+        La vente n'est pas supprimée physiquement : elle est marquée annulée
+        (CANCELLED/ANNULEE) pour conserver la trace d'audit. Le stock est
+        restauré, le solde crédit du client reversé, et un log DELETE est créé.
+        """
         selected = self.sales_table.selectedItems()
         if not selected:
             QMessageBox.warning(self, "Sélection", "Veuillez sélectionner une vente à supprimer")
@@ -896,9 +1155,6 @@ Pour {quantity} unités:
         sale_number = sale_number_item.text()
         
         try:
-            # Récupérer la vente avec ses articles et ses paiements
-            from core.models.sale_models import Payment
-            
             sale = self.db_session.query(Sale)\
                 .options(
                     joinedload(Sale.items),
@@ -910,19 +1166,62 @@ Pour {quantity} unités:
             if not sale:
                 QMessageBox.warning(self, "Erreur", "Vente non trouvée!")
                 return
+
+            if sale.sale_status == "CANCELLED":
+                QMessageBox.information(
+                    self, "Info",
+                    f"La vente #{sale_number} est déjà annulée (supprimée)."
+                )
+                return
             
             # Confirmation
             confirm = QMessageBox.question(
                 self, "Confirmation",
                 f"Voulez-vous vraiment supprimer la vente #{sale_number} ?\n\n"
-                f"Cette action est irréversible et restaurera le stock.",
+                f"La vente sera marquée comme annulée (suppression douce) et le "
+                f"stock sera restauré. L'opération restera consultable pour l'audit.",
                 QMessageBox.Yes | QMessageBox.No,
                 QMessageBox.No
             )
             
             if confirm != QMessageBox.Yes:
                 return
-            
+
+            # Exiger le mot de passe administrateur avant la suppression
+            if not self._require_admin_password(
+                f"Suppression (annulation) de la vente {sale_number}."
+            ):
+                return
+
+            # Récupérer les informations utilisateur pour la journalisation
+            if isinstance(self.user, dict):
+                user_id = self.user.get("id")
+                username = self.user.get("username", "unknown")
+                user_role = self.user.get("role", "CAISSIER")
+            else:
+                user_id = getattr(self.user, "id", None)
+                username = getattr(self.user, "username", "unknown")
+                user_role = getattr(self.user, "role", "CAISSIER")
+
+            customer_name = sale.customer.full_name if sale.customer else None
+
+            # Journaliser la suppression (cette vente reste en base, marquée annulée,
+            # et le log DELETE est conservé pour l'audit)
+            log_manager = SaleLogManager(self.db_session)
+            log_manager.add_sale_log(
+                sale_id=sale.id,
+                sale_number=sale.sale_number,
+                action="DELETE",
+                user_id=user_id,
+                username=username,
+                user_role=user_role,
+                customer_id=sale.customer_id,
+                customer_name=customer_name,
+                total_amount=sale.total_amount,
+                payment_method=sale.payment_method,
+                details=f"Vente supprimée (annulée définitivement) - restauration du stock: {len(sale.items)} articles"
+            )
+
             # Restaurer le stock
             if sale.sale_status not in ["CANCELLED", "REFUNDED"]:
                 for item in sale.items:
@@ -939,7 +1238,7 @@ Pour {quantity} unités:
                             reason="Suppression de vente",
                             reference=f"Annulation vente #{sale_number}",
                             notes=f"Stock restauré suite à suppression de la vente #{sale_number}",
-                            user_id=self.user.get('id') if isinstance(self.user, dict) else self.user.id
+                            user_id=user_id
                         )
                         self.db_session.add(movement)
                     elif product and not product.active:
@@ -948,17 +1247,19 @@ Pour {quantity} unités:
                             self, "Produit désactivé",
                             f"Le produit '{product.name}' est désactivé, le stock n'a pas été restauré."
                         )
-            
-            # Supprimer les paiements
-            self.db_session.query(Payment).filter(Payment.sale_id == sale.id).delete()
-            
-            # Supprimer les articles de vente
-            for item in sale.items:
-                self.db_session.delete(item)
-            
-            # Supprimer la vente
-            self.db_session.delete(sale)
-            
+
+            # Reverser le solde crédit du client (si vente à crédit)
+            if sale.payment_method == "CRÉDIT" and sale.customer:
+                sale.customer.balance -= sale.total_amount
+
+            # Suppression douce : la vente reste en base mais est marquée annulée
+            sale.sale_status = "CANCELLED"
+            sale.statut = "ANNULEE"
+            sale.payment_status = "CANCELLED"
+            sale.amount_paid = 0
+            sale.change_amount = 0
+            sale.notes = f"Vente supprimée le {datetime.now().strftime('%d/%m/%Y %H:%M')} : {sale_number}"
+
             self.db_session.commit()
             
             # Rafraîchir l'affichage
@@ -967,7 +1268,7 @@ Pour {quantity} unités:
             
             QMessageBox.information(
                 self, "Succès",
-                f"La vente #{sale_number} a été supprimée avec succès !"
+                f"La vente #{sale_number} a été marquée comme annulée (suppression douce) avec succès."
             )
             
         except Exception as e:

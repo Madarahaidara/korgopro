@@ -36,8 +36,11 @@ logger = logging.getLogger(__name__)
 MAX_PRODUCTS_PER_PAGE = 50
 ROLES = {
     "ADMIN": ["all"],
-    "MANAGER": ["view_sales", "create_sales", "cancel_sales", "view_reports"],
+    "GESTIONNAIRE": ["view_sales", "create_sales", "cancel_sales", "view_reports", "view_products", "view_stock", "manage_customers"],
+    "SUPERVISEUR": ["view_sales", "create_sales", "cancel_sales", "view_reports", "view_products", "view_stock", "manage_customers"],
+    "ASSISTANT": ["create_sales", "view_products", "manage_customers"],
     "CAISSIER": ["create_sales", "view_products", "manage_customers"],
+    "MANAGER": ["view_sales", "create_sales", "cancel_sales", "view_reports"],
     "STOCKIST": ["view_products", "view_stock"],
     "ACCOUNTANT": ["view_sales", "view_reports"]
 }
@@ -132,7 +135,7 @@ class SaleView(QWidget):
         self.sale_service = SaleService(self.db_session)
         self.product_service = ProductService(self.db_session)
         self.customer_service = CustomerService(self.db_session)
-        self.sale_log_manager = SaleLogManager()
+        self.sale_log_manager = SaleLogManager(self.db_session)
         
         # Configuration UI
         self.setup_ui()

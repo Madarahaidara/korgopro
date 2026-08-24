@@ -1,0 +1,70 @@
+/* ===== QSS VENTES - Thème Bleu Marine ===== */
+
+/* Police globale */
+QWidget {
+    font-family: 'Segoe UI', 'Arial', sans-serif;
+}
+
+/* === RÉINITIALISATION COMPLÈTE === */
+QLineEdit#amount_paid_input {
+    border: none;
+    background: none;
+    margin: 0;
+    padding: 0;
+    font: inherit;
+    color: inherit;
+    selection-background-color: none;
+    selection-color: none;
+}
+
+/* === STYLE BASIQUE ET GARANTI === */
+QLineEdit#amount_paid_input {
+    border: 2px solid #000000;
+    background-color: #ffffff;
+    color: #000000;
+    padding: 8px;
+    font-size: 14px;
+    font-family: 'Segoe UI', 'Arial', sans-serif;
+    font-weight: normal;
+    border-radius: 0;
+}
+
+/* État focus */
+QLineEdit#amount_paid_input:focus {
+    border: 2px solid #2F4255;
+    background-color: #ffffff;
+}
+
+/* État hover */
+QLineEdit#amount_paid_input:hover {
+    border-color: #666666;
+}
+
+/* État désactivé */
+QLineEdit#amount_paid_input:disabled {
+    background-color: #f0f0f0;
+    color: #888888;
+    border-color: #cccccc;
+}
+
+/* === GARANTIE ABSOLUE - OVERRIDE TOTAL === */
+SaleView QLineEdit#amount_paid_input,
+QWidget QLineEdit#amount_paid_input,
+* QLineEdit#amount_paid_input {
+    border: 3px solid #2F4255 !important;
+    background-color: #ffffff !important;
+    color: #000000 !important;
+    padding: 10px !important;
+    font-size: 16px !important;
+    font-weight: bold !important;
+}
+
+/* === POUR ÊTRE SAIN, ON STYLE RIEEN D'AUTRE === */
+QPushButton,
+QComboBox,
+QSpinBox,
+QDoubleSpinBox,
+QTextEdit {
+    border: 1px solid #ccc;
+    background: white;
+}
