@@ -1,0 +1,149 @@
+name: Build & Release Korgo Pro
+
+# Déploiement automatique :
+# - A chaque push sur "main"  -> compilation de l'exécutable + upload en artefact
+# - A chaque tag "v*" (ex: v1.0.0) -> compilation + création d'une GitHub Release
+#   avec l'exécutable zippé, prêt à télécharger.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Windows (PyInstaller)
+    runs-on: windows-latest
+
+    steps:
+      - name: Cloner le dépôt
+        uses: actions/checkout@v4
+
+      - name: Mettre en place Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Installer les dépendances
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller
+          pip install PySide6 SQLAlchemy alembic pandas openpyxl bcrypt reportlab
+
+      # Le fichier korgo_pro.spec est volontairement ignoré par git (*.spec),
+      # on le régénère ici pour que le build soit reproductible dans CI.
+      - name: Générer le fichier spec PyInstaller
+        shell: bash
+        run: |
+          cat > korgo_pro.spec <<'EOF'
+          # -*- mode: python ; coding: utf-8 -*-
+          from PyInstaller.utils.hooks import collect_submodules
+
+          APP_NAME = "KorgoPro"
+          APP_ICON = "ui/icons/logo.ico"
+
+          datas = [
+              ("ui/themes/*.qss", "ui/themes"),
+              ("ui/icons", "ui/icons"),
+              ("utils/print_dialogs.py", "."),
+          ]
+
+          hiddenimports = []
+          hiddenimports += collect_submodules("alembic")
+          hiddenimports += collect_submodules("ui")
+          hiddenimports += collect_submodules("core")
+          hiddenimports += collect_submodules("controllers")
+          hiddenimports += collect_submodules("utils")
+          hiddenimports += [
+              "pandas._libs.tslibs.timedeltas",
+              "pandas._libs.tslibs.nattype",
+              "pandas._libs.tslibs.np_datetime",
+              "pandas._libs.tslibs.timezones",
+              "pandas._libs.tslibs.period",
+              "pandas._libs.tslibs.offsets",
+              "pandas._libs.tslibs.conversion",
+              "pandas._libs.tslibs.parsing",
+              "pandas._libs.tslibs.fields",
+              "pandas._libs.tslibs.base",
+              "pandas._libs.tslibs.vectorized",
+              "pandas._libs.tslibs.strptime",
+          ]
+
+          a = Analysis(
+              ["main.py"],
+              pathex=[],
+              binaries=[],
+              datas=datas,
+              hiddenimports=hiddenimports,
+              hookspath=[],
+              hooksconfig={},
+              runtime_hooks=[],
+              excludes=["tkinter", "PyQt5", "PyQt6", "matplotlib.tests", "pytest"],
+              noarchive=False,
+          )
+          pyz = PYZ(a.pure)
+          exe = EXE(
+              pyz,
+              a.scripts,
+              [],
+              exclude_binaries=True,
+              name=APP_NAME,
+              debug=False,
+              bootloader_ignore_signals=False,
+              strip=False,
+              upx=True,
+              console=False,
+              icon=APP_ICON,
+              disable_windowed_traceback=False,
+          )
+          coll = COLLECT(
+              exe,
+              a.binaries,
+              a.datas,
+              strip=False,
+              upx=True,
+              name=APP_NAME,
+          )
+          EOF
+
+      - name: Compiler l'exécutable
+        run: pyinstaller korgo_pro.spec
+
+      - name: Vérifier la présence de l'exécutable
+        run: |
+          if (Test-Path "dist\KorgoPro\KorgoPro.exe") {
+            Write-Output "EXE OK"
+            Get-Item "dist\KorgoPro\KorgoPro.exe" | Select-Object FullName, Length
+          } else {
+            Write-Error "KorgoPro.exe absent après le build"
+            exit 1
+          }
+
+      # Version nb (vX.Y.Z) : zipper l'app et créer une GitHub Release.
+      - name: Zipper l'application (Release)
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "dist\KorgoPro\*" -DestinationPath "KorgoPro-${{ github.ref_name }}.zip"
+
+      - name: Créer la GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Korgo Pro ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            KorgoPro-${{ github.ref_name }}.zip
+
+      # Sur chaque push de main (pas de tag) : conserver l'exécutable comme
+      # artefact téléchargeable depuis l'onglet "Actions".
+      - name: Uploader l'artefact de build
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: KorgoPro-build
+          path: dist/KorgoPro
+          if-no-files-found: error
