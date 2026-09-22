@@ -11,6 +11,8 @@ dependencies = [
   "PySide6",
   "SQLAlchemy",
   "alembic",
+  "psycopg2-binary",
+  "python-dotenv",
   "pandas",
   "openpyxl",
   "bcrypt",

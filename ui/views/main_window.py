@@ -9,9 +9,11 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 from ui.views.dashboard_view import DashboardView
 from ui.views.sale_view import SaleView
+from ui.views.invoice_register_view import InvoiceRegisterView
 from ui.views.stock_view import StockView
 from ui.views.admin_view import AdminView
 from ui.views.settings_view import SettingsView
+from ui.views.treasury_view import TreasuryView
 from ui.views.proforma_invoice_view import EnhancedProformaInvoiceView
 from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtCore import QSize
@@ -19,6 +21,30 @@ from ui.views.lock_screen import LockScreen
 from utils.settings_manager import SettingsManager
 from ui.icons.icon_manager import IconManager
 from utils.resource_path import resource_path
+from core.permissions import (
+    can,
+    is_known_role,
+    normalize_role,
+    role_display_name,
+)
+
+import logging
+
+logger = logging.getLogger("korgo_pro")
+
+# Association bouton de menu <-> permission (source unique : core.permissions).
+# (attribut du bouton, permission, attribut de la vue, titre affiché)
+MENU_ENTRIES = (
+    ("btn_dashboard", "view_dashboard", "dashboard_view", "Tableau de bord"),
+    ("btn_sale", "create_sales", "sale_view", "Vente"),
+    ("btn_register", "view_invoice_register", "register_view",
+     "Registre des factures clients"),
+    ("btn_proforma", "manage_proformas", "proforma_view", "Factures Pro Forma"),
+    ("btn_stock", "view_stock", "stock_view", "Stock"),
+    ("btn_treasury", "view_treasury", "treasury_view", "Trésorerie"),
+    ("btn_admin", "access_admin", "admin_view", "Administration"),
+    ("btn_settings", "manage_settings", "settings_view", "Paramètres"),
+)
 
 
 class MainWindow(QMainWindow):
@@ -29,14 +55,11 @@ class MainWindow(QMainWindow):
         
         # Initialiser le gestionnaire de paramètres
         self.settings_manager = SettingsManager()
-        
-        # Écouter les changements de paramètres
-        self.settings_manager.settings_changed.connect(self.on_settings_changed)
-        
+
         # Définir les noms séparés
         self.app_name = "Gestion de stock"
         self.company_name = self.settings_manager.get_setting("company_name")
-        
+
         # Appliquer le titre de la fenêtre
         self.setWindowTitle(f"{self.company_name} – {self.app_name}")
         # Taille minimale adaptée aux petits écrans (1024×768 minimum)
@@ -46,7 +69,19 @@ class MainWindow(QMainWindow):
         self.menu_collapsed_width = 60
         self.menu_collapsed = False
 
-        self._build_ui()
+        try:
+            self._build_ui()
+        except Exception:
+            # Ne pas laisser une fenêtre partiellement construite connectée
+            # au signal global (sinon elle plante à chaque settings_changed
+            # et pollue l'application) : déconnexion puis re-propagation.
+            try:
+                self.settings_manager.settings_changed.disconnect(
+                    self.on_settings_changed)
+            except (RuntimeError, TypeError):
+                pass
+            raise
+        self.settings_manager.settings_changed.connect(self.on_settings_changed)
         self._apply_role_permissions()
         self.apply_light_theme()
        
@@ -151,6 +186,12 @@ class MainWindow(QMainWindow):
         self.btn_stock = self._create_menu_button(
             "Stock", "btn_stock", IconManager.get_menu_icon("stock")
         )
+        self.btn_register = self._create_menu_button(
+            "Registre factures", "btn_register", IconManager.get_menu_icon("receipt")
+        )
+        self.btn_treasury = self._create_menu_button(
+            "Trésorerie", "btn_treasury", IconManager.get_menu_icon("treasury")
+        )
         self.btn_admin = self._create_menu_button(
             "Admin", "btn_admin", IconManager.get_menu_icon("admin")
         )
@@ -160,8 +201,10 @@ class MainWindow(QMainWindow):
 
         menu_layout.addWidget(self.btn_dashboard)
         menu_layout.addWidget(self.btn_sale)
+        menu_layout.addWidget(self.btn_register)
         menu_layout.addWidget(self.btn_proforma)
         menu_layout.addWidget(self.btn_stock)
+        menu_layout.addWidget(self.btn_treasury)
         menu_layout.addWidget(self.btn_admin)
         menu_layout.addWidget(self.btn_settings)
         menu_layout.addStretch()
@@ -169,41 +212,43 @@ class MainWindow(QMainWindow):
         # --- CONTENU ---
         self.stack = QStackedWidget()
         
-        # Instanciation des vues
-        self.dashboard_view = DashboardView(self.user_data)
-        self.sale_view = SaleView(self.user_data)
-        self.proforma_view = EnhancedProformaInvoiceView(current_user_id=self.user_data.get('id'))
-        self.stock_view = StockView(self.user_data)
-        self.admin_view = AdminView(self.user_data)
-        self.settings_view = SettingsView(self.user_data, self.settings_manager)
-        
-        self.stack.addWidget(self.dashboard_view)
-        self.stack.addWidget(self.sale_view)
-        self.stack.addWidget(self.proforma_view)
-        self.stack.addWidget(self.stock_view)
-        self.stack.addWidget(self.admin_view)
-        self.stack.addWidget(self.settings_view)
-        
-        # Connexions menu
-        self.btn_dashboard.clicked.connect(
-            lambda: self._switch_view(self.dashboard_view, "Dashboard")
-        )
-        self.btn_sale.clicked.connect(
-            lambda: self._switch_view(self.sale_view, "Vente")
-        )
-        self.btn_proforma.clicked.connect(
-            lambda: self._switch_view(self.proforma_view, "Factures Pro Forma")
-        )
-        self.btn_stock.clicked.connect(
-            lambda: self._switch_view(self.stock_view, "Stock")
-        )
-        
-        self.btn_admin.clicked.connect(
-            lambda: self._switch_view(self.admin_view, "Administration")
-        )
-        self.btn_settings.clicked.connect(
-            lambda: self._check_and_switch_to_settings()
-        )
+        # Instanciation des vues : seules les vues autoris?es par le r?le sont
+        # construites, ? partir de la source unique ``core.permissions``
+        # (voir MENU_ENTRIES). Une vue interdite n'est donc jamais instanci?e,
+        # ce qui ?vite tout message d'erreur pendant la construction de la
+        # fen?tre principale et tout ?cran ? moiti? initialis?.
+        role = normalize_role(self.user_data.get("role"))
+        factories = {
+            "dashboard_view": lambda: DashboardView(self.user_data),
+            "sale_view": lambda: SaleView(self.user_data),
+            "register_view": lambda: InvoiceRegisterView(self.user_data),
+            "proforma_view": lambda: EnhancedProformaInvoiceView(
+                current_user_id=self.user_data.get('id')),
+            "stock_view": lambda: StockView(self.user_data),
+            "treasury_view": lambda: TreasuryView(self.user_data),
+            "admin_view": lambda: AdminView(self.user_data),
+            "settings_view": lambda: SettingsView(
+                self.user_data, self.settings_manager),
+        }
+
+        self.views = {}
+        for attr, permission, view_attr, title in MENU_ENTRIES:
+            button = getattr(self, attr)
+            # Le tableau de bord est l'?cran d'accueil : toujours disponible.
+            if not (view_attr == "dashboard_view" or can(role, permission)):
+                continue
+
+            view = factories[view_attr]()
+            setattr(self, view_attr, view)
+            self.views[view_attr] = view
+            self.stack.addWidget(view)
+
+            if view_attr == "settings_view":
+                button.clicked.connect(self._check_and_switch_to_settings)
+            else:
+                button.clicked.connect(
+                    lambda _checked=False, v=view, t=title: self._switch_view(v, t)
+                )
 
         self.btn_toggle.clicked.connect(self._toggle_menu)
 
@@ -216,80 +261,48 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
         
     def _check_and_switch_to_settings(self):
-        """Vérifie les permissions avant d'accéder aux paramètres"""
-        role = self.user_data.get('role', '').upper()
-        
-        if role == "ADMIN":
-            self._switch_view(self.settings_view, "Paramètres")
+        """Vérifie les permissions avant d'accéder aux paramètres."""
+        role = normalize_role(self.user_data.get("role"))
+        settings_view = self.views.get("settings_view")
+
+        if settings_view is not None and can(role, "manage_settings"):
+            self._switch_view(settings_view, "Paramètres")
         else:
             QMessageBox.warning(
                 self,
                 "Accès refusé",
                 "Cette section est réservée aux administrateurs.\n"
-                f"Votre rôle: {role}"
+                f"Votre rôle : {role_display_name(role) or role}"
             )
             # Revenir au dashboard
-            self._switch_view(self.dashboard_view, "Dashboard")
-    
+            self._switch_view(self.views["dashboard_view"], "Dashboard")
+
     def _apply_role_permissions(self):
-        """Applique les permissions basées sur le rôle de l'utilisateur"""
-        role = self.user_data.get('role', '').upper()
-        
-        btn_sale = self.findChild(QPushButton, "btn_sale")
-        btn_stock = self.findChild(QPushButton, "btn_stock")
-        btn_admin = self.findChild(QPushButton, "btn_admin")
-        btn_dashboard = self.findChild(QPushButton, "btn_dashboard")
-        btn_settings = self.findChild(QPushButton, "btn_settings")
-        btn_proforma = self.findChild(QPushButton, "btn_proforma")
-        
-        # Cacher tous les boutons par défaut
-        btn_dashboard.show()
-        btn_sale.hide()
-        btn_proforma.hide()
-        btn_stock.hide()
-        btn_admin.hide()
-        btn_settings.hide()
+        """Applique les permissions de navigation du rôle connecté.
 
-        if role == "CAISSIER":
-            btn_sale.show()
-            btn_proforma.show()
-            # CAISSIER: PAS d'accès aux documents, stock, admin, paramètres
-            self.stack.setCurrentWidget(self.dashboard_view)
+        Source unique : ``core.permissions`` (voir ``MENU_ENTRIES``). Un bouton
+        de menu n'est visible que si le rôle possède la permission associée :
+        le menu et la matrice de référence ne peuvent plus diverger.
+        """
+        role = normalize_role(self.user_data.get("role"))
 
-        elif role in ("GERANT", "GESTIONNAIRE"):
-            btn_sale.show()
-            btn_proforma.show()
-            btn_stock.show()
-        
-            # GERANT/GESTIONNAIRE: PAS d'accès aux paramètres
-            self.stack.setCurrentWidget(self.dashboard_view)
+        if not is_known_role(role):
+            logger.warning(
+                "Rôle '%s' non reconnu : navigation réduite au tableau de bord "
+                "(voir core/permissions.py).", self.user_data.get("role"))
 
-        elif role == "SUPERVISEUR":
-            btn_sale.show()
-            btn_proforma.show()
-            btn_stock.show()
-            btn_admin.show()
-            # SUPERVISEUR: PAS d'accès aux paramètres
-            self.stack.setCurrentWidget(self.dashboard_view)
+        for attr, permission, _view_attr, _title in MENU_ENTRIES:
+            button = getattr(self, attr, None)
+            if button is None:
+                button = self.findChild(QPushButton, attr)
+            if button is None:
+                continue
+            button.setVisible(can(role, permission))
 
-        elif role == "ASSISTANT":
-            btn_sale.show()
-            btn_proforma.show()
-            # ASSISTANT: accès limité aux ventes et proformas
-            self.stack.setCurrentWidget(self.dashboard_view)
+        # Le tableau de bord est la vue d'accueil de tous les rôles (la
+        # permission ``view_dashboard`` leur est accordée sans exception).
+        self.stack.setCurrentWidget(self.views["dashboard_view"])
 
-        elif role == "ADMIN":
-            btn_sale.show()
-            btn_proforma.show()
-            btn_stock.show()
-            btn_admin.show()
-            btn_settings.show()
-            self.stack.setCurrentWidget(self.dashboard_view)
-
-        else:
-            # Rôle inconnu - afficher seulement le dashboard
-            self.stack.setCurrentWidget(self.dashboard_view)
-    
     def _switch_view(self, view, title):
         """Change la vue actuelle"""
         self.stack.setCurrentWidget(view)
@@ -369,16 +382,22 @@ class MainWindow(QMainWindow):
         self.refresh_all_views()
         
     def refresh_all_views(self):
-        """Rafraîchit toutes les vues pour appliquer les nouveaux paramètres"""
-        if hasattr(self.dashboard_view, 'refresh'):
-            self.dashboard_view.refresh()
-        if hasattr(self.sale_view, 'refresh'):
-            self.sale_view.refresh()
-        if hasattr(self.stock_view, 'refresh'):
-            self.stock_view.refresh()
-        
-        if hasattr(self.admin_view, 'refresh'):
-            self.admin_view.refresh()
+        """Rafraîchit toutes les vues pour appliquer les nouveaux paramètres.
+
+        Protection anti-gel : chaque vue est rafraîchie indépendamment
+        (getattr + try/except) afin qu'un échec sur l'une ne bloque ni ne
+        plante les autres, et qu'une vue absente (fenêtre partiellement
+        construite) ne lève jamais d'AttributeError.
+        """
+        for attr in ("dashboard_view", "sale_view", "stock_view", "admin_view"):
+            view = getattr(self, attr, None)
+            if view is None:
+                continue
+            try:
+                if hasattr(view, 'refresh'):
+                    view.refresh()
+            except Exception as e:
+                print(f"[WARN] Rafraîchissement de {attr} échoué : {e}")
     
     def apply_external_theme(self):
         """Appliquer un thème externe depuis theme_manager"""

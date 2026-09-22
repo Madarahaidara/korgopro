@@ -28,22 +28,21 @@ import os
 from utils.settings_manager import SettingsManager
 from utils.print_dialogs import PrintOptionsDialog, PrintHistoryDialog
 
+# Source unique des rôles et permissions (partagée avec le frontend web).
+from core.permissions import can, describe_roles, normalize_role, role_display_name
+
 # Configuration du logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Constantes
 MAX_PRODUCTS_PER_PAGE = 50
-ROLES = {
-    "ADMIN": ["all"],
-    "GESTIONNAIRE": ["view_sales", "create_sales", "cancel_sales", "view_reports", "view_products", "view_stock", "manage_customers"],
-    "SUPERVISEUR": ["view_sales", "create_sales", "cancel_sales", "view_reports", "view_products", "view_stock", "manage_customers"],
-    "ASSISTANT": ["create_sales", "view_products", "manage_customers"],
-    "CAISSIER": ["create_sales", "view_products", "manage_customers"],
-    "MANAGER": ["view_sales", "create_sales", "cancel_sales", "view_reports"],
-    "STOCKIST": ["view_products", "view_stock"],
-    "ACCOUNTANT": ["view_sales", "view_reports"]
-}
+
+#: Compatibilité : la matrice des rôles vit desormais dans ``core.permissions``
+#: (source unique desktop + web). ``ROLES`` n'est conserve que pour l'affichage
+#: de la matrice (onglet « Roles & Permissions ») et n'est plus utilise pour
+#: controler un acces.
+ROLES = describe_roles()
 
 # Import des modèles
 from core.database import SessionLocal
@@ -159,11 +158,18 @@ class SaleView(QWidget):
     
     # ===== PERMISSIONS =====
     def has_permission(self, permission: str) -> bool:
-        user_role = self.user.get("role", "CAISSIER")
-        if user_role == "ADMIN":
-            return True
-        allowed_permissions = ROLES.get(user_role, [])
-        return permission in allowed_permissions
+        """Contrôle d'accès délégué à ``core.permissions`` (source unique).
+
+        ``permission`` est une clé de ``core.permissions.PERMISSIONS`` :
+        ``create_sales``, ``cancel_sales``, ``view_reports``, ``view_stock``,
+        ``manage_stock``, ``manage_customers``, ``export_data`` …
+        """
+        return can(self.user.get("role"), permission)
+
+    def role_label(self) -> str:
+        """Libellé lisible du rôle connecté."""
+        role = normalize_role(self.user.get("role"))
+        return role_display_name(role) or role
     
     # ===== SETUP UI =====
     def setup_ui(self):

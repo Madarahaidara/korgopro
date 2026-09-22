@@ -1,0 +1,64 @@
+# -*- coding: utf-8 -*-
+# Fichier de métadonnées de version Windows pour KorgoPro.
+# Utilisé par PyInstaller (option version=) pour renseigner les propriétés
+# du fichier exécutable (Éditeur, Produit, Version...).
+# Ces métadonnées sont utiles à Windows / SmartScreen pour identifier
+# l'éditeur et réduire les heuristiques sur les binaires non signés.
+# IMPORTANT : remplacez les valeurs ci-dessous par vos vraies informations
+# d'entreprise avant la distribution.
+
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    # FileVersion et ProductVersion : MAJOR.minor.build.revision
+    filevers=(1, 0, 0, 0),
+    prodvers=(1, 0, 0, 0),
+    # Masque utilisé pour les flags du fichier
+    mask=0x3f,
+    # Flag : aucune propriété spéciale (fichier binaire normal, non debug)
+    flags=0x0,
+    # OSVERSION : 0x40004 => Windows NT (4 + VFT_WINDOWS32)
+    OS=0x40004,
+    # fileType : 0x1 => VFT_APP (application)
+    fileType=0x1,
+    subtype=0x0,
+    # date (0, 0) => non défini
+    date=(0, 0)
+  ),
+  kids=[
+    StringFileInfo(
+      [
+        StringTable(
+          # Langue 1036 (Français) + page de code Unicode (1200)
+          u'040904B0',
+          [
+            StringStruct(u'CompanyName', u'Korgo Pro'),
+            StringStruct(u'FileDescription', u'KorgoPro - Gestion commerciale (ventes, facturation, stock)'),
+            StringStruct(u'FileVersion', u'1.0.0.0'),
+            StringStruct(u'InternalName', u'KorgoPro'),
+            StringStruct(u'LegalCopyright', u'Copyright (c) 2026 Korgo Pro. Tous droits reserves.'),
+            StringStruct(u'OriginalFilename', u'KorgoPro.exe'),
+            StringStruct(u'ProductName', u'KorgoPro'),
+            StringStruct(u'ProductVersion', u'1.0.0.0')
+          ]
+        ),
+        StringTable(
+          # Version anglaise pour compatibilité internationale
+          u'040904B0',
+          [
+            StringStruct(u'CompanyName', u'Korgo Pro'),
+            StringStruct(u'FileDescription', u'KorgoPro - Business management (sales, invoicing, stock)'),
+            StringStruct(u'FileVersion', u'1.0.0.0'),
+            StringStruct(u'InternalName', u'KorgoPro'),
+            StringStruct(u'LegalCopyright', u'Copyright (c) 2026 Korgo Pro. All rights reserved.'),
+            StringStruct(u'OriginalFilename', u'KorgoPro.exe'),
+            StringStruct(u'ProductName', u'KorgoPro'),
+            StringStruct(u'ProductVersion', u'1.0.0.0')
+          ]
+        )
+      ]
+    ),
+    VarFileInfo(
+      [VarStruct(u'Translation', [1036, 1200])]
+    )
+  ]
+)

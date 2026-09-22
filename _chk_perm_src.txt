@@ -1,0 +1,203 @@
+"""Tests de la source unique de roles et de permissions (core.permissions).
+
+Verifie la matrice, la normalisation des roles (fin des six vocabulaires
+concurrents), la coherence de la navigation de ui/views/main_window.py et la
+construction des ecrans selon le role (offscreen, sans acces reseau).
+
+Usage :  python test_permissions.py
+"""
+import os
+import sys
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+sys.path.insert(0, ".")
+
+from core.permissions import (  # noqa: E402
+    CANONICAL_ROLES,
+    ENFORCED_PERMISSIONS,
+    LEGACY_ROLES,
+    PERMISSIONS,
+    PLANNED_PERMISSIONS,
+    ROLE_ALIASES,
+    can,
+    describe_roles,
+    is_admin,
+    is_enforced,
+    is_known_role,
+    normalize_role,
+    permission_flags,
+    permissions_of,
+    role_display_name,
+)
+
+FAILURES = []
+
+
+def check(label, condition, detail=""):
+    status = "OK  " if condition else "FAIL"
+    if not condition:
+        FAILURES.append(label)
+    print(f"   [{status}] {label}{(' -> ' + str(detail)) if detail else ''}")
+
+
+print("=" * 70)
+print("TEST PERMISSIONS - SOURCE UNIQUE (core.permissions)")
+print("=" * 70)
+
+# ---------------------------------------------------------------------------
+print("\n1. NORMALISATION DES ROLES")
+# ---------------------------------------------------------------------------
+check("'gerant' -> GESTIONNAIRE", normalize_role("gerant") == "GESTIONNAIRE",
+      normalize_role("gerant"))
+check("' Gestionnaire ' -> GESTIONNAIRE",
+      normalize_role(" Gestionnaire ") == "GESTIONNAIRE")
+check("'Caissier' -> CAISSIER", normalize_role("Caissier") == "CAISSIER")
+check("None -> chaine vide", normalize_role(None) == "")
+check("role inconnu conserve en majuscules",
+      normalize_role("stockist") == "STOCKIST")
+check("tous les alias pointent vers un role canonique",
+      set(ROLE_ALIASES.values()) <= set(CANONICAL_ROLES), ROLE_ALIASES)
+check("GERANT est un alias (bug P0 : role casse a la caisse)",
+      ROLE_ALIASES.get("GERANT") == "GESTIONNAIRE")
+check("is_known_role('ADMIN')", is_known_role("ADMIN"))
+check("is_known_role('gerant')", is_known_role("gerant"))
+check("not is_known_role('STOCKIST')", not is_known_role("STOCKIST"))
+check("LEGACY_ROLES disjoints des canoniques",
+      not (set(LEGACY_ROLES) & set(CANONICAL_ROLES)))
+check("is_admin('admin')", is_admin("admin"))
+check("not is_admin('GESTIONNAIRE')", not is_admin("GESTIONNAIRE"))
+
+# ---------------------------------------------------------------------------
+print("\n2. MATRICE DE PERMISSIONS")
+# ---------------------------------------------------------------------------
+check("ADMIN possède toutes les permissions",
+      permissions_of("ADMIN") == frozenset(PERMISSIONS),
+      f"{len(permissions_of('ADMIN'))}/{len(PERMISSIONS)}")
+check("toute permission est une clé connue",
+      all(p in PERMISSIONS for role in CANONICAL_ROLES
+          for p in permissions_of(role)))
+check("rôle inconnu -> tableau de bord seul",
+      permissions_of("STOCKIST") == frozenset({"view_dashboard"}))
+check("rôle hérité -> tableau de bord seul",
+      permissions_of("MANAGER") == frozenset({"view_dashboard"}))
+check("clé de permission inexistante toujours refusée",
+      not can("ADMIN", "create_sale"))
+check("CAISSIER peut créer une vente mais pas annuler",
+      can("CAISSIER", "create_sales") and not can("CAISSIER", "cancel_sales"))
+check("ASSISTANT a les proformas, pas le stock",
+      can("ASSISTANT", "manage_proformas")
+      and not can("ASSISTANT", "view_stock"))
+check("GESTIONNAIRE a le stock et la trésorerie",
+      can("GESTIONNAIRE", "view_stock")
+      and can("GESTIONNAIRE", "view_treasury"))
+check("GERANT == GESTIONNAIRE (alias)",
+      permissions_of("GERANT") == permissions_of("GESTIONNAIRE"))
+check("SUPERVISEUR peut annuler une vente", can("SUPERVISEUR", "cancel_sales"))
+check("CAISSIER n'entre pas dans l'administration",
+      not can("CAISSIER", "access_admin"))
+check("permission_flags expose toutes les clés",
+      set(permission_flags("CAISSIER")) == set(PERMISSIONS))
+check("permission_flags respecte la matrice",
+      all(permission_flags("ASSISTANT")[k] == can("ASSISTANT", k)
+          for k in PERMISSIONS))
+
+# ---------------------------------------------------------------------------
+print("\n3. CLASSIFICATION DES PERMISSIONS")
+# ---------------------------------------------------------------------------
+check("ENFORCED et PLANNED sont disjoints",
+      not (ENFORCED_PERMISSIONS & PLANNED_PERMISSIONS))
+check("ENFORCED + PLANNED couvrent le vocabulaire",
+      (ENFORCED_PERMISSIONS | PLANNED_PERMISSIONS) == frozenset(PERMISSIONS),
+      f"{len(ENFORCED_PERMISSIONS)} + {len(PLANNED_PERMISSIONS)}"
+      f" = {len(PERMISSIONS)}")
+check("is_enforced('access_admin')", is_enforced("access_admin"))
+check("not is_enforced('manage_users') (prévu au lot suivant)",
+      not is_enforced("manage_users"))
+print(f"   Info: {len(ENFORCED_PERMISSIONS)} permissions appliquées,"
+      f" {len(PLANNED_PERMISSIONS)} planifiées -> {sorted(PLANNED_PERMISSIONS)}")
+
+# ---------------------------------------------------------------------------
+print("\n4. LIBELLES ET DESCRIPTIONS")
+# ---------------------------------------------------------------------------
+check("role_display_name('gerant') == 'Gestionnaire'",
+      role_display_name("gerant") == "Gestionnaire")
+check("rôle inconnu affiché tel quel",
+      role_display_name("STOCKIST") == "STOCKIST")
+check("describe_roles couvre les rôles canoniques",
+      set(describe_roles()) == set(CANONICAL_ROLES))
+check("describe_roles fournit nom + permissions",
+      all("name" in v and set(v["permissions"]) == set(PERMISSIONS)
+          for v in describe_roles().values()))
+check("le rôle GERANT n'est plus proposé à la création",
+
+# ---------------------------------------------------------------------------
+print("\n5. NAVIGATION DECLARATIVE (main_window.MENU_ENTRIES)")
+# ---------------------------------------------------------------------------
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+from PySide6.QtWidgets import QApplication  # noqa: E402
+
+app = QApplication.instance() or QApplication([])
+
+from ui.views.main_window import MENU_ENTRIES  # noqa: E402
+
+check("8 entrées de menu déclarées", len(MENU_ENTRIES) == 8, str(len(MENU_ENTRIES)))
+check("aucune permission en double dans le menu",
+      len({perm for _a, perm, _v, _t in MENU_ENTRIES}) == len(MENU_ENTRIES))
+check("chaque permission du menu est une clé connue",
+      all(perm in PERMISSIONS for _a, perm, _v, _t in MENU_ENTRIES))
+check("chaque permission du menu est appliquée (ENFORCED)",
+      all(perm in ENFORCED_PERMISSIONS for _a, perm, _v, _t in MENU_ENTRIES))
+check("le rôle GERANT obtient le même menu que GESTIONNAIRE",
+      [can("GERANT", p) for _a, p, _v, _t in MENU_ENTRIES]
+      == [can("GESTIONNAIRE", p) for _a, p, _v, _t in MENU_ENTRIES])
+
+# ---------------------------------------------------------------------------
+print("\n6. CONSTRUCTION DES ECRANS PAR ROLE (offscreen)")
+# ---------------------------------------------------------------------------
+from PySide6.QtWidgets import QMessageBox, QDialog  # noqa: E402
+
+POPUPS = []
+QMessageBox.warning = staticmethod(
+    lambda *a, **k: (POPUPS.append(a[2] if len(a) > 2 else ""),
+                     QMessageBox.StandardButton.Ok)[1])
+QMessageBox.critical = staticmethod(
+    lambda *a, **k: (POPUPS.append(a[2] if len(a) > 2 else ""),
+                     QMessageBox.StandardButton.Ok)[1])
+QMessageBox.information = staticmethod(
+    lambda *a, **k: QMessageBox.StandardButton.Ok)
+QDialog.exec = lambda self: 0
+
+from ui.views.sale_view import SaleView  # noqa: E402
+
+for role in ["ADMIN", "GESTIONNAIRE", "GERANT", "gerant", "SUPERVISEUR",
+             "ASSISTANT", "CAISSIER"]:
+    view = SaleView({"id": 1, "username": "test", "role": role})
+    check(f"SaleView({role}) construite en entier",
+          hasattr(view, "cart_items") and len(POPUPS) == 0,
+          f"popups={len(POPUPS)}")
+
+POPUPS.clear()
+for role in ["STOCKIST", "MANAGER", ""]:
+    view = SaleView({"id": 1, "username": "test", "role": role})
+    check(f"SaleView({role!r}) refusée avec message (pas de vue partielle)",
+          not hasattr(view, "cart_items") and len(POPUPS) == 1)
+
+# ---------------------------------------------------------------------------
+print("\n7. ACCES PARAMETRES")
+# ---------------------------------------------------------------------------
+from ui.views.stock_view import StockView  # noqa: E402
+
+for role, expected in [("ADMIN", True), ("GERANT", False),
+                       ("SUPERVISEUR", False), ("CAISSIER", False)]:
+    view = StockView({"id": 1, "username": "test", "role": role})
+    check(f"StockView({role}) gestion des magasins = {expected}",
+          view._can_manage_stores() is expected)
+
+# ---------------------------------------------------------------------------
+print("\n" + "=" * 70)
+if FAILURES:
+    print(f"ECHEC : {len(FAILURES)} test(s) en echec")
+    for name in FAILURES:
+        print(f"   - {name}")
+    sys.exit(1)
+print("SUCCES : tous les tests de permissions passent")

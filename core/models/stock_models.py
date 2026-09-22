@@ -3,6 +3,9 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from core.database import Base
 from core.models.customer import Customer
+# Import nécessaire pour que SQLAlchemy enregistre le modèle Store utilisé par
+# les relations `Product.store` / `InventoryMovement.store`.
+from core.models.store import Store  # noqa: F401
 
 class Product(Base):
     """Modèle pour les produits"""
@@ -19,6 +22,9 @@ class Product(Base):
     purchase_price = Column(Float, nullable=False)
     sale_price = Column(Float, nullable=False)
     supplier_id = Column(Integer, ForeignKey('suppliers.id'), nullable=True)
+    # Magasin auquel appartient ce stock (NULL = magasin par défaut, voir
+    # core.store_manager.ensure_default_store)
+    store_id = Column(Integer, ForeignKey('stores.id'), nullable=True, index=True)
     location = Column(String(100), nullable=True)
     barcode = Column(String(50), nullable=True, unique=True)
     active = Column(Boolean, default=True)
@@ -27,6 +33,7 @@ class Product(Base):
     
     # Relations
     supplier = relationship("Supplier", backref="products")
+    store = relationship("Store", backref="products")
     
     @property
     def stock_value(self):
@@ -100,12 +107,16 @@ class InventoryMovement(Base):
     reason = Column(String(200), nullable=True)  # Raison du mouvement
     notes = Column(Text, nullable=True)
     user_id = Column(Integer, ForeignKey('users.id'), nullable=True)
+    # Magasin concerné par le mouvement (NULL = magasin par défaut pour
+    # l'historique antérieur au multi-magasins)
+    store_id = Column(Integer, ForeignKey('stores.id'), nullable=True, index=True)
     date = Column(DateTime, default=func.now())
     created_at = Column(DateTime, default=func.now())
     
     # Relations
     product = relationship("Product", backref="movements")
     user = relationship("User", backref="inventory_movements")
+    store = relationship("Store", backref="movements")
     
     def __repr__(self):
         return f"<Movement {self.movement_type} - {self.quantity} units>"

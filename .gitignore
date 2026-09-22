@@ -5,5 +5,15 @@ __pycache__/
 *.pyo
 *.pyd
 build/
+
+# --- Données locales, secrets et journaux (non versionnés) ---
+company_settings.json
+*.log
+*.db
+*.db-journal
+users_backup_*.json
+base_export_*.json
+
 dist/
 *.spec
+logs/

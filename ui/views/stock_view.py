@@ -25,12 +25,21 @@ from core.models.user import User
 from core.models.sale_models import Sale, SaleItem, Customer, Payment  # Ajout des modèles de vente
 from core.sale_log_manager import SaleLogManager
 from controllers.auth_controller import AuthController
+# Multi-magasins
+from core.models.store import Store
+from core.store_manager import (
+    StoreManager, ensure_default_store, get_active_store_id, set_active_store_id,
+    store_scope, current_store_id_for,
+)
 
 # Import des dialogues d'impression
 from utils.print_dialogs import PrintOptionsDialog, PrintHistoryDialog
 
 # Import du SettingsManager
 from utils.settings_manager import SettingsManager
+
+# Source unique des rôles et permissions (partagée avec le frontend web).
+from core.permissions import can
 
 class StockView(QWidget):
     """Vue complète de gestion des stocks avec toutes les fonctionnalités"""
@@ -59,6 +68,17 @@ class StockView(QWidget):
         # Connexion à la base de données
         self.db_session = SessionLocal()
         
+        # Multi-magasins : garantir un magasin par défaut (et rattacher les
+        # données historiques), puis déterminer le magasin actif. Si la base
+        # n'est pas encore migrée, l'application fonctionne sans cloisonnement.
+        try:
+            ensure_default_store(self.db_session)
+        except Exception as e:
+            print(f"Initialisation des magasins ignorée: {e}")
+        self.store_manager = StoreManager(self.db_session)
+        self.active_store_id = get_active_store_id(self.db_session)
+        self.can_manage_stores = self._can_manage_stores()
+        
         # Données
         self.products = []
         self.filtered_products = []
@@ -83,6 +103,139 @@ class StockView(QWidget):
         if self.settings_manager:
             return self.settings_manager.get_setting(key, default)
         return default
+
+    # ==================== MULTI-MAGASINS ====================
+    def _user_role(self):
+        """Rôle brut de l'utilisateur courant (dict ou objet)."""
+        if isinstance(self.user, dict):
+            return self.user.get('role')
+        return getattr(self.user, 'role', None)
+
+    def has_permission(self, permission: str) -> bool:
+        """Contrôle d'accès délégué à ``core.permissions`` (source unique)."""
+        return can(self._user_role(), permission)
+
+    def _can_manage_stores(self):
+        """Seuls les administrateurs et gestionnaires gèrent les magasins."""
+        return can(self._user_role(), "manage_stores")
+
+    def _apply_store_scope(self, query):
+        """Limite une requête sur `products` au magasin actif."""
+        scope = store_scope(self.db_session, Product.store_id)
+        return query if scope is None else query.filter(scope)
+
+    def scoped_product_query(self):
+        """Requête de base sur les produits, limitée au magasin actif."""
+        return self._apply_store_scope(self.db_session.query(Product))
+
+    def _scoped_column_query(self, column):
+        """Requête sur une colonne de `products`, limitée au magasin actif."""
+        return self._apply_store_scope(self.db_session.query(column))
+
+    def _movement_store_id(self, product=None):
+        """Magasin à associer à un nouveau mouvement de stock."""
+        if product is not None and getattr(product, 'store_id', None):
+            return product.store_id
+        return self.active_store_id or current_store_id_for(self.db_session)
+
+    def load_stores_combo(self):
+        """Remplir le sélecteur de magasin (magasins actifs uniquement)."""
+        if not hasattr(self, 'store_combo') or self.store_combo is None:
+            return
+        self.store_combo.blockSignals(True)
+        self.store_combo.clear()
+        stores = self.store_manager.active_stores()
+        active_index = 0
+        for index, store in enumerate(stores):
+            self.store_combo.addItem(f"{store.name} ({store.code})", store.id)
+            if store.id == self.active_store_id:
+                active_index = index
+        if stores:
+            self.store_combo.setCurrentIndex(active_index)
+        self.store_combo.blockSignals(False)
+        self.update_store_info()
+
+    def update_store_info(self):
+        """Afficher un résumé (produits, valeur) du magasin actif."""
+        if not hasattr(self, 'store_info_label') or self.store_info_label is None:
+            return
+        if not self.active_store_id:
+            self.store_info_label.setText("Aucun magasin")
+            return
+        try:
+            summary = self.store_manager.store_summary(self.active_store_id)
+        except Exception:
+            summary = None
+        if summary is None:
+            self.store_info_label.setText("")
+            return
+        self.store_info_label.setText(
+            f"{summary['products']} produit(s) · {summary['quantity']:,} unité(s) · "
+            f"valeur {summary['stock_value']:,.0f} {self.currency}"
+        )
+
+    def on_store_changed(self, index):
+        """Changement de magasin actif : recharge tout l'affichage."""
+        if not hasattr(self, 'store_combo') or self.store_combo is None:
+            return
+        store_id = self.store_combo.currentData()
+        if store_id is None or store_id == self.active_store_id:
+            return
+        try:
+            set_active_store_id(store_id, self.db_session)
+        except Exception as e:
+            QMessageBox.warning(self, "Magasin", str(e))
+            self.load_stores_combo()
+            return
+        self.active_store_id = int(store_id)
+        self.reload_for_active_store()
+
+    def reload_for_active_store(self):
+        """Recharger produits / mouvements / ventes / statistiques du magasin."""
+        self.load_data()
+        self.rebuild_category_filter()
+        self.filter_products()          # inclut load_products_table + update_stats
+        self.load_movements_table()
+        self.load_sales_table()
+        self.update_store_info()
+
+    def rebuild_category_filter(self):
+        """Reconstruire la liste des catégories du magasin actif."""
+        if not hasattr(self, 'category_filter') or self.category_filter is None:
+            return
+        current = self.category_filter.currentText()
+        self.category_filter.blockSignals(True)
+        self.category_filter.clear()
+        self.category_filter.addItem("Toutes catégories")
+        for (category,) in self._scoped_column_query(Product.category).distinct().all():
+            if category:
+                self.category_filter.addItem(category)
+        index = self.category_filter.findText(current)
+        self.category_filter.setCurrentIndex(index if index >= 0 else 0)
+        self.category_filter.blockSignals(False)
+
+    def show_stores_dialog(self):
+        """Ouvrir l'écran de gestion des magasins."""
+        if not self.can_manage_stores:
+            QMessageBox.warning(
+                self, "Accès refusé",
+                "Seuls les administrateurs et les gestionnaires peuvent gérer "
+                "les magasins."
+            )
+            return
+
+        dialog = StoresDialog(self, self.db_session, self.store_manager, self.active_store_id)
+        dialog.exec()
+
+        # La liste ou le magasin actif a pu changer : tout recharger.
+        self.active_store_id = get_active_store_id(self.db_session)
+        self.load_data()
+        self.load_stores_combo()
+        self.rebuild_category_filter()
+        self.filter_products()
+        self.load_movements_table()
+        self.load_sales_table()
+        self.update_store_info()
     
     def get_company_info(self):
         """Récupère les informations de l'entreprise"""
@@ -206,6 +359,11 @@ class StockView(QWidget):
         self.inventory_btn = None
         self.refresh_btn = None
         
+        # Widgets multi-magasins
+        self.store_combo = None
+        self.manage_stores_btn = None
+        self.store_info_label = None
+        
         # Détails produits
         self.detail_name = None
         self.detail_category = None
@@ -274,12 +432,13 @@ class StockView(QWidget):
         self.calc_roi = None
     
     def load_data(self):
-        """Charger les données depuis la base de données"""
+        """Charger les données depuis la base de données (magasin actif)"""
         try:
-            # Charger les produits avec leurs fournisseurs (tous, actifs et inactifs)
-            self.products = self.db_session.query(Product)\
-                .options(joinedload(Product.supplier))\
-                .order_by(Product.name).all()
+            # Filtrer sur le magasin actif (multi-magasins)
+            query = self._apply_store_scope(
+                self.db_session.query(Product).options(joinedload(Product.supplier))
+            )
+            self.products = query.order_by(Product.name).all()
             self.filtered_products = self.products.copy()
             
             # Vérifier et créer des catégories de dépenses par défaut si nécessaire
@@ -1231,6 +1390,7 @@ Pour {quantity} unités:
                         
                         movement = InventoryMovement(
                             product_id=product.id,
+                            store_id=self._movement_store_id(product),
                             movement_type="IN",
                             quantity=item.quantity,
                             unit_price=item.unit_price,
@@ -1384,6 +1544,11 @@ Pour {quantity} unités:
                 joinedload(Sale.customer),
                 joinedload(Sale.cashier)
             )
+            
+            # Multi-magasins : ventes du magasin actif
+            scope = store_scope(self.db_session, Sale.store_id)
+            if scope is not None:
+                query = query.filter(scope)
             
             # Appliquer les filtres de date
             start_date = self.sales_start_date.date().toPython()
@@ -1555,8 +1720,8 @@ Pour {quantity} unités:
         self.category_filter = QComboBox()
         self.category_filter.addItem("Toutes catégories")
         
-        # Récupérer les catégories depuis la base de données
-        categories = self.db_session.query(Product.category).distinct().all()
+        # Récupérer les catégories depuis la base de données (magasin actif)
+        categories = self._scoped_column_query(Product.category).distinct().all()
         for category in categories:
             if category[0]:
                 self.category_filter.addItem(category[0])
@@ -1621,7 +1786,33 @@ Pour {quantity} unités:
         toolbar_layout.addWidget(search_group, 70)
         toolbar_layout.addWidget(actions_group, 30)
         
+        # Sélecteur de magasin (multi-magasins) : détermine le stock affiché
+        store_group = QGroupBox("Magasin")
+        store_layout = QHBoxLayout(store_group)
+
+        self.store_combo = QComboBox()
+        self.store_combo.setToolTip("Magasin dont le stock est affiché et modifié")
+        self.store_combo.currentIndexChanged.connect(self.on_store_changed)
+
+        self.manage_stores_btn = QPushButton("🏬 Gérer les magasins")
+        self.manage_stores_btn.setObjectName("storeButton")
+        self.manage_stores_btn.setToolTip("Créer, modifier, activer ou supprimer un magasin")
+        self.manage_stores_btn.clicked.connect(self.show_stores_dialog)
+        self.manage_stores_btn.setVisible(self.can_manage_stores)
+
+        self.store_info_label = QLabel("")
+        self.store_info_label.setObjectName("storeInfoLabel")
+
+        store_layout.addWidget(QLabel("Magasin actif:"))
+        store_layout.addWidget(self.store_combo, 1)
+        store_layout.addWidget(self.store_info_label, 1)
+        store_layout.addWidget(self.manage_stores_btn)
+
+        layout.addWidget(store_group)
         layout.addWidget(toolbar)
+
+        # Remplir le sélecteur de magasin (magasin actif présélectionné)
+        self.load_stores_combo()
         
         # Tableau des produits
         self.products_table = QTableWidget()
@@ -1849,7 +2040,7 @@ Pour {quantity} unités:
     
     def show_add_product_dialog(self):
         """Afficher la boîte de dialogue d'ajout de produit"""
-        dialog = ProductDialog(self, self.db_session)
+        dialog = ProductDialog(self, self.db_session, default_store_id=self.active_store_id)
         if dialog.exec():
             try:
                 # Le dialogue gère déjà l'ajout en base
@@ -1878,7 +2069,7 @@ Pour {quantity} unités:
     
     def edit_product(self, product):
         """Modifier un produit"""
-        dialog = ProductDialog(self, self.db_session, product)
+        dialog = ProductDialog(self, self.db_session, product, default_store_id=self.active_store_id)
         if dialog.exec():
             try:
                 # Le dialogue gère déjà la modification
@@ -1945,6 +2136,7 @@ Pour {quantity} unités:
                     # Créer un mouvement de perte pour le stock restant
                     loss_movement = InventoryMovement(
                         product_id=product.id,
+                        store_id=self._movement_store_id(product),
                         movement_type="LOSS",
                         quantity=product.quantity,
                         unit_price=product.purchase_price,
@@ -2047,6 +2239,7 @@ Pour {quantity} unités:
                 # Créer le mouvement
                 movement = InventoryMovement(
                     product_id=product.id,
+                    store_id=self._movement_store_id(product),
                     movement_type=operation_type,
                     quantity=quantity,
                     unit_price=unit_price,
@@ -2104,6 +2297,7 @@ Pour {quantity} unités:
                 # Créer le mouvement d'ajustement
                 movement = InventoryMovement(
                     product_id=product.id,
+                    store_id=self._movement_store_id(product),
                     movement_type="ADJUST",
                     quantity=abs(difference),
                     unit_price=product.purchase_price,
@@ -2247,6 +2441,11 @@ Pour {quantity} unités:
                 joinedload(InventoryMovement.product),
                 joinedload(InventoryMovement.user)
             )
+            
+            # Multi-magasins : mouvements du magasin actif
+            scope = store_scope(self.db_session, InventoryMovement.store_id)
+            if scope is not None:
+                query = query.filter(scope)
             
             # Filtre par date
             if hasattr(self, 'movement_start_date') and self.movement_start_date:
@@ -3845,11 +4044,13 @@ Pour {quantity} unités:
 
 class ProductDialog(QDialog):
     """Boîte de dialogue pour ajouter/modifier un produit"""
-    def __init__(self, parent=None, db_session=None, product=None):
+    def __init__(self, parent=None, db_session=None, product=None, default_store_id=None):
         super().__init__(parent)
         
         self.db_session = db_session
         self.product = product
+        # Magasin proposé par défaut (celui affiché dans la vue Stock)
+        self.default_store_id = default_store_id
         
         self.setWindowTitle("Nouveau Produit" if not product else "Modifier Produit")
         self.setModal(True)
@@ -3937,6 +4138,25 @@ class ProductDialog(QDialog):
         self.active_checkbox = QCheckBox("Actif")
         self.active_checkbox.setChecked(True)
         
+        # Magasin auquel appartient le stock (multi-magasins)
+        self.store_combo = QComboBox()
+        self.store_combo.setToolTip("Magasin auquel ce stock appartient")
+        for store in StoreManager(db_session).list_stores(include_inactive=False):
+            self.store_combo.addItem(f"{store.name} ({store.code})", store.id)
+
+        preselected_store = None
+        if product is not None and getattr(product, 'store_id', None):
+            preselected_store = product.store_id
+        elif default_store_id is not None:
+            preselected_store = default_store_id
+        else:
+            preselected_store = current_store_id_for(db_session)
+        if preselected_store is not None:
+            for index in range(self.store_combo.count()):
+                if self.store_combo.itemData(index) == preselected_store:
+                    self.store_combo.setCurrentIndex(index)
+                    break
+        
         # Ajouter les champs au formulaire
         form.addRow("Code produit*:", self.code_input)
         form.addRow("Nom*:", self.name_input)
@@ -3946,6 +4166,7 @@ class ProductDialog(QDialog):
         form.addRow("Prix d'achat*:", self.purchase_spin)
         form.addRow("Prix de vente*:", self.sale_spin)
         form.addRow("Fournisseur:", supplier_layout)
+        form.addRow("Magasin*:", self.store_combo)
         form.addRow("Stock minimum:", self.min_stock_spin)
         form.addRow("Stock maximum:", self.max_stock_spin)
         form.addRow("Emplacement:", self.location_input)
@@ -4052,14 +4273,19 @@ class ProductDialog(QDialog):
             QMessageBox.warning(self, "Validation", "Le prix de vente doit être supérieur à 0!")
             return
         
-        # Vérifier l'unicité du code
+        # Vérifier l'unicité du code (contrainte unique globale sur products.code,
+        # donc valable pour tous les magasins)
         existing = self.db_session.query(Product).filter(
             Product.code == self.code_input.text().strip()
         ).first()
         
         if existing and (not self.product or existing.id != self.product.id):
+            existing_store = existing.store.name if getattr(existing, 'store', None) else "un autre magasin"
             QMessageBox.warning(self, "Validation", 
-                              f"Le code '{self.code_input.text()}' est déjà utilisé!")
+                              f"Le code '{self.code_input.text()}' est déjà utilisé "
+                              f"(magasin : {existing_store}).\n\n"
+                              "Chaque produit doit avoir un code unique, "
+                              "même entre magasins.")
             return
         
         # Sauvegarder
@@ -4079,6 +4305,9 @@ class ProductDialog(QDialog):
                 self.product.location = self.location_input.text().strip() or None
                 self.product.barcode = self.barcode_input.text().strip() or None
                 self.product.active = self.active_checkbox.isChecked()
+                # Multi-magasins : le produit peut être déplacé vers un autre magasin
+                if self.store_combo.currentData() is not None:
+                    self.product.store_id = self.store_combo.currentData()
             else:
                 # Nouveau produit
                 new_product = Product(
@@ -4094,7 +4323,9 @@ class ProductDialog(QDialog):
                     max_stock=self.max_stock_spin.value(),
                     location=self.location_input.text().strip() or None,
                     barcode=self.barcode_input.text().strip() or None,
-                    active=self.active_checkbox.isChecked()
+                    active=self.active_checkbox.isChecked(),
+                    # Multi-magasins : le stock est créé dans le magasin choisi
+                    store_id=self.store_combo.currentData(),
                 )
                 
                 self.db_session.add(new_product)
@@ -4414,9 +4645,13 @@ class InventoryDialog(QDialog):
         layout.addWidget(header_label)
         
         # Instructions
+        store_id = get_active_store_id(self.db_session)
+        current_store = self.db_session.query(Store).get(store_id) if store_id else None
+        store_label = f"\nMagasin : {current_store.name}" if current_store else ""
         instructions = QLabel(
             "Veuillez entrer les quantités comptées pour chaque produit.\n"
             "Les différences seront automatiquement calculées et enregistrées."
+            + store_label
         )
         instructions.setWordWrap(True)
         layout.addWidget(instructions)
@@ -4458,7 +4693,12 @@ class InventoryDialog(QDialog):
     def load_products(self):
         """Charger les produits dans le tableau"""
         try:
-            products = self.db_session.query(Product).filter(Product.active == True).order_by(Product.name).all()
+            products = self.db_session.query(Product).filter(Product.active == True)
+            # Multi-magasins : inventaire du magasin actif uniquement
+            scope = store_scope(self.db_session, Product.store_id)
+            if scope is not None:
+                products = products.filter(scope)
+            products = products.order_by(Product.name).all()
             
             self.table.setRowCount(len(products))
             
@@ -4567,10 +4807,22 @@ class InventoryDialog(QDialog):
                 # Trouver le produit
                 product = None
                 if product_code:
-                    product = self.db_session.query(Product).filter(Product.code == product_code).first()
+                    product = self.db_session.query(Product).filter(
+                        Product.code == product_code
+                    )
+                    scope = store_scope(self.db_session, Product.store_id)
+                    if scope is not None:
+                        product = product.filter(scope)
+                    product = product.first()
                 
                 if not product and product_name:
-                    product = self.db_session.query(Product).filter(Product.name == product_name).first()
+                    product = self.db_session.query(Product).filter(
+                        Product.name == product_name
+                    )
+                    scope = store_scope(self.db_session, Product.store_id)
+                    if scope is not None:
+                        product = product.filter(scope)
+                    product = product.first()
                 
                 if product:
                     counted_spinbox = self.table.cellWidget(row, 3)
@@ -4586,6 +4838,7 @@ class InventoryDialog(QDialog):
                             # Créer un mouvement d'ajustement
                             movement = InventoryMovement(
                                 product_id=product.id,
+                                store_id=product.store_id or current_store_id_for(self.db_session),
                                 movement_type="ADJUST",
                                 quantity=abs(difference),
                                 unit_price=product.purchase_price,
@@ -4631,8 +4884,12 @@ class NewMovementDialog(QDialog):
         self.product_combo = QComboBox()
         self.product_combo.currentIndexChanged.connect(self.on_product_changed)
         
-        # Charger les produits
-        products = self.db_session.query(Product).filter(Product.active == True).order_by(Product.name).all()
+        # Charger les produits (magasin actif uniquement)
+        query = self.db_session.query(Product).filter(Product.active == True)
+        scope = store_scope(self.db_session, Product.store_id)
+        if scope is not None:
+            query = query.filter(scope)
+        products = query.order_by(Product.name).all()
         for product in products:
             stock_info = f" ({product.quantity:,} en stock)" if product.quantity > 0 else " (rupture)"
             self.product_combo.addItem(f"{product.code or 'N/A'} - {product.name}{stock_info}", product.id)
@@ -4726,6 +4983,8 @@ class NewMovementDialog(QDialog):
             product = self.db_session.query(Product).get(product_id)
             if product:
                 info = f"<b>{product.name}</b><br>"
+                if product.store:
+                    info += f"Magasin: {product.store.name}<br>"
                 info += f"Stock actuel: {product.quantity:,} unités<br>"
                 info += f"Prix d'achat: {product.purchase_price:,.2f} FCFA<br>"
                 info += f"Prix de vente: {product.sale_price:,.2f} FCFA"
@@ -4778,6 +5037,8 @@ class NewMovementDialog(QDialog):
             
             movement = InventoryMovement(
                 product_id=product_id,
+                # Multi-magasins : mouvement rattaché au magasin du produit
+                store_id=(product.store_id if product else None) or current_store_id_for(self.db_session),
                 movement_type=movement_type,
                 quantity=self.quantity_spinbox.value(),
                 unit_price=self.price_spinbox.value() if movement_type in ["IN", "ADJUST"] else None,
@@ -5188,3 +5449,349 @@ class ProfitCalculationDialog(QDialog):
             QMessageBox.critical(self, "Erreur", f"Erreur lors de l'export: {str(e)}")
             import traceback
             traceback.print_exc()
+# ==================== MULTI-MAGASINS : DIALOGUES ====================
+
+class StoreFormDialog(QDialog):
+    """Création / modification d'un magasin."""
+
+    def __init__(self, parent=None, db_session=None, store=None):
+        super().__init__(parent)
+
+        self.db_session = db_session
+        self.store = store
+
+        self.setWindowTitle("Nouveau magasin" if store is None else "Modifier le magasin")
+        self.setModal(True)
+        self.setMinimumWidth(480)
+
+        layout = QVBoxLayout(self)
+
+        info = QLabel(
+            "Chaque magasin possède son propre stock : produits, mouvements et "
+            "ventes sont cloisonnés par magasin."
+        )
+        info.setWordWrap(True)
+        layout.addWidget(info)
+
+        form = QFormLayout()
+        form.setLabelAlignment(Qt.AlignRight)
+
+        self.name_input = QLineEdit()
+        self.name_input.setPlaceholderText("Ex : Magasin Cotonou")
+
+        self.phone_input = QLineEdit()
+        self.phone_input.setPlaceholderText("Ex : +229 97 00 00 00")
+
+        self.address_input = QTextEdit()
+        self.address_input.setMaximumHeight(70)
+        self.address_input.setPlaceholderText("Adresse du magasin")
+
+        self.manager_input = QLineEdit()
+        self.manager_input.setPlaceholderText("Responsable du magasin")
+
+        self.notes_input = QTextEdit()
+        self.notes_input.setMaximumHeight(70)
+        self.notes_input.setPlaceholderText("Notes internes (optionnel)")
+
+        self.active_checkbox = QCheckBox("Magasin actif")
+        self.active_checkbox.setChecked(True)
+
+        self.code_label = QLabel(store.code if store is not None else "Généré automatiquement")
+
+        form.addRow("Nom*:", self.name_input)
+        form.addRow("Téléphone:", self.phone_input)
+        form.addRow("Adresse:", self.address_input)
+        form.addRow("Responsable:", self.manager_input)
+        form.addRow("Notes:", self.notes_input)
+        form.addRow("Statut:", self.active_checkbox)
+        form.addRow("Code:", self.code_label)
+
+        layout.addLayout(form)
+
+        if store is not None:
+            self.name_input.setText(store.name or "")
+            self.phone_input.setText(store.phone or "")
+            self.address_input.setPlainText(store.address or "")
+            self.manager_input.setText(store.manager_name or "")
+            self.notes_input.setPlainText(store.notes or "")
+            self.active_checkbox.setChecked(bool(store.active))
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.button(QDialogButtonBox.Ok).setText("Enregistrer")
+        buttons.button(QDialogButtonBox.Cancel).setText("Annuler")
+        buttons.accepted.connect(self.validate_and_save)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def validate_and_save(self):
+        """Valider le formulaire puis créer / mettre à jour le magasin."""
+        manager = StoreManager(self.db_session)
+        data = {
+            "name": self.name_input.text(),
+            "phone": self.phone_input.text(),
+            "address": self.address_input.toPlainText(),
+            "manager_name": self.manager_input.text(),
+            "notes": self.notes_input.toPlainText(),
+        }
+        want_active = self.active_checkbox.isChecked()
+
+        try:
+            if self.store is None:
+                manager.create_store(active=want_active, **data)
+            else:
+                manager.update_store(self.store.id, **data)
+                # L'activation / désactivation passe par toggle_active() afin de
+                # respecter la règle « dernier magasin actif ».
+                current = manager.get_store(self.store.id)
+                if current is not None and bool(current.active) != want_active:
+                    manager.toggle_active(current.id)
+        except ValueError as exc:
+            QMessageBox.warning(self, "Validation", str(exc))
+            return
+        except Exception as exc:
+            self.db_session.rollback()
+            QMessageBox.critical(self, "Erreur", f"Erreur lors de la sauvegarde : {exc}")
+            return
+
+class StoresDialog(QDialog):
+    """Gestion des magasins : liste, création, modification, activation, suppression.
+
+    Réservé aux administrateurs / gestionnaires (contrôle fait par la vue Stock).
+    Deux marqueurs : courant = magasin affiché, ★ = magasin par défaut
+    (celui qui reçoit les données historiques).
+    """
+
+    COLUMNS = ["", "Code", "Nom", "Adresse", "Téléphone", "Responsable",
+               "Produits", "Valeur du stock", "Statut"]
+
+    def __init__(self, parent=None, db_session=None, store_manager=None,
+                 active_store_id=None):
+        super().__init__(parent)
+
+        self.db_session = db_session
+        self.store_manager = store_manager or StoreManager(db_session)
+        self.active_store_id = active_store_id
+
+        self.setWindowTitle("Gestion des magasins")
+        self.setModal(True)
+        self.setMinimumSize(940, 500)
+
+        layout = QVBoxLayout(self)
+
+        header = QLabel("Magasins")
+        header.setStyleSheet("font-size: 16px; font-weight: bold;")
+        layout.addWidget(header)
+
+        info = QLabel(
+            "Créez autant de magasins que nécessaire : chaque magasin gère son "
+            "propre stock (produits, mouvements, ventes).\n"
+            "(*) = magasin affiché actuellement, (D) = magasin par défaut."
+        )
+        info.setWordWrap(True)
+        layout.addWidget(info)
+
+        self.stores_table = QTableWidget()
+        self.stores_table.setColumnCount(len(self.COLUMNS))
+        self.stores_table.setHorizontalHeaderLabels(self.COLUMNS)
+        self.stores_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.stores_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.stores_table.horizontalHeader().setStretchLastSection(True)
+        layout.addWidget(self.stores_table)
+
+        self.summary_label = QLabel("")
+        layout.addWidget(self.summary_label)
+
+        buttons = QHBoxLayout()
+
+        self.add_btn = QPushButton("Nouveau magasin")
+        self.add_btn.setIcon(self.style().standardIcon(QStyle.SP_FileDialogNewFolder))
+        self.add_btn.clicked.connect(self.add_store)
+
+        self.edit_btn = QPushButton("Modifier")
+        self.edit_btn.setIcon(self.style().standardIcon(QStyle.SP_FileDialogDetailedView))
+        self.edit_btn.clicked.connect(self.edit_store)
+
+        self.toggle_btn = QPushButton("Activer / Désactiver")
+        self.toggle_btn.clicked.connect(self.toggle_store)
+
+        self.default_btn = QPushButton("Définir par défaut")
+        self.default_btn.clicked.connect(self.set_default)
+
+        self.delete_btn = QPushButton("Supprimer")
+        self.delete_btn.setIcon(self.style().standardIcon(QStyle.SP_TrashIcon))
+        self.delete_btn.clicked.connect(self.delete_store)
+
+        self.close_btn = QPushButton("Fermer")
+        self.close_btn.clicked.connect(self.accept)
+
+        buttons.addWidget(self.add_btn)
+        buttons.addWidget(self.edit_btn)
+        buttons.addWidget(self.toggle_btn)
+        buttons.addWidget(self.default_btn)
+        buttons.addWidget(self.delete_btn)
+        buttons.addStretch()
+        buttons.addWidget(self.close_btn)
+
+        layout.addLayout(buttons)
+
+        self.load_stores()
+# -- affichage ---------------------------------------------------------
+    def load_stores(self):
+        """(Re)charger la liste des magasins."""
+        try:
+            stores = self.store_manager.list_stores(include_inactive=True)
+        except Exception as exc:
+            QMessageBox.critical(self, "Erreur", f"Erreur lors du chargement : {exc}")
+            stores = []
+
+        active_id = get_active_store_id(self.db_session)
+        if active_id is not None:
+            self.active_store_id = active_id
+
+        self.stores_table.setRowCount(len(stores))
+        total_value = 0.0
+        for row, store in enumerate(stores):
+            summary = self.store_manager.store_summary(store.id)
+            total_value += summary["stock_value"]
+
+            markers = []
+            if store.id == self.active_store_id:
+                markers.append("(*)")
+            if store.is_default:
+                markers.append("(D)")
+            marker_item = QTableWidgetItem(" ".join(markers))
+            marker_item.setData(Qt.UserRole, store.id)
+            self.stores_table.setItem(row, 0, marker_item)
+            self.stores_table.setItem(row, 1, QTableWidgetItem(store.code or ""))
+            self.stores_table.setItem(row, 2, QTableWidgetItem(store.name or ""))
+            self.stores_table.setItem(row, 3, QTableWidgetItem(store.address or ""))
+            self.stores_table.setItem(row, 4, QTableWidgetItem(store.phone or ""))
+            self.stores_table.setItem(row, 5, QTableWidgetItem(store.manager_name or ""))
+
+            products_item = QTableWidgetItem(str(summary["products"]))
+            products_item.setTextAlignment(Qt.AlignCenter)
+            self.stores_table.setItem(row, 6, products_item)
+
+            value_item = QTableWidgetItem(f"{summary['stock_value']:,.2f}")
+            value_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            self.stores_table.setItem(row, 7, value_item)
+
+            status_item = QTableWidgetItem("Actif" if store.active else "Inactif")
+            status_item.setTextAlignment(Qt.AlignCenter)
+            status_item.setForeground(
+                QColor("#10b981") if store.active else QColor("#ef4444")
+            )
+            self.stores_table.setItem(row, 8, status_item)
+
+        self.stores_table.resizeColumnsToContents()
+        self.summary_label.setText(
+            f"{len(stores)} magasin(s) · valeur totale du stock : {total_value:,.2f} FCFA"
+        )
+
+    def selected_store(self):
+        """Magasin sélectionné dans le tableau (ou None)."""
+        selected = self.stores_table.selectedItems()
+        if not selected:
+            return None
+        item = self.stores_table.item(selected[0].row(), 0)
+        if item is None:
+            return None
+        store_id = item.data(Qt.UserRole)
+        return self.store_manager.get_store(store_id) if store_id else None
+
+    def _require_selection(self):
+        """Retourne le magasin sélectionné ou prévient l'utilisateur."""
+        store = self.selected_store()
+        if store is None:
+            QMessageBox.information(
+                self, "Sélection",
+                "Veuillez sélectionner un magasin dans la liste."
+            )
+        return store
+# -- actions -----------------------------------------------------------
+    def add_store(self):
+        """Créer un nouveau magasin."""
+        dialog = StoreFormDialog(self, self.db_session)
+        if dialog.exec():
+            self.load_stores()
+            QMessageBox.information(self, "Succès", "Magasin créé avec succès!")
+
+    def edit_store(self):
+        """Modifier le magasin sélectionné."""
+        store = self._require_selection()
+        if store is None:
+            return
+        dialog = StoreFormDialog(self, self.db_session, store)
+        if dialog.exec():
+            self.load_stores()
+            QMessageBox.information(self, "Succès", "Magasin mis à jour avec succès!")
+
+    def toggle_store(self):
+        """Activer / désactiver le magasin sélectionné."""
+        store = self._require_selection()
+        if store is None:
+            return
+        try:
+            new_state = self.store_manager.toggle_active(store.id)
+        except ValueError as exc:
+            QMessageBox.warning(self, "Impossible", str(exc))
+            return
+        except Exception as exc:
+            self.db_session.rollback()
+            QMessageBox.critical(self, "Erreur", str(exc))
+            return
+        self.load_stores()
+        QMessageBox.information(
+            self, "Succès",
+            f"Magasin « {store.name} » {'activé' if new_state else 'désactivé'}."
+        )
+
+    def set_default(self):
+        """Définir le magasin sélectionné comme magasin par défaut."""
+        store = self._require_selection()
+        if store is None:
+            return
+        try:
+            self.store_manager.set_default_store(store.id)
+        except Exception as exc:
+            self.db_session.rollback()
+            QMessageBox.critical(self, "Erreur", str(exc))
+            return
+        self.load_stores()
+        QMessageBox.information(
+            self, "Succès",
+            f"« {store.name} » est désormais le magasin par défaut."
+        )
+
+    def delete_store(self):
+        """Supprimer le magasin sélectionné (s'il ne contient aucune donnée)."""
+        store = self._require_selection()
+        if store is None:
+            return
+
+        reply = QMessageBox.question(
+            self, "Confirmation - Suppression",
+            f"Voulez-vous vraiment supprimer le magasin « {store.name} » ?\n\n"
+            "Cette action est définitive et n'est possible que si le magasin "
+            "ne contient aucun produit, mouvement ou vente.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if reply != QMessageBox.Yes:
+            return
+
+        try:
+            self.store_manager.delete_store(store.id)
+        except ValueError as exc:
+            QMessageBox.warning(self, "Suppression refusée", str(exc))
+            return
+        except Exception as exc:
+            self.db_session.rollback()
+            QMessageBox.critical(self, "Erreur", str(exc))
+            return
+
+        # Si le magasin supprimé était actif, retomber sur un magasin valide
+        self.active_store_id = get_active_store_id(self.db_session)
+        self.load_stores()
+        QMessageBox.information(self, "Succès", "Magasin supprimé avec succès!")
+        self.accept()

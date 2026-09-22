@@ -28,16 +28,17 @@ class IconManager:
     ]
     
     # ===== ICÔNES POUR LES BOUTONS DU MENU =====
-    # Basé sur les fichiers que vous avez dans ui/icons/
+    # Basé sur les fichiers que vous avez dans ui/icons/ (sync avec web/src/components/Icon.jsx)
     MENU_ICONS = {
         "dashboard": "dashboard.svg",
-        "sale": "sale.png",
+        "sale": "sale.svg",
         "document": "document.svg",
         "stock": "stock.svg",
         "receipt": "receipt.svg",
         "admin": "admin.svg",
         "settings": "settings.svg",
         "user": "user.svg",
+        "treasury": "treasury.svg",
     }
     
     # ===== ICÔNES POUR LES ACTIONS =====
@@ -54,6 +55,26 @@ class IconManager:
         "import": "import.svg",
         "check": "check.svg",
         "clear": "clear.svg",
+        "arrow-right": "arrowRight.svg",
+        "arrow-down": "arrow-down.svg",
+        "lock": "lock.svg",
+        "globe": "globe.svg",
+        "hard-drive": "hardDrive.svg",
+        "clock": "clock.svg",
+        "activity": "activity.svg",
+        "building": "building.svg",
+        "check-circle": "checkCircle.svg",
+        "zap": "zap.svg",
+        "users": "users.svg",
+        "list": "list.svg",
+        "cash": "cash.svg",
+        "chart": "chart.svg",
+        "alert": "alert.svg",
+        "wallet": "wallet.svg",
+        "phone": "phone.svg",
+        "broom": "broom.svg",
+        "logo": "logo.svg",
+        "monitor": "monitor.svg",
     }
     
     # Cache pour les icônes chargées

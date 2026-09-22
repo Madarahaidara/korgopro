@@ -74,7 +74,7 @@ QMainWindow {
 /* Boutons du menu (état normal) */
 #SideMenu QPushButton {
     background-color: transparent;
-    color: #dbeafe;
+    color: white;
     border: 1px solid transparent;
     border-radius: 6px;
     text-align: left;

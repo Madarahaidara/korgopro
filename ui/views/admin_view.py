@@ -3,15 +3,14 @@ from PySide6.QtWidgets import (
     QPushButton, QLineEdit, QHeaderView, QMessageBox, QDialog,
     QLabel, QFrame, QComboBox, QGroupBox, QCheckBox, QDateEdit,
     QFormLayout, QTabWidget, QScrollArea, QGridLayout, QToolButton, QStyle,
-    QTextEdit, QFileDialog, QSplitter
+    QTextEdit, QFileDialog, QSplitter, QSizePolicy
 )
-from PySide6.QtCore import Qt, Signal, QDate, QDateTime
+from PySide6.QtCore import Qt, Signal, QDate, QDateTime, QThread, QTimer, QEvent
 from PySide6.QtGui import QIcon, QFont, QColor, QPixmap, QIntValidator, QDoubleValidator
 import hashlib
 import random
 import string
 from datetime import datetime
-import bcrypt
 import json
 from core.models.user import User
 from core.database import SessionLocal, engine
@@ -19,7 +18,55 @@ from datetime import datetime, timedelta
 from core.log_manager import LogManager
 from core.database_manager import DatabaseManager
 from core.sale_log_manager import SaleLogManager
+from ui.views.sys_logs_dialog import SysLogsDialog
+from utils.settings_manager import SettingsManager
+# Source unique des rôles et permissions (partagée avec le frontend web).
+from core.permissions import (
+    available_roles,
+    describe_roles,
+    normalize_role,
+    permission_label,
+    permission_labels,
+    role_description,
+    role_display_name,
+)
 import os
+
+class DiscordBackupWorker(QThread):
+    """Thread d'envoi du backup base de données sur un webhook Discord (pas de gel de l'UI)."""
+
+    finished = Signal(dict)
+
+    def __init__(self, db_manager, webhook_url, parent=None):
+        super().__init__(parent)
+        self.db_manager = db_manager
+        self.webhook_url = webhook_url
+
+    def run(self):
+        result = self.db_manager.backup_to_discord(self.webhook_url)
+        self.finished.emit(result)
+
+
+class DbInfoWorker(QThread):
+    """Thread de collecte des informations base de données.
+
+    Sur PostgreSQL/Supabase, get_database_info() fait plusieurs allers-retours
+    réseau ; l'exécuter dans le thread UI gelait l'interface (« Ne répond pas »).
+    """
+
+    finished = Signal(dict)
+    failed = Signal(str)
+
+    def __init__(self, db_manager, parent=None):
+        super().__init__(parent)
+        self.db_manager = db_manager
+
+    def run(self):
+        try:
+            self.finished.emit(self.db_manager.get_database_info())
+        except Exception as e:
+            self.failed.emit(str(e))
+
 
 class AdminView(QWidget):
     """Vue d'administration des utilisateurs"""
@@ -44,80 +91,30 @@ class AdminView(QWidget):
         self.log_manager = LogManager()
         self.db_manager = DatabaseManager()
         self.sale_log_manager = SaleLogManager()
+        self.settings_manager = SettingsManager()
         
-        # Rôles et permissions (dictionnaire structuré)
-        self.roles_dict = {
-            "ADMIN": {
-                "name": "Administrateur",
-                "description": "Accès complet à toutes les fonctionnalités",
-                "permissions": {
-                    "dashboard": True,
-                    "sales": True,
-                    "inventory": True,
-                    "reports": True,
-                    "users": True,
-                    "settings": True,
-                    "products": True,
-                    "customers": True,
-                    "suppliers": True,
-                    "export": True,
-                    "audit": True
-                }
-            },
-            "GERANT": {
-                "name": "Gérant",
-                "description": "Gestion des ventes, inventaire et rapports",
-                "permissions": {
-                    "dashboard": True,
-                    "sales": True,
-                    "inventory": True,
-                    "reports": True,
-                    "users": False,
-                    "settings": False,
-                    "products": True,
-                    "customers": True,
-                    "suppliers": True,
-                    "export": True,
-                    "audit": False
-                }
-            },
-            "CAISSIER": {
-                "name": "Caissier",
-                "description": "Encaissement et gestion des clients",
-                "permissions": {
-                    "dashboard": True,
-                    "sales": True,
-                    "inventory": False,
-                    "reports": False,
-                    "users": False,
-                    "settings": False,
-                    "products": True,
-                    "customers": True,
-                    "suppliers": False,
-                    "export": False,
-                    "audit": False
-                }
-            }
-        }
-        
-        # Rôles disponibles
-        self.available_roles = list(self.roles_dict.keys())
-        
-        # Permissions disponibles
-        self.permissions_list = [
-            ("Tableau de bord", "dashboard", "Accès au tableau de bord principal"),
-            ("Ventes", "sales", "Gérer les ventes et transactions"),
-            ("Inventaire", "inventory", "Gérer le stock et les produits"),
-            ("Rapports", "reports", "Consulter et générer des rapports"),
-            ("Utilisateurs", "users", "Gérer les comptes utilisateurs"),
-            ("Paramètres", "settings", "Modifier les paramètres système"),
-            ("Produits", "products", "Ajouter/modifier/supprimer des produits"),
-            ("Clients", "customers", "Gérer la base de données clients"),
-            ("Fournisseurs", "suppliers", "Gérer les fournisseurs"),
-            ("Export", "export", "Exporter des données"),
-            ("Audit", "audit", "Consulter les journaux d'audit")
-        ]
-        
+        # Rôles et permissions : source unique core.permissions (le web s'y
+        # adosse également). Ne pas redéfinir de matrice ici.
+        self.roles_dict = describe_roles()
+
+        # Rôles proposés à la création d'un utilisateur
+        self.available_roles = available_roles()
+
+        # Permissions disponibles : (libellé, clé, description)
+        self.permissions_list = permission_labels()
+
+        # Responsivité de l'onglet « Rôles & Permissions » : le nombre de
+        # colonnes de rôles est recalculé selon la largeur réellement offerte
+        # (voir _adapt_roles_tab). Le timer évite un recalcul par pixel.
+        self.roles_scroll = None
+        self._roles_grid = None
+        self._role_groups = []
+        self._roles_columns = 0
+        self._roles_resize_timer = QTimer(self)
+        self._roles_resize_timer.setSingleShot(True)
+        self._roles_resize_timer.setInterval(120)
+        self._roles_resize_timer.timeout.connect(self._adapt_roles_tab)
+
         # Charger les utilisateurs depuis la base de données
         self.users = []
         self.filtered_users = []
@@ -190,10 +187,55 @@ class AdminView(QWidget):
             details="Ouverture du panneau d'administration"
         )
     
+    # ==================== CONTENU DÉFILANT DES ONGLETS ====================
+    def _add_scrollable_content(self, tab, content_name):
+        """Placer le contenu d'un onglet d'administration dans une zone défilante.
+
+        POURQUOI
+        Les écrans d'administration (tableau de 9 colonnes, barres de filtres)
+        cumulent une largeur minimale de 1200 à 2000 px. Sans zone défilante,
+        ce minimum remonte jusqu'à la fenêtre principale : sur un écran de
+        1366 px elle ne peut plus rétrécir et la partie droite devient
+        inaccessible — l'onglet « Rôles & Permissions » apparaît rogné, sans
+        aucune barre de défilement pour atteindre les colonnes hors champ.
+
+        La politique ``Ignored`` empêche ce minimum de remonter : le contenu
+        reste atteignable par les barres de défilement, quelle que soit la
+        taille de la fenêtre.
+
+        Retourne ``(layout_du_contenu, zone_defilante, layout_de_l_onglet)`` :
+        le contenu défilant (tableaux, filtres) va dans le premier, seuls les
+        éléments qui doivent rester visibles (barres d'action) vont dans le
+        troisième.
+        """
+        scroll = QScrollArea(tab)
+        scroll.setObjectName(f"{content_name}Scroll")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setStyleSheet("border: none; background-color: transparent;")
+        scroll.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Expanding)
+        
+        content = QWidget()
+        content.setObjectName(content_name)
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        
+        scroll.setWidget(content)
+        
+        outer_layout = QVBoxLayout(tab)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+        outer_layout.addWidget(scroll)
+        
+        return content_layout, scroll, outer_layout
+    
     # ==================== ONGLET UTILISATEURS ====================
     def setup_users_tab(self):
         """Configurer l'onglet des utilisateurs"""
-        layout = QVBoxLayout(self.users_tab)
+        layout, _users_scroll, _users_outer = self._add_scrollable_content(
+            self.users_tab, "usersTabContent"
+        )
         
         # Barre d'outils
         toolbar = QFrame()
@@ -301,30 +343,94 @@ class AdminView(QWidget):
         layout.addWidget(stats_frame)
     
     # ==================== ONGLET RÔLES ET PERMISSIONS ====================
+    #: Largeur minimale d'un groupe de rôle : en dessous, le repliement en
+    #: moins de colonnes (puis la zone défilante) prend le relais plutôt que de
+    #: rogner les libellés des cases à cocher.
+    ROLE_GROUP_MIN_WIDTH = 250
+
+    #: Réservation forfaitaire (marges de l'onglet + barre de défilement) pour
+    #: éviter qu'une barre de défilement qui apparaît ne retire une colonne,
+    #: ne disparaisse, etc. (oscillation entre N et N-1 colonnes).
+    ROLES_TAB_RESERVE = 40
+
     def setup_roles_tab(self):
-        """Configurer l'onglet des rôles et permissions"""
-        layout = QVBoxLayout(self.roles_tab)
+        """Configurer l'onglet des rôles et permissions.
+
+        Le contenu (un groupe de cases à cocher par rôle) vit dans une zone
+        défilante et son nombre de colonnes s'adapte à la largeur disponible
+        (``_adapt_roles_tab``) : rien n'est rogné sur un écran étroit. Les
+        boutons d'action restent hors de la zone défilante afin d'être
+        joignables quelle que soit la taille de la fenêtre.
+        """
+        container_layout, self.roles_scroll, layout = self._add_scrollable_content(
+            self.roles_tab, "rolesTabContent"
+        )
+        
+        # La largeur réellement disponible n'est connue qu'à l'affichage de
+        # l'onglet : on se recale sur chaque redimensionnement du viewport.
+        self.roles_scroll.viewport().installEventFilter(self)
         
         # Description
         desc_label = QLabel("Définir les permissions pour chaque rôle d'utilisateur")
         desc_label.setObjectName("descriptionLabel")
-        layout.addWidget(desc_label)
+        desc_label.setWordWrap(True)
+        container_layout.addWidget(desc_label)
         
-        # Grid pour les rôles
-        roles_grid = QGridLayout()
-        roles_grid.setSpacing(20)
+        # Grid pour les rôles : colonnes recalculées dans _adapt_roles_tab
+        self._roles_grid = QGridLayout()
+        self._roles_grid.setSpacing(16)
+        self._roles_grid.setContentsMargins(0, 0, 0, 0)
+        container_layout.addLayout(self._roles_grid)
+        container_layout.addStretch()
+        
+        self._build_role_groups()
+        
+        # Bouton de sauvegarde
+        save_perms_btn = QPushButton("Enregistrer les permissions")
+        save_perms_btn.setIcon(self.style.standardIcon(QStyle.SP_DialogSaveButton))
+        save_perms_btn.setObjectName("saveButton")
+        save_perms_btn.clicked.connect(self.save_permissions)
+        
+        # Bouton de réinitialisation
+        reset_perms_btn = QPushButton("Réinitialiser aux valeurs par défaut")
+        reset_perms_btn.setIcon(self.style.standardIcon(QStyle.SP_BrowserReload))
+        reset_perms_btn.setObjectName("resetButton")
+        reset_perms_btn.clicked.connect(self.reset_permissions_to_default)
+        
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+        button_layout.addWidget(reset_perms_btn)
+        button_layout.addWidget(save_perms_btn)
+        
+        layout.addLayout(button_layout)
+        
+        # Première disposition (ré-évaluée à chaque redimensionnement)
+        self._adapt_roles_tab()
+    
+    def _build_role_groups(self):
+        """Créer un groupe de cases à cocher par rôle (sans le positionner).
+        
+        Séparé de :meth:`setup_roles_tab` pour pouvoir reconstruire le contenu
+        après une réinitialisation sans réinstaller un ``QLayout`` sur l'onglet :
+        Qt refuse la seconde installation et l'écran restait alors figé sur
+        l'état précédent.
+        """
+        self._role_groups = []
         
         # Rôles à configurer
-        for col, (role_key, role_data) in enumerate(self.roles_dict.items()):
+        for role_key, role_data in self.roles_dict.items():
             # Groupe pour chaque rôle
             role_group = QGroupBox(role_data["name"])
             role_group.setObjectName("roleGroup")
-            role_layout = QVBoxLayout()
+            role_group.setMinimumWidth(self.ROLE_GROUP_MIN_WIDTH)
+            role_layout = QVBoxLayout(role_group)
             
-            # Description du rôle
-            desc_label = QLabel(role_data["description"])
-            desc_label.setObjectName("roleDesc")
-            role_layout.addWidget(desc_label)
+            # Description du rôle (multi-lignes : le groupe ne s'élargit plus
+            # pour tenir la description sur une seule ligne)
+            role_desc_label = QLabel(role_data["description"])
+            role_desc_label.setObjectName("roleDesc")
+            role_desc_label.setWordWrap(True)
+            role_layout.addWidget(role_desc_label)
             
             # Permissions
             for perm_name, perm_key, perm_desc in self.permissions_list:
@@ -345,28 +451,102 @@ class AdminView(QWidget):
                 role_layout.addWidget(chk)
             
             role_layout.addStretch()
-            role_group.setLayout(role_layout)
-            roles_grid.addWidget(role_group, 0, col)
+            self._role_groups.append(role_group)
+    
+    def _adapt_roles_tab(self):
+        """Répartir les groupes de rôles selon la largeur réellement offerte.
         
-        # Bouton de sauvegarde
-        save_perms_btn = QPushButton("Enregistrer les permissions")
-        save_perms_btn.setIcon(self.style.standardIcon(QStyle.SP_DialogSaveButton))
-        save_perms_btn.setObjectName("saveButton")
-        save_perms_btn.clicked.connect(self.save_permissions)
+        Nombre de colonnes = largeur utile // largeur minimale d'une colonne,
+        borné entre 1 et le nombre de rôles. Le même écran s'affiche donc en
+        5 colonnes sur un grand moniteur comme en 2 ou 1 colonne sur un écran
+        étroit, sans jamais rogner une case à cocher (la zone défilante prenant
+        le relais si nécessaire).
+        """
+        if self._roles_grid is None or not self._role_groups:
+            return
         
-        # Bouton de réinitialisation
-        reset_perms_btn = QPushButton("Réinitialiser aux valeurs par défaut")
-        reset_perms_btn.setIcon(self.style.standardIcon(QStyle.SP_BrowserReload))
-        reset_perms_btn.setObjectName("resetButton")
-        reset_perms_btn.clicked.connect(self.reset_permissions_to_default)
+        # Référence : la largeur de l'onglet, et non celle du viewport. Cette
+        # dernière varie avec la barre de défilement : s'y référer ferait
+        # osciller le nombre de colonnes (barre qui apparaît -> une colonne en
+        # moins -> barre qui disparaît -> ...).
+        width = self.roles_tab.width()
+        if width <= 0:
+            width = self.width()
+        if width <= 0:
+            return
         
-        button_layout = QHBoxLayout()
-        button_layout.addStretch()
-        button_layout.addWidget(reset_perms_btn)
-        button_layout.addWidget(save_perms_btn)
+        # Largeur réellement nécessaire à une colonne : les libellés des cases
+        # à cocher varient avec la police et le DPI de l'écran.
+        column_width = self.ROLE_GROUP_MIN_WIDTH
+        for group in self._role_groups:
+            column_width = max(column_width, group.minimumSizeHint().width())
         
-        layout.addLayout(roles_grid)
-        layout.addLayout(button_layout)
+        spacing = self._roles_grid.spacing()
+        usable = width - self.ROLES_TAB_RESERVE + spacing
+        columns = max(1, min(len(self._role_groups),
+                             int(usable // (column_width + spacing))))
+        
+        if columns == self._roles_columns:
+            return
+        self._roles_columns = columns
+        
+        # Retirer les groupes du grid sans les détruire : ils sont replacés
+        # juste après avec le nouveau nombre de colonnes.
+        while self._roles_grid.count():
+            self._roles_grid.takeAt(0)
+        
+        for index, group in enumerate(self._role_groups):
+            self._roles_grid.addWidget(group, index // columns, index % columns)
+    
+    def _rebuild_role_groups(self):
+        """Reconstruire les cases à cocher de l'onglet depuis ``roles_dict``.
+        
+        Remplace l'ancien rappel de :meth:`setup_roles_tab` (qui tentait
+        d'installer un second ``QVBoxLayout`` sur l'onglet) : seuls les groupes
+        de rôles sont recréés, le reste de l'onglet est conservé.
+        """
+        if self._roles_grid is None:
+            return
+        
+        while self._roles_grid.count():
+            item = self._roles_grid.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.setParent(None)
+                widget.deleteLater()
+        
+        self._role_groups = []
+        self._roles_columns = 0
+        self._build_role_groups()
+        self._adapt_roles_tab()
+    
+    def resizeEvent(self, event):
+        """Ré-agencer les colonnes de rôles (un seul recalcul par rafale)."""
+        super().resizeEvent(event)
+        self._schedule_roles_adapt()
+    
+    def eventFilter(self, obj, event):
+        """Recaler les colonnes dès que la zone défilante change de largeur.
+        
+        L'onglet « Rôles & Permissions » n'est pas l'onglet courant au
+        démarrage : sa largeur réelle n'est connue qu'à son affichage (et à
+        chaque redimensionnement), d'où le suivi du viewport.
+        """
+        if (getattr(self, "roles_scroll", None) is not None
+                and obj is self.roles_scroll.viewport()
+                and event.type() == QEvent.Resize):
+            self._schedule_roles_adapt()
+        return super().eventFilter(obj, event)
+    
+    def _schedule_roles_adapt(self):
+        """Programmer le recalcul des colonnes de rôles (anti-rafale)."""
+        timer = getattr(self, "_roles_resize_timer", None)
+        if timer is None:
+            return
+        
+        if timer.isActive():
+            timer.stop()
+        timer.start()
     
     def update_permission_in_dict(self, role_key, permission_key, enabled):
         """Mettre à jour une permission dans le dictionnaire"""
@@ -376,7 +556,9 @@ class AdminView(QWidget):
     # ==================== ONGLET JOURNAL SYSTÈME ====================
     def setup_activity_tab(self):
         """Configurer l'onglet du journal d'activité système"""
-        layout = QVBoxLayout(self.activity_tab)
+        layout, _activity_scroll, _activity_outer = self._add_scrollable_content(
+            self.activity_tab, "activityTabContent"
+        )
         
         # Barre d'outils du journal
         toolbar = QFrame()
@@ -413,6 +595,16 @@ class AdminView(QWidget):
         cleanup_btn = QPushButton("Nettoyer logs > 30 jours")
         cleanup_btn.clicked.connect(self.cleanup_old_logs)
         
+        system_logs_btn = QPushButton("📄 Journaux système (fichiers)")
+        system_logs_btn.setObjectName("systemLogsBtn")
+        system_logs_btn.setCursor(Qt.PointingHandCursor)
+        system_logs_btn.setToolTip(
+            "Consulter et exporter les fichiers de logs / rapports de diagnostic "
+            "générés par l'application (utile en cas de bug)."
+        )
+        system_logs_btn.clicked.connect(self.open_system_logs_dialog)
+
+        toolbar_layout.addWidget(system_logs_btn)
         toolbar_layout.addWidget(QLabel("Utilisateur:"))
         toolbar_layout.addWidget(self.username_filter)
         toolbar_layout.addWidget(QLabel("Action:"))
@@ -607,7 +799,9 @@ class AdminView(QWidget):
     # ==================== ONGLET JOURNAL DES VENTES (NOUVEAU) ====================
     def setup_sale_logs_tab(self):
         """Configurer l'onglet du journal des ventes"""
-        layout = QVBoxLayout(self.sale_logs_tab)
+        layout, _sale_logs_scroll, _sale_logs_outer = self._add_scrollable_content(
+            self.sale_logs_tab, "saleLogsTabContent"
+        )
         
         # Barre d'outils
         toolbar = QFrame()
@@ -1051,6 +1245,34 @@ class AdminView(QWidget):
         backup_group.setLayout(backup_layout)
         scroll_layout.addWidget(backup_group)
         
+        # Section: Backup Discord
+        discord_group = QGroupBox("Backup vers Discord")
+        discord_layout = QVBoxLayout()
+
+        discord_hint = QLabel(
+            "Envoyez une copie de la base de données sur un serveur Discord via un webhook.\n"
+            "Créez un webhook dans : Paramètres du salon → Intégrations → Webhooks."
+        )
+        discord_hint.setWordWrap(True)
+
+        self.discord_webhook = QLineEdit()
+        self.discord_webhook.setPlaceholderText("https://discord.com/api/webhooks/...")
+        # Le webhook est lu depuis les paramètres (company_settings.json, non
+        # versionné car il contient un secret) — aucun fallback codé en dur.
+        self.discord_webhook.setText(self.settings_manager.get_setting("discord_webhook_url") or "")
+
+        discord_btn = QPushButton("Sauvegarder vers Discord")
+        discord_btn.clicked.connect(self.backup_to_discord)
+        self.discord_backup_btn = discord_btn
+
+        discord_layout.addWidget(discord_hint)
+        discord_layout.addWidget(QLabel("URL du webhook Discord:"))
+        discord_layout.addWidget(self.discord_webhook)
+        discord_layout.addWidget(discord_btn)
+
+        discord_group.setLayout(discord_layout)
+        scroll_layout.addWidget(discord_group)
+
         # Section: Maintenance
         maintenance_group = QGroupBox("Maintenance")
         maintenance_layout = QVBoxLayout()
@@ -1120,51 +1342,86 @@ class AdminView(QWidget):
         self.refresh_database_info()
     
     def refresh_database_info(self):
-        """Actualiser les informations de la base de données"""
-        info = self.db_manager.get_database_info()
-        
+        """Actualiser les informations de la base de données (asynchrone, sans geler l'UI)."""
+        # Évite les workers multiples si l'utilisateur clique plusieurs fois
+        if getattr(self, "_db_info_worker", None) and self._db_info_worker.isRunning():
+            return
+
+        self.db_type_label.setText("Chargement…")
+
+        self._db_info_worker = DbInfoWorker(self.db_manager, self)
+        self._db_info_worker.finished.connect(self._on_db_info_loaded)
+        self._db_info_worker.failed.connect(self._on_db_info_failed)
+        self._db_info_worker.start()
+
+    def _on_db_info_loaded(self, info):
+        """Affiche les informations base de données collectées en arrière-plan."""
         self.db_type_label.setText(info['engine'])
         self.db_name_label.setText(info['database'])
-        
-        db_url = str(engine.url)
-        if db_url.startswith("sqlite:///"):
-            db_path = db_url.replace("sqlite:///", "")
-            if os.path.exists(db_path):
-                size = os.path.getsize(db_path)
-                if size < 1024:
-                    size_str = f"{size} B"
-                elif size < 1024 * 1024:
-                    size_str = f"{size / 1024:.2f} KB"
-                else:
-                    size_str = f"{size / (1024 * 1024):.2f} MB"
-                self.db_size_label.setText(size_str)
-        
+
+        total_size = info.get('total_size', 0)
+        if total_size:
+            if total_size < 1024:
+                size_str = f"{total_size} B"
+            elif total_size < 1024 * 1024:
+                size_str = f"{total_size / 1024:.2f} KB"
+            else:
+                size_str = f"{total_size / (1024 * 1024):.2f} MB"
+            self.db_size_label.setText(size_str)
+        else:
+            # SQLite : taille du fichier ; sinon inconnue
+            db_url = str(engine.url)
+            if db_url.startswith("sqlite:///"):
+                db_path = db_url.replace("sqlite:///", "")
+                if os.path.exists(db_path):
+                    size = os.path.getsize(db_path)
+                    if size < 1024:
+                        size_str = f"{size} B"
+                    elif size < 1024 * 1024:
+                        size_str = f"{size / 1024:.2f} KB"
+                    else:
+                        size_str = f"{size / (1024 * 1024):.2f} MB"
+                    self.db_size_label.setText(size_str)
+
         self.db_tables_label.setText(f"{len(info['tables'])} tables")
-        
+
         self.log_activity(
             user_id=self.get_current_user_id(),
             username=self.get_current_username(),
             action="Consultation base données",
             details="Informations base de données consultées"
         )
+
+    def _on_db_info_failed(self, error):
+        """Erreur lors de la collecte des informations base de données."""
+        self.db_type_label.setText("Erreur")
+        self.db_tables_label.setText("—")
+        QMessageBox.critical(self, "Erreur", f"Impossible de lire les informations de la base : {error}")
     
     def browse_file(self, line_edit, save=True):
         """Ouvrir un dialogue pour choisir un fichier"""
+        # PostgreSQL/Supabase produit des backups JSON ; SQLite produit des .db.
+        filters = (
+            "Backups (*.json *.db *.sqlite *.bak);;"
+            "Export JSON (*.json);;"
+            "Base SQLite (*.db *.sqlite);;"
+            "Tous les fichiers (*.*)"
+        )
         if save:
             path, _ = QFileDialog.getSaveFileName(
                 self,
                 "Choisir l'emplacement du backup",
                 "",
-                "Backup files (*.db *.sqlite *.bak);;All files (*.*)"
+                filters
             )
         else:
             path, _ = QFileDialog.getOpenFileName(
                 self,
                 "Choisir le fichier de backup",
                 "",
-                "Backup files (*.db *.sqlite *.bak);;All files (*.*)"
+                filters
             )
-        
+
         if path:
             line_edit.setText(path)
     
@@ -1189,18 +1446,67 @@ class AdminView(QWidget):
         else:
             QMessageBox.critical(self, "Erreur", result['message'])
     
+    def backup_to_discord(self):
+        """Envoyer un backup de la base de données sur un serveur Discord (webhook)."""
+        webhook_url = self.discord_webhook.text().strip()
+        if not webhook_url:
+            QMessageBox.warning(self, "Erreur", "Veuillez saisir l'URL du webhook Discord.")
+            return
+
+        if not webhook_url.lower().startswith("http"):
+            QMessageBox.warning(self, "Erreur", "L'URL du webhook Discord doit commencer par http(s).")
+            return
+
+        # Mémoriser l'URL du webhook dans les paramètres
+        self.settings_manager.set_setting("discord_webhook_url", webhook_url)
+
+        # Désactiver le bouton pendant l'envoi
+        self.discord_backup_btn.setEnabled(False)
+        self.discord_backup_btn.setText("Envoi en cours...")
+
+        def on_finished(result):
+            self.discord_backup_btn.setEnabled(True)
+            self.discord_backup_btn.setText("Sauvegarder vers Discord")
+
+            if result.get('success'):
+                QMessageBox.information(
+                    self,
+                    "Succès",
+                    f"{result.get('message')}\nFichier : {result.get('filename')} "
+                    f"({result.get('size', 0) / 1024:.2f} Ko)",
+                )
+                self.log_activity(
+                    user_id=self.get_current_user_id(),
+                    username=self.get_current_username(),
+                    action="Backup base données",
+                    details=f"Backup Discord envoyé: {result.get('filename')} "
+                            f"({result.get('size', 0)} bytes)",
+                )
+            else:
+                QMessageBox.critical(self, "Erreur", result.get('message', 'Erreur inconnue'))
+
+        worker = DiscordBackupWorker(self.db_manager, webhook_url, self)
+        worker.finished.connect(on_finished)
+        worker.start()
+
     def restore_backup(self):
         """Restaurer un backup"""
         backup_path = self.restore_path.text().strip()
         if not backup_path:
             QMessageBox.warning(self, "Erreur", "Veuillez spécifier le fichier de backup")
             return
-        
+
+        if not os.path.exists(backup_path):
+            QMessageBox.warning(self, "Erreur", f"Fichier introuvable :\n{backup_path}")
+            return
+
         reply = QMessageBox.question(
             self,
             "Confirmation",
-            "⚠️ ATTENTION: La restauration remplacera la base de données actuelle.\n"
-            "Toutes les données non sauvegardées seront perdues.\n\n"
+            "⚠️ ATTENTION: La restauration va remplacer les données des tables "
+            "contenues dans le backup.\n"
+            "Les autres tables de la base sont conservées.\n\n"
+            "Formats acceptés : export JSON (.json) ou base SQLite (.db).\n\n"
             "Continuer ?",
             QMessageBox.Yes | QMessageBox.No
         )
@@ -1444,14 +1750,16 @@ class AdminView(QWidget):
             self.users_table.setCellWidget(row, 8, actions_widget)
     
     def get_role_display_name(self, role_key):
-        if role_key in self.roles_dict:
-            return self.roles_dict[role_key]["name"]
-        return role_key
+        """Libellé lisible d'un rôle (source unique : core.permissions)."""
+        return role_display_name(role_key)
     
     def get_role_permissions(self, role_key):
-        if role_key in self.roles_dict:
-            return self.roles_dict[role_key].get("permissions", {})
-        return {}
+        """Permissions d'un rôle, toutes clés présentes (booléens)."""
+        role = self.roles_dict.get(role_key)
+        if role is not None:
+            return role.get("permissions", {})
+        from core.permissions import permission_flags
+        return permission_flags(role_key)
     
     def filter_users(self):
         """Filtrer les utilisateurs"""
@@ -1501,137 +1809,238 @@ class AdminView(QWidget):
         self.cashiers_label.setText(f"Caissiers: {cashiers}")
     
     def show_create_user_dialog(self):
-        """Afficher le dialogue de création d'utilisateur"""
+        """Créer un utilisateur — EXCLUSIVEMENT via Supabase Auth.
+
+        Le compte est créé dans auth.users (Supabase), puis son profil
+        public.users est généré automatiquement par le trigger PostgreSQL.
+        Si Supabase refuse l'opération, AUCUN utilisateur n'est créé : il ne
+        peut donc jamais exister de compte local sans accès Supabase.
+        """
         from ui.views.admin_view import UserDialog
-        dialog = UserDialog(self, mode="create", style=self.style, 
+        dialog = UserDialog(self, mode="create", style=self.style,
                            available_roles=self.available_roles,
                            roles_dict=self.roles_dict)
-        if dialog.exec():
-            user_data = dialog.get_user_data()
-            
-            try:
-                new_user = User(
-                    username=user_data["username"],
-                    email=user_data["email"],
-                    role=user_data["role"],
-                    active=True,
-                    must_change_password=True
-                )
-                
-                password_hash = self.hash_password(user_data["temp_password"])
-                new_user.password_hash = password_hash
-                
-                self.db_session.add(new_user)
-                self.db_session.commit()
-                
-                self.load_users_from_db()
-                
-                self.user_created.emit({
-                    "id": new_user.id,
-                    "username": new_user.username,
-                    "email": new_user.email,
-                    "role": new_user.role
-                })
-                
-                self.log_activity(
-                    user_id=self.get_current_user_id(),
-                    username=self.get_current_username(),
-                    action="Création utilisateur",
-                    details=f"Création de {new_user.username} (Rôle: {new_user.role})"
-                )
-                
-                self.filter_users()
-                
-                QMessageBox.information(
-                    self, 
-                    "Succès", 
-                    f"Utilisateur {user_data['username']} créé avec succès!\n"
-                    f"Mot de passe temporaire: {user_data['temp_password']}"
-                )
-                
-            except Exception as e:
+        if not dialog.exec():
+            return
+
+        user_data = dialog.get_user_data()
+        email = (user_data.get("email") or "").strip().lower()
+
+        # Supabase Auth utilise l'email comme identifiant de connexion :
+        # il n'est donc plus optionnel.
+        if not email:
+            QMessageBox.warning(
+                self, "Email obligatoire",
+                "Un email est obligatoire : Supabase Auth l'utilise comme\n"
+                "identifiant de connexion (applications desktop et web).")
+            return
+
+        from core.supabase_auth import provision_auth_user, supabase_available
+
+        if not supabase_available(self.db_session):
+            QMessageBox.warning(
+                self, "Supabase requis",
+                "La création d'utilisateur est rattachée exclusivement à\n"
+                "Supabase Auth et la base active ne permet pas de le joindre.\n\n"
+                "Vérifiez la variable DATABASE_URL (projet Supabase).")
+            return
+
+        try:
+            # 1) Compte Supabase Auth : source de vérité (email + mot de passe).
+            ok, message = provision_auth_user(
+                self.db_session, email, user_data["temp_password"],
+                username=user_data["username"], role=user_data["role"],
+                active=True, must_change_password=True)
+            if not ok:
                 self.db_session.rollback()
-                QMessageBox.critical(self, "Erreur", f"Erreur lors de la création: {str(e)}")
+                QMessageBox.critical(
+                    self, "Création refusée par Supabase Auth",
+                    f"Aucun utilisateur n'a été créé.\n\n{message}")
+                return
+
+            # 2) Le trigger Supabase a créé le profil : on le recharge pour
+            #    appliquer exactement le username et le rôle demandés.
+            self.db_session.flush()
+            new_user = (self.db_session.query(User)
+                        .filter(User.email == email).first())
+            if new_user is None:
+                self.db_session.rollback()
+                QMessageBox.critical(
+                    self, "Synchronisation incomplète",
+                    "Le compte Supabase Auth a été créé mais le profil\n"
+                    "public.users n'a pas été généré (trigger absent ?).\n"
+                    "Exécutez _apply_users_supabase_only.py puis réessayez.")
+                return
+
+            new_user.username = user_data["username"]
+            new_user.role = user_data["role"]
+            new_user.active = True
+            new_user.must_change_password = True
+            self.db_session.commit()
+
+            self.load_users_from_db()
+
+            self.user_created.emit({
+                "id": new_user.id,
+                "username": new_user.username,
+                "email": new_user.email,
+                "role": new_user.role
+            })
+
+            self.log_activity(
+                user_id=self.get_current_user_id(),
+                username=self.get_current_username(),
+                action="Création utilisateur",
+                details=f"Création de {new_user.username} (Rôle: {new_user.role})"
+            )
+
+            self.filter_users()
+
+            QMessageBox.information(
+                self,
+                "Succès",
+                f"Utilisateur {new_user.username} créé avec succès!\n"
+                f"Mot de passe temporaire: {user_data['temp_password']}\n\n"
+                f"Compte Supabase Auth provisionné ({email}).\n"
+                "Connexion valable sur l'application desktop ET web.")
+
+        except Exception as e:
+            self.db_session.rollback()
+            QMessageBox.critical(self, "Erreur", f"Erreur lors de la création: {str(e)}")
+
     
     def edit_user(self, user):
-        """Modifier un utilisateur"""
+        """Modifier un utilisateur (profil propagé depuis Supabase Auth)."""
         from ui.views.admin_view import UserDialog
-        dialog = UserDialog(self, mode="edit", user=user, style=self.style, 
+        dialog = UserDialog(self, mode="edit", user=user, style=self.style,
                            available_roles=self.available_roles,
                            roles_dict=self.roles_dict)
-        if dialog.exec():
-            user_data = dialog.get_user_data()
-            
-            try:
-                old_role = user.role
-                
-                user.username = user_data["username"]
-                user.email = user_data["email"]
-                user.role = user_data["role"]
-                
-                self.db_session.commit()
-                
-                self.load_users_from_db()
-                
-                self.user_updated.emit({
-                    "id": user.id,
-                    "username": user.username,
-                    "email": user.email,
-                    "role": user.role
-                })
-                
-                role_change = f" (Rôle: {old_role} → {user.role})" if old_role != user.role else ""
-                self.log_activity(
-                    user_id=self.get_current_user_id(),
-                    username=self.get_current_username(),
-                    action="Modification utilisateur",
-                    details=f"Modification de {user.username}{role_change}"
-                )
-                
-                self.filter_users()
-                
-                QMessageBox.information(self, "Succès", "Utilisateur modifié avec succès!")
-                
-            except Exception as e:
+        if not dialog.exec():
+            return
+
+        user_data = dialog.get_user_data()
+        new_email = (user_data.get("email") or "").strip().lower()
+
+        if not new_email:
+            QMessageBox.warning(
+                self, "Email obligatoire",
+                "L'email est obligatoire : c'est l'identifiant Supabase Auth.")
+            return
+
+        from core.supabase_auth import supabase_available, update_auth_profile
+
+        if not supabase_available(self.db_session):
+            QMessageBox.warning(
+                self, "Supabase requis",
+                "La modification des utilisateurs est rattachée exclusivement\n"
+                "à Supabase Auth.")
+            return
+
+        old_role = user.role
+        old_email = user.email
+
+        try:
+            # Une seule écriture (Supabase Auth) : le trigger propage ensuite
+            # username / rôle / email vers le profil public.users.
+            ok, message = update_auth_profile(
+                self.db_session, old_email,
+                username=user_data["username"], role=user_data["role"],
+                new_email=new_email if new_email != old_email else None)
+            if not ok:
                 self.db_session.rollback()
-                QMessageBox.critical(self, "Erreur", f"Erreur lors de la modification: {str(e)}")
+                QMessageBox.critical(self, "Échec Supabase Auth",
+                                     f"Modification annulée.\n\n{message}")
+                return
+            self.db_session.commit()
+
+            self.db_session.expire_all()
+            self.load_users_from_db()
+
+            self.user_updated.emit({
+                "id": user.id,
+                "username": user_data["username"],
+                "email": new_email,
+                "role": user_data["role"]
+            })
+
+            role_change = (f" (Rôle: {old_role} → {user_data['role']})"
+                           if old_role != user_data["role"] else "")
+            self.log_activity(
+                user_id=self.get_current_user_id(),
+                username=self.get_current_username(),
+                action="Modification utilisateur",
+                details=f"Modification de {user_data['username']}{role_change}"
+            )
+
+            self.filter_users()
+
+            QMessageBox.information(
+                self, "Succès",
+                "Utilisateur modifié avec succès!\n"
+                "Profil synchronisé depuis Supabase Auth.")
+
+        except Exception as e:
+            self.db_session.rollback()
+            QMessageBox.critical(self, "Erreur", f"Erreur lors de la modification: {str(e)}")
+
     
     def toggle_user_status(self, user):
-        """Activer/désactiver un utilisateur"""
+        """Activer/désactiver un utilisateur (statut porté par Supabase Auth)."""
         action = "désactiver" if user.active else "activer"
-        
+        target_active = not bool(user.active)
+
         reply = QMessageBox.question(
             self, "Confirmation",
-            f"Êtes-vous sûr de vouloir {action} l'utilisateur '{user.username}' ?",
+            f"Êtes-vous sûr de vouloir {action} l'utilisateur '{user.username}' ?\n\n"
+            "Le statut est appliqué dans Supabase Auth : la connexion sera\n"
+            "refusée sur l'application desktop ET web (le mot de passe est conservé).",
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No
         )
-        
-        if reply == QMessageBox.Yes:
-            try:
-                user.active = not user.active
-                self.db_session.commit()
-                
-                self.load_users_from_db()
-                
-                self.log_activity(
-                    user_id=self.get_current_user_id(),
-                    username=self.get_current_username(),
-                    action="Changement statut utilisateur",
-                    details=f"{'Activation' if user.active else 'Désactivation'} de {user.username}"
-                )
-                
-                self.filter_users()
-                
-                status = "activé" if user.active else "désactivé"
-                QMessageBox.information(self, "Succès", f"Utilisateur {status} avec succès!")
-                
-            except Exception as e:
+        if reply != QMessageBox.Yes:
+            return
+
+        from core.supabase_auth import set_auth_active, supabase_available
+
+        if not supabase_available(self.db_session):
+            QMessageBox.warning(
+                self, "Supabase requis",
+                "Le statut des comptes est rattaché exclusivement à Supabase Auth.")
+            return
+
+        try:
+            ok, message = set_auth_active(self.db_session, user.email, target_active)
+            if not ok:
                 self.db_session.rollback()
-                QMessageBox.critical(self, "Erreur", f"Erreur lors du changement de statut: {str(e)}")
+                QMessageBox.critical(self, "Échec Supabase Auth",
+                                     f"Statut inchangé.\n\n{message}")
+                return
+
+            # Le trigger synchronise public.users.active : rien à écrire ici.
+            self.db_session.commit()
+            self.db_session.expire_all()
+            self.load_users_from_db()
+
+            status = "activé" if target_active else "désactivé"
+
+            self.log_activity(
+                user_id=self.get_current_user_id(),
+                username=self.get_current_username(),
+                action="Changement statut utilisateur",
+                details=f"{'Activation' if target_active else 'Désactivation'} de {user.username}"
+            )
+
+            self.filter_users()
+
+            QMessageBox.information(self, "Succès", f"Utilisateur {status} avec succès!")
+
+        except Exception as e:
+            self.db_session.rollback()
+            QMessageBox.critical(self, "Erreur", f"Erreur lors du changement de statut: {str(e)}")
+
     
     def reset_password(self, user):
-        """Réinitialiser le mot de passe d'un utilisateur"""
+        """Réinitialiser le mot de passe (Supabase Auth = source de vérité)."""
         reply = QMessageBox.question(
             self, "Réinitialisation du mot de passe",
             f"Générer un nouveau mot de passe temporaire pour '{user.username}' ?\n"
@@ -1639,40 +2048,58 @@ class AdminView(QWidget):
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No
         )
-        
-        if reply == QMessageBox.Yes:
-            temp_password = self.generate_temp_password()
-            
-            try:
-                password_hash = self.hash_password(temp_password)
-                user.password_hash = password_hash
-                user.must_change_password = True
-                self.db_session.commit()
-                
-                self.log_activity(
-                    user_id=self.get_current_user_id(),
-                    username=self.get_current_username(),
-                    action="Réinitialisation mot de passe",
-                    details=f"Réinitialisation du mot de passe de {user.username}"
-                )
-                
-                QMessageBox.information(
-                    self,
-                    "Mot de passe temporaire",
-                    f"Mot de passe temporaire pour {user.username}:\n\n"
-                    f"{temp_password}\n\n"
-                    "Copiez ce mot de passe et donnez-le à l'utilisateur.\n"
-                    "Il devra le changer à sa prochaine connexion."
-                )
-                
-                self.password_reset.emit({
-                    "user_id": user.id,
-                    "username": user.username
-                })
-                
-            except Exception as e:
+        if reply != QMessageBox.Yes:
+            return
+
+        temp_password = self.generate_temp_password()
+
+        from core.supabase_auth import supabase_available, update_auth_password
+
+        if not supabase_available(self.db_session):
+            QMessageBox.warning(
+                self, "Supabase requis",
+                "Les mots de passe sont gérés exclusivement par Supabase Auth.")
+            return
+
+        try:
+            ok, message = update_auth_password(
+                self.db_session, user.email, temp_password,
+                must_change_password=True)
+            if not ok:
                 self.db_session.rollback()
-                QMessageBox.critical(self, "Erreur", f"Erreur lors de la réinitialisation: {str(e)}")
+                QMessageBox.critical(self, "Échec Supabase Auth",
+                                     f"Mot de passe inchangé.\n\n{message}")
+                return
+
+            user.must_change_password = True
+            self.db_session.commit()
+
+            self.log_activity(
+                user_id=self.get_current_user_id(),
+                username=self.get_current_username(),
+                action="Réinitialisation mot de passe",
+                details=f"Réinitialisation du mot de passe de {user.username}"
+            )
+
+            QMessageBox.information(
+                self,
+                "Mot de passe temporaire",
+                f"Mot de passe temporaire pour {user.username}:\n\n"
+                f"{temp_password}\n\n"
+                "Copiez ce mot de passe et donnez-le à l'utilisateur.\n"
+                "Il devra le changer à sa prochaine connexion.\n\n"
+                "Ce mot de passe est valable sur l'application desktop ET web."
+            )
+
+            self.password_reset.emit({
+                "user_id": user.id,
+                "username": user.username
+            })
+
+        except Exception as e:
+            self.db_session.rollback()
+            QMessageBox.critical(self, "Erreur", f"Erreur lors de la réinitialisation: {str(e)}")
+
     
     def change_user_password(self, user):
         """Modifier le mot de passe d'un utilisateur (pour admin)"""
@@ -1719,43 +2146,59 @@ class AdminView(QWidget):
         dialog.exec()
     
     def _save_new_password(self, dialog, user, new_password, confirm_password):
-        """Sauvegarde le nouveau mot de passe"""
+        """Sauvegarde le nouveau mot de passe dans Supabase Auth."""
         if not new_password or not confirm_password:
             QMessageBox.warning(dialog, "Erreur", "Veuillez remplir tous les champs.")
             return
-        
+
         if new_password != confirm_password:
             QMessageBox.warning(dialog, "Erreur", "Les mots de passe ne correspondent pas.")
             return
-        
+
         if len(new_password) < 6:
             QMessageBox.warning(dialog, "Erreur", "Le mot de passe doit contenir au moins 6 caractères.")
             return
-        
+
+        from core.supabase_auth import supabase_available, update_auth_password
+
+        if not supabase_available(self.db_session):
+            QMessageBox.warning(
+                dialog, "Supabase requis",
+                "Les mots de passe sont gérés exclusivement par Supabase Auth.")
+            return
+
         try:
-            password_hash = self.hash_password(new_password)
-            user.password_hash = password_hash
+            ok, message = update_auth_password(
+                self.db_session, user.email, new_password,
+                must_change_password=False)
+            if not ok:
+                self.db_session.rollback()
+                QMessageBox.critical(dialog, "Échec Supabase Auth",
+                                     f"Mot de passe inchangé.\n\n{message}")
+                return
+
             user.must_change_password = False
             self.db_session.commit()
-            
+
             self.log_activity(
                 user_id=self.get_current_user_id(),
                 username=self.get_current_username(),
                 action="Modification mot de passe",
                 details=f"Modification du mot de passe de {user.username} par l'administrateur"
             )
-            
+
             QMessageBox.information(
                 dialog,
                 "Succès",
-                f"Mot de passe de {user.username} modifié avec succès!"
-            )
-            
+                f"Mot de passe de {user.username} modifié avec succès!\n"
+                "Le nouveau mot de passe est actif sur l'application desktop ET web.")
+
             dialog.accept()
-            
+
         except Exception as e:
             self.db_session.rollback()
             QMessageBox.critical(dialog, "Erreur", f"Erreur lors de la modification: {str(e)}")
+
     
     def view_user_permissions(self, user):
         """Afficher les permissions d'un utilisateur"""
@@ -1767,14 +2210,14 @@ class AdminView(QWidget):
         dialog.exec()
     
     def delete_user(self, user):
-        """Supprimer un utilisateur"""
+        """Supprimer un utilisateur (compte Supabase Auth, puis profil)."""
         current_username = self.get_current_username()
         current_user_id = self.get_current_user_id()
-        
+
         if user.username == current_username:
             QMessageBox.warning(self, "Impossible", "Vous ne pouvez pas supprimer votre propre compte.")
             return
-        
+
         if user.role == "ADMIN":
             admin_count = self.db_session.query(User).filter(User.role == "ADMIN").count()
             if admin_count <= 1:
@@ -1785,43 +2228,73 @@ class AdminView(QWidget):
                     "Créez un autre administrateur avant de supprimer celui-ci."
                 )
                 return
-        
+
         reply = QMessageBox.question(
             self, "Confirmation",
             f"Êtes-vous sûr de vouloir supprimer définitivement l'utilisateur '{user.username}' ?\n"
             f"Rôle: {user.role}\n"
+            "Le compte Supabase Auth et son profil seront supprimés.\n"
             "Cette action est irréversible.",
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No
         )
-        
-        if reply == QMessageBox.Yes:
-            try:
-                user_id = user.id
-                username = user.username
-                user_role = user.role
-                
-                self.log_activity(
-                    user_id=current_user_id,
-                    username=current_username,
-                    action="Suppression utilisateur",
-                    details=f"Suppression de {username} (ID: {user_id}, Rôle: {user_role})"
-                )
-                
-                self.db_session.delete(user)
-                self.db_session.commit()
-                
-                self.load_users_from_db()
-                
-                self.user_deleted.emit(user_id)
-                
-                self.filter_users()
-                
-                QMessageBox.information(self, "Succès", f"Utilisateur {username} ({user_role}) supprimé avec succès!")
-                
-            except Exception as e:
+        if reply != QMessageBox.Yes:
+            return
+
+        from core.supabase_auth import delete_auth_user, supabase_available
+
+        if not supabase_available(self.db_session):
+            QMessageBox.warning(
+                self, "Supabase requis",
+                "La suppression des utilisateurs est rattachée exclusivement\n"
+                "à Supabase Auth.")
+            return
+
+        user_id = user.id
+        username = user.username
+        user_role = user.role
+        user_email = user.email
+
+        try:
+            self.log_activity(
+                user_id=current_user_id,
+                username=current_username,
+                action="Suppression utilisateur",
+                details=f"Suppression de {username} (ID: {user_id}, Rôle: {user_role})"
+            )
+
+            # 1) Supabase Auth : le trigger `on_auth_user_deleted` supprime le profil.
+            ok, message = delete_auth_user(self.db_session, user_email)
+            if not ok:
                 self.db_session.rollback()
-                QMessageBox.critical(self, "Erreur", f"Erreur lors de la suppression: {str(e)}")
+                QMessageBox.critical(self, "Échec Supabase Auth",
+                                     f"Suppression annulée.\n\n{message}")
+                return
+            self.db_session.commit()
+
+            # 2) Base sans trigger (déploiement non migré) : profil restant.
+            self.db_session.expire_all()
+            leftover = (self.db_session.query(User)
+                        .filter(User.id == user_id).first())
+            if leftover is not None:
+                self.db_session.delete(leftover)
+                self.db_session.commit()
+
+            self.load_users_from_db()
+
+            self.user_deleted.emit(user_id)
+
+            self.filter_users()
+
+            QMessageBox.information(
+                self, "Succès",
+                f"Utilisateur {username} ({user_role}) supprimé avec succès!\n"
+                "Compte Supabase Auth retiré (accès web et desktop supprimés).")
+
+        except Exception as e:
+            self.db_session.rollback()
+            QMessageBox.critical(self, "Erreur", f"Erreur lors de la suppression: {str(e)}")
+
     
     def save_permissions(self):
         """Sauvegarder les permissions des rôles"""
@@ -1851,47 +2324,9 @@ class AdminView(QWidget):
         )
         
         if reply == QMessageBox.Yes:
-            self.roles_dict = {
-                "ADMIN": {
-                    "name": "Administrateur",
-                    "description": "Accès complet à toutes les fonctionnalités",
-                    "permissions": {perm[1]: True for perm in self.permissions_list}
-                },
-                "GERANT": {
-                    "name": "Gérant",
-                    "description": "Gestion des ventes, inventaire et rapports",
-                    "permissions": {
-                        "dashboard": True,
-                        "sales": True,
-                        "inventory": True,
-                        "reports": True,
-                        "users": False,
-                        "settings": False,
-                        "products": True,
-                        "customers": True,
-                        "suppliers": True,
-                        "export": True,
-                        "audit": False
-                    }
-                },
-                "CAISSIER": {
-                    "name": "Caissier",
-                    "description": "Encaissement et gestion des clients",
-                    "permissions": {
-                        "dashboard": True,
-                        "sales": True,
-                        "inventory": False,
-                        "reports": False,
-                        "users": False,
-                        "settings": False,
-                        "products": True,
-                        "customers": True,
-                        "suppliers": False,
-                        "export": False,
-                        "audit": False
-                    }
-                }
-            }
+            # Retour à la matrice de référence (core.permissions), sans copie
+            # locale : impossible de diverger de la source unique.
+            self.roles_dict = describe_roles()
             
             self.log_activity(
                 user_id=self.get_current_user_id(),
@@ -1900,7 +2335,10 @@ class AdminView(QWidget):
                 details="Permissions réinitialisées aux valeurs par défaut"
             )
             
-            self.setup_roles_tab()
+            # Reconstruire uniquement le contenu de la grille : réinstaller un
+            # QVBoxLayout sur l'onglet (ancien appel à setup_roles_tab) était
+            # refusé par Qt et laissait l'écran figé sur les anciennes cases.
+            self._rebuild_role_groups()
             QMessageBox.information(self, "Succès", "Permissions réinitialisées aux valeurs par défaut!")
     
     def export_users(self):
@@ -1946,8 +2384,6 @@ class AdminView(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Erreur", f"Erreur lors de l'actualisation: {str(e)}")
     
-    def hash_password(self, password):
-        return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
     
     def generate_temp_password(self, length=10):
         letters = string.ascii_letters.replace('l', '').replace('I', '').replace('O', '')
@@ -1967,11 +2403,14 @@ class AdminView(QWidget):
         return "Aucune permission active"
     
     def get_permission_name(self, perm_key):
-        for perm_name, key, _ in self.permissions_list:
-            if key == perm_key:
-                return perm_name
-        return perm_key
+        """Libellé d'une permission (source unique : core.permissions)."""
+        return permission_label(perm_key)
     
+    def open_system_logs_dialog(self):
+        """Ouvre le dialogue de consultation / export des journaux système (fichiers)."""
+        dialog = SysLogsDialog(self.window())
+        dialog.show()
+
     def log_activity(self, user_id, username, action, details=None, ip_address=None):
         return self.log_manager.add_log(
             user_id=user_id,
@@ -2021,7 +2460,10 @@ class UserDialog(QDialog):
         self.mode = mode
         self.user = user
         self.style = style or parent.style() if parent else QStyle()
-        self.available_roles = available_roles or ["ADMIN", "GERANT", "CAISSIER"]
+        # Le paramètre prime (AdminView passe la liste canonique) ; le repli
+        # utilise aussi la source unique pour ne jamais proposer GERANT.
+        from core.permissions import available_roles as _available_roles
+        self.available_roles = list(available_roles or _available_roles())
         self.roles_dict = roles_dict or {}
         
         self.setWindowTitle("Créer un utilisateur" if mode == "create" else "Modifier l'utilisateur")
@@ -2036,7 +2478,8 @@ class UserDialog(QDialog):
         self.username_input.setPlaceholderText("Nom d'utilisateur")
         
         self.email_input = QLineEdit()
-        self.email_input.setPlaceholderText("email@exemple.com")
+        # L'email est l'identifiant Supabase Auth : il est obligatoire.
+        self.email_input.setPlaceholderText("email@exemple.com (obligatoire)")
         
         self.role_combo = QComboBox()
         self.role_desc_label = QLabel()
@@ -2088,11 +2531,17 @@ class UserDialog(QDialog):
             self.username_input.setText(user.username)
             self.email_input.setText(user.email if user.email else "")
             
-            role_name = self.roles_dict.get(user.role, {}).get("name", user.role)
-            for i in range(self.role_combo.count()):
-                if self.role_combo.itemText(i) == role_name:
-                    self.role_combo.setCurrentIndex(i)
-                    break
+            # Sélection par clé canonique (et non par libellé) : un rôle hérité
+            # conserve sa valeur au lieu d'être réécrit silencieusement.
+            target = normalize_role(user.role)
+            index = self.role_combo.findData(target)
+            if index < 0 and target:
+                # Rôle hors matrice : on l'expose explicitement pour que
+                # l'administrateur voie ce qu'il modifie.
+                self.role_combo.addItem(role_display_name(user.role), target)
+                index = self.role_combo.count() - 1
+            if index >= 0:
+                self.role_combo.setCurrentIndex(index)
         
         self.update_role_description()
         
@@ -2148,7 +2597,8 @@ class UserDialog(QDialog):
     def update_role_description(self):
         role_key = self.role_combo.currentData()
         if role_key and role_key in self.roles_dict:
-            description = self.roles_dict[role_key].get("description", "")
+            description = self.roles_dict[role_key].get(
+                "description", role_description(role_key))
             self.role_desc_label.setText(description)
         else:
             self.role_desc_label.setText("")
@@ -2220,7 +2670,9 @@ class PermissionsDialog(QDialog):
         user_info = QLabel(f"<b>{user.username}</b><br>{user.email or 'Pas de email'}")
         user_info.setObjectName("userInfo")
         
-        role_label = QLabel(f"Rôle: {self.roles_dict.get(user.role, {}).get('name', user.role)}")
+        _role_display_name = self.roles_dict.get(user.role, {}).get(
+            "name") or role_display_name(user.role)
+        role_label = QLabel(f"Rôle: {_role_display_name}")
         role_label.setObjectName("roleLabel")
         
         header_layout.addWidget(user_icon)
@@ -2238,19 +2690,7 @@ class PermissionsDialog(QDialog):
         perms_title.setObjectName("permsTitle")
         permissions_layout.addWidget(perms_title)
         
-        permissions_list = [
-            ("Tableau de bord", "dashboard", "Accès au tableau de bord principal"),
-            ("Ventes", "sales", "Gérer les ventes et transactions"),
-            ("Inventaire", "inventory", "Gérer le stock et les produits"),
-            ("Rapports", "reports", "Consulter et générer des rapports"),
-            ("Utilisateurs", "users", "Gérer les comptes utilisateurs"),
-            ("Paramètres", "settings", "Modifier les paramètres système"),
-            ("Produits", "products", "Ajouter/modifier/supprimer des produits"),
-            ("Clients", "customers", "Gérer la base de données clients"),
-            ("Fournisseurs", "suppliers", "Gérer les fournisseurs"),
-            ("Export", "export", "Exporter des données"),
-            ("Audit", "audit", "Consulter les journaux d'audit")
-        ]
+        permissions_list = permission_labels()
         
         for perm_name, perm_key, perm_desc in permissions_list:
             perm_layout = QHBoxLayout()

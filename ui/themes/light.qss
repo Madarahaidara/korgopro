@@ -1,6 +1,5 @@
 /* light.qss - Thème Bleu Marine */
 
-
 /* Police globale */
 QWidget {
     font-family: 'Segoe UI', 'Arial', sans-serif;
@@ -41,4 +40,58 @@ QWidget {
 
 #LoginError {
     color: #ef4444;
+}
+
+/* ===== MENU LATÉRAL (dark) ===== */
+#SideMenu {
+    background-color: #2F4255;
+    border-right: 1px solid #2F4255;
+}
+
+#ToggleMenu {
+    background-color: transparent;
+    color: white;
+    border: 1px solid #2F4255;
+    border-radius: 6px;
+    font-size: 18px;
+    font-weight: bold;
+}
+
+#ToggleMenu:hover {
+    background-color: #2F4255;
+}
+
+#ToggleMenu:pressed {
+    background-color: #1B3A7A;
+}
+
+#SideMenu QPushButton {
+    background-color: transparent;
+    color: white;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    text-align: left;
+    padding-left: 12px;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+#SideMenu QPushButton:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: white;
+    border-color: #3A6B9F;
+}
+
+#SideMenu QPushButton:pressed {
+    background-color: rgba(255, 255, 255, 0.15);
+}
+
+#SideMenu QPushButton:checked {
+    background-color: #1B3A7A;
+    color: white;
+    border-color: #3A6B9F;
+}
+
+#btn_dashboard, #btn_sale, #btn_stock, #btn_admin {
+    background-color: transparent;
 }

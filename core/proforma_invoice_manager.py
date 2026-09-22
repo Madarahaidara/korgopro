@@ -11,6 +11,7 @@ from core.models.customer import Customer
 from core.models.stock_models import Product
 from core.models.user import User
 from core.sale_log_manager import SaleLogManager
+from core.store_manager import current_store_id_for
 import logging
 
 logger = logging.getLogger(__name__)
@@ -327,6 +328,8 @@ class ProformaInvoiceManager:
                 sale_number=sale_number,
                 customer_id=proforma.customer_id,
                 cashier_id=created_by_id,
+                # Multi-magasins : vente rattachée au magasin actif
+                store_id=current_store_id_for(self.session),
                 sale_date=datetime.now(),
                 subtotal=proforma.subtotal,
                 discount_amount=proforma.discount_amount,

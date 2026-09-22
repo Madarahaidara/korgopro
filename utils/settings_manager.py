@@ -40,7 +40,10 @@ class SettingsManager(QObject):
             "payment_terms": 30,
             "discount": 0,
             "date_format": "dd/MM/yyyy",
-            "animations": True
+            "animations": True,
+            # Webhook Discord : secret — renseigné dans company_settings.json
+            # (non versionné), jamais en dur dans le code.
+            "discord_webhook_url": "",
         }
         self.current_settings = self.load_settings()
         self._initialized = True
@@ -60,8 +63,13 @@ class SettingsManager(QObject):
         
         return self.default_settings.copy()
     
-    def save_settings(self, settings=None):
-        """Sauvegarde les paramètres dans le fichier JSON"""
+    def save_settings(self, settings=None, emit=True):
+        """Sauvegarde les paramètres dans le fichier JSON.
+
+        emit=False : mettre à jour sans diffuser settings_changed (utile
+        pour les réglages techniques comme active_store_id, dont le
+        changement est déjà géré par les vues elles-mêmes).
+        """
         try:
             if settings:
                 self.current_settings.update(settings)
@@ -70,7 +78,8 @@ class SettingsManager(QObject):
                 json.dump(self.current_settings, f, ensure_ascii=False, indent=4)
             
             # Émettre le signal de changement
-            self.settings_changed.emit(self.current_settings.copy())
+            if emit:
+                self.settings_changed.emit(self.current_settings.copy())
             return True
         except Exception as e:
             print(f"Erreur lors de la sauvegarde des paramètres: {e}")
@@ -80,10 +89,14 @@ class SettingsManager(QObject):
         """Récupère une valeur de paramètre spécifique"""
         return self.current_settings.get(key, default if default is not None else self.default_settings.get(key))
     
-    def set_setting(self, key, value):
-        """Définit une valeur de paramètre spécifique"""
+    def set_setting(self, key, value, emit=True):
+        """Définit une valeur de paramètre spécifique.
+
+        emit=False pour les réglages techniques (pas de diffusion à toutes
+        les vues — voir save_settings).
+        """
         self.current_settings[key] = value
-        return self.save_settings()
+        return self.save_settings(emit=emit)
     
     def get_all_settings(self):
         """Retourne tous les paramètres"""

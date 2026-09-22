@@ -1,0 +1,426 @@
+/* ============================================================================
+   settings_view.qss — Écran « Paramètres » (thème Bleu Marine)
+
+   POURQUOI UNE FEUILLE DÉDIÉE
+   ---------------------------
+   L'ancien écran Paramètres portait ~500 lignes de QSS écrites au fil du code
+   (setStyleSheet par widget), sur une palette bleu ciel (#3b82f6) étrangère au
+   reste de l'application (bleu marine #2F4255 / #3A6B9F). Résultat : l'écran
+   changeait d'identité visuelle et aucune retouche globale n'était possible.
+
+   Ici tout est piloté par objectName, dans la palette des autres vues
+   (main.qss, admin.qss, dashboard.qss) :
+
+     #2F4255 bleu marine   #3A6B9F accent   #1B3A7A sélection
+     #f8fafc fond          #e2e8f0 bordures #1e293b texte   #64748b texte doux
+
+   Astuce : pas de « url(:/icons/...) » ici — cette feuille est chargée
+   directement par la vue (theme_manager ne réécrit que le thème global).
+   Les icônes sont posées dans le code via ui/icons.
+   ========================================================================= */
+
+/* ===== RACINE ===== */
+QWidget#settingsView {
+    background-color: #f8fafc;
+}
+
+/* ===== ONGLETS ===== */
+QTabWidget#SettingsTabs::pane {
+    background-color: transparent;
+    border: none;
+    top: -1px;
+}
+
+QTabWidget#SettingsTabs QTabBar::tab {
+    background-color: transparent;
+    color: #64748b;
+    padding: 10px 18px;
+    margin-right: 6px;
+    border: none;
+    border-bottom: 2px solid transparent;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+QTabWidget#SettingsTabs QTabBar::tab:hover:!selected {
+    color: #2F4255;
+    background-color: rgba(47, 66, 85, 0.05);
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+}
+
+QTabWidget#SettingsTabs QTabBar::tab:selected {
+    color: #2F4255;
+    background-color: #ffffff;
+    border-bottom: 2px solid #2F4255;
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+}
+
+/* ===== CARTES DE SECTION ===== */
+QFrame#SectionCard {
+    background-color: #ffffff;
+    border: 1px solid #e8ecf1;
+    border-radius: 12px;
+}
+
+QWidget#CardHeader {
+    background-color: #fafbfc;
+    border-bottom: 1px solid #e8ecf1;
+    border-top-left-radius: 12px;
+    border-top-right-radius: 12px;
+}
+
+QWidget#CardBody {
+    background-color: transparent;
+}
+
+QLabel#CardTitle {
+    font-size: 14px;
+    font-weight: 700;
+    color: #2F4255;
+}
+
+QLabel#CardSubtitle {
+    font-size: 12px;
+    color: #64748b;
+}
+
+QLabel#CardIcon {
+    background-color: rgba(47, 66, 85, 0.08);
+    border-radius: 8px;
+    padding: 7px;
+}
+
+/* ===== CHAMPS DE FORMULAIRE ===== */
+QLabel#FieldLabel {
+    font-size: 13px;
+    font-weight: 600;
+    color: #334155;
+}
+
+QLabel#FieldHint {
+    font-size: 11px;
+    color: #94a3b8;
+}
+
+/* ===== SAISIES ===== */
+QWidget#settingsView QLineEdit,
+QWidget#settingsView QTextEdit,
+QWidget#settingsView QComboBox,
+QWidget#settingsView QSpinBox,
+QWidget#settingsView QDoubleSpinBox {
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-size: 13px;
+    background-color: #ffffff;
+    color: #1e293b;
+    selection-background-color: #2F4255;
+    selection-color: #ffffff;
+}
+
+QWidget#settingsView QLineEdit:hover,
+QWidget#settingsView QTextEdit:hover,
+QWidget#settingsView QComboBox:hover,
+QWidget#settingsView QSpinBox:hover,
+QWidget#settingsView QDoubleSpinBox:hover {
+    border-color: #94a3b8;
+}
+
+QWidget#settingsView QLineEdit:focus,
+QWidget#settingsView QTextEdit:focus,
+QWidget#settingsView QComboBox:focus,
+QWidget#settingsView QSpinBox:focus,
+QWidget#settingsView QDoubleSpinBox:focus {
+    border: 2px solid #2F4255;
+    padding: 5px 11px;   /* compense l'épaisseur de la bordure */
+}
+
+QWidget#settingsView QLineEdit:disabled,
+QWidget#settingsView QTextEdit:disabled,
+QWidget#settingsView QComboBox:disabled {
+    background-color: #f1f5f9;
+    color: #94a3b8;
+}
+
+/* Liste déroulante des combos */
+QWidget#settingsView QComboBox::drop-down {
+    border: none;
+    width: 28px;
+}
+
+QWidget#settingsView QComboBox::down-arrow {
+    image: none;
+    width: 0;
+    height: 0;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid #64748b;
+    margin-right: 10px;
+}
+
+QWidget#settingsView QComboBox QAbstractItemView {
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 4px;
+    background-color: #ffffff;
+    selection-background-color: #dbeafe;
+    selection-color: #2F4255;
+    outline: none;
+}
+
+/* Flèches des spinbox */
+QWidget#settingsView QSpinBox::up-button,
+QWidget#settingsView QDoubleSpinBox::up-button,
+QWidget#settingsView QSpinBox::down-button,
+QWidget#settingsView QDoubleSpinBox::down-button {
+    border: none;
+    background: transparent;
+    width: 22px;
+}
+
+QWidget#settingsView QSpinBox::up-arrow,
+QWidget#settingsView QDoubleSpinBox::up-arrow {
+    image: none;
+    width: 0;
+    height: 0;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-bottom: 5px solid #64748b;
+}
+
+QWidget#settingsView QSpinBox::down-arrow,
+QWidget#settingsView QDoubleSpinBox::down-arrow {
+    image: none;
+    width: 0;
+    height: 0;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid #64748b;
+}
+
+/* Case à cocher (indicateur plein, sans dépendance à une ressource .qrc) */
+QWidget#settingsView QCheckBox {
+    color: #334155;
+    font-size: 13px;
+    spacing: 10px;
+}
+
+QWidget#settingsView QCheckBox::indicator {
+    width: 18px;
+    height: 18px;
+    border: 2px solid #cbd5e1;
+    border-radius: 5px;
+    background-color: #ffffff;
+}
+
+QWidget#settingsView QCheckBox::indicator:hover {
+    border-color: #94a3b8;
+}
+
+QWidget#settingsView QCheckBox::indicator:checked {
+    background-color: #2F4255;
+    border-color: #2F4255;
+}
+
+/* ===== LOGO DE L'ENTREPRISE ===== */
+QFrame#LogoPreview {
+    background-color: #f8fafc;
+    border: 2px dashed #cbd5e1;
+    border-radius: 12px;
+}
+
+QFrame#LogoPreview:hover {
+    border-color: #94a3b8;
+}
+
+QLabel#LogoImage {
+    background-color: transparent;
+    color: #94a3b8;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+QLabel#LogoFilename {
+    font-size: 13px;
+    font-weight: 600;
+    color: #334155;
+}
+
+QLabel#LogoHint {
+    font-size: 11px;
+    color: #94a3b8;
+}
+
+/* ===== APERÇU DE NUMÉROTATION ===== */
+QLabel#NumberPreview {
+    background-color: #f1f5f9;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 10px 14px;
+    color: #2F4255;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+/* ===== BARRE D'ACTION (toujours visible) ===== */
+QFrame#ActionBar {
+    background-color: #ffffff;
+    border: 1px solid #e8ecf1;
+    border-radius: 12px;
+}
+
+/* Pastille d'état : la propriété Qt "state" pilote couleur et fond */
+QFrame#StatusPill {
+    border-radius: 16px;
+    background-color: #f0fdf4;
+    border: 1px solid #dcfce7;
+}
+
+QFrame#StatusPill[state="dirty"] {
+    background-color: #fffbeb;
+    border: 1px solid #fde68a;
+}
+
+QFrame#StatusPill[state="saved"] {
+    background-color: #eef2ff;
+    border: 1px solid #c7d2fe;
+}
+
+QLabel#StatusPillText {
+    font-size: 12px;
+    font-weight: 600;
+    color: #16a34a;
+    background-color: transparent;
+}
+
+QFrame#StatusPill[state="dirty"] QLabel#StatusPillText {
+    color: #b45309;
+}
+
+QFrame#StatusPill[state="saved"] QLabel#StatusPillText {
+    color: #2F4255;
+}
+
+QLabel#StatusPillIcon {
+    background-color: transparent;
+}
+
+/* ===== BOUTONS ===== */
+QPushButton#PrimaryButton {
+    background-color: #2F4255;
+    color: #ffffff;
+    border: none;
+    border-radius: 8px;
+    padding: 9px 20px;
+    font-size: 13px;
+    font-weight: 700;
+    min-width: 108px;
+}
+
+QPushButton#PrimaryButton:hover {
+    background-color: #1B3A7A;
+}
+
+QPushButton#PrimaryButton:disabled {
+    background-color: #cbd5e1;
+    color: #f1f5f9;
+}
+
+QPushButton#SecondaryButton {
+    background-color: #ffffff;
+    color: #475569;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 9px 18px;
+    font-size: 13px;
+    font-weight: 600;
+    min-width: 92px;
+}
+
+QPushButton#SecondaryButton:hover {
+    background-color: #f1f5f9;
+    border-color: #94a3b8;
+}
+
+QPushButton#SecondaryButton:disabled {
+    color: #cbd5e1;
+    border-color: #e2e8f0;
+}
+
+QPushButton#DangerButton {
+    background-color: #fef2f2;
+    color: #dc2626;
+    border: 1px solid #fecaca;
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+QPushButton#DangerButton:hover {
+    background-color: #fee2e2;
+}
+
+QPushButton#DangerButton:disabled {
+    color: #fca5a5;
+    border-color: #fee2e2;
+    background-color: #fff5f5;
+}
+
+QPushButton#GhostButton {
+    background-color: #f8fafc;
+    color: #475569;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+QPushButton#GhostButton:hover {
+    background-color: #eef2f7;
+    border-color: #94a3b8;
+    color: #2F4255;
+}
+
+/* ===== BARRES DE DÉFILEMENT ===== */
+QWidget#settingsView QScrollBar:vertical,
+QScrollArea#TabScroll QScrollBar:vertical {
+    border: none;
+    background: transparent;
+    width: 10px;
+    margin: 2px;
+}
+
+QWidget#settingsView QScrollBar::handle:vertical,
+QScrollArea#TabScroll QScrollBar::handle:vertical {
+    background-color: #cbd5e1;
+    border-radius: 5px;
+    min-height: 32px;
+}
+
+QWidget#settingsView QScrollBar::handle:vertical:hover,
+QScrollArea#TabScroll QScrollBar::handle:vertical:hover {
+    background-color: #94a3b8;
+}
+
+QWidget#settingsView QScrollBar::add-line:vertical,
+QWidget#settingsView QScrollBar::sub-line:vertical,
+QScrollArea#TabScroll QScrollBar::add-line:vertical,
+QScrollArea#TabScroll QScrollBar::sub-line:vertical {
+    height: 0;
+    background: none;
+    border: none;
+}
+
+QScrollArea#TabScroll {
+    background: transparent;
+    border: none;
+}
+
+QWidget#TabContent {
+    background-color: transparent;
+}
+

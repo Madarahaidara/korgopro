@@ -15,6 +15,8 @@ class Sale(Base):
     sale_number = Column(String(50), unique=True, index=True, nullable=False)
     customer_id = Column(Integer, ForeignKey('customers.id'), nullable=True)
     cashier_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    # Magasin dans lequel la vente a été réalisée (NULL = magasin par défaut)
+    store_id = Column(Integer, ForeignKey('stores.id'), nullable=True, index=True)
     sale_date = Column(DateTime, default=func.now())
     subtotal = Column(Float, nullable=False, default=0)
     discount_amount = Column(Float, default=0)
@@ -31,7 +33,7 @@ class Sale(Base):
     
     # Nouveaux champs pour facture définitive
     type_document = Column(String(20), default="FACTURE")  # FACTURE, AVOIR
-    origine_proforma_id = Column(Integer, ForeignKey('proforma_invoices.id'), nullable=True)
+    origine_proforma_id = Column(Integer, ForeignKey('proforma_invoices.id', use_alter=True), nullable=True)
     date_conversion = Column(DateTime, nullable=True)
     utilisateur_conversion = Column(Integer, ForeignKey('users.id'), nullable=True)
     statut = Column(String(20), default="BROUILLON")  # BROUILLON, EMISE, PARTIELLEMENT_PAYEE, PAYEE, EN_RETARD, ANNULEE
@@ -41,6 +43,7 @@ class Sale(Base):
     # Relations
     customer = relationship("Customer", backref="sales")
     cashier = relationship("User", backref="ventes_caisse", foreign_keys=[cashier_id])
+    store = relationship("Store", backref="sales")
     items = relationship("SaleItem", backref="sale", cascade="all, delete-orphan")
     logs = relationship("core.models.sale_log.SaleLog", backref="sale", cascade="save-update, merge")
     # Lien vers la proforma source (relation unidirectionnelle)
@@ -180,7 +183,7 @@ class ProformaInvoice(Base):
     notes = Column(Text, nullable=True)
     terms_and_conditions = Column(Text, nullable=True)
     currency = Column(String(10), default="FCFA")
-    converted_to_sale_id = Column(Integer, ForeignKey('sales.id'), nullable=True)
+    converted_to_sale_id = Column(Integer, ForeignKey('sales.id', use_alter=True), nullable=True)
     
     # Relations
     customer = relationship("Customer", backref="proforma_invoices")

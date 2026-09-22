@@ -1,0 +1,530 @@
+================================================================================
+                RAPPORT COMPLET DU LOGICIEL — KORGO PRO
+                Genere le : 27/08/2026
+                Depot : https://github.com/Madarahaidara/korgopro.git
+                Branche : main — Dernier commit : 67b634a
+================================================================================
+
+SOMMAIRE
+--------
+1.  Presentation generale
+2.  Pile technique et dependances
+3.  Architecture et arborescence
+4.  Point d'entree et cycle de demarrage
+5.  Modele de donnees (base SQLite)
+6.  Modules metier (core)
+7.  Interface utilisateur (ui)
+8.  Utilitaires (utils)
+9.  Securite
+10. Migrations de base de donnees (Alembic)
+11. Build, packaging et CI/CD
+12. Tests et qualite
+13. Metriques du code
+14. Historique du projet (git)
+15. Points forts
+16. Problemes identifies et risques
+17. Recommandations priorisees
+18. Conclusion
+
+
+================================================================================
+1. PRESENTATION GENERALE
+================================================================================
+
+Nom du projet    : korgo-pro (nom d'application affichee : "Korgo Pro" /
+                   "Gestion de stock")
+Version declaree : 0.1.0 (pyproject.toml)
+Type             : Application de bureau (desktop) Windows, mono-poste
+Domaine          : Gestion commerciale pour PME/commerce de detail
+Langue de l'IHM  : Francais
+Python requis    : >= 3.11 (environnement local detecte : Python 3.11.4)
+
+Perimetre fonctionnel couvert par le code :
+  - Authentification par identifiant/mot de passe avec roles
+  - Tableau de bord (statistiques, graphiques)
+  - Point de vente / caisse (ventes, paiements, retours)
+  - Gestion de stock (produits, categories, fournisseurs, mouvements,
+    alertes de stock bas / rupture, commandes d'achat)
+  - Factures proforma (devis) avec conversion en facture definitive
+  - Clients et fournisseurs
+  - Depenses et categories de depenses
+  - Impression et generation de documents (factures, recus)
+  - Exports Excel (rapports de benefices, rapports de depenses)
+  - Administration : utilisateurs, journal d'activite, exploration de la base
+  - Parametres de l'entreprise (logo, coordonnees, TVA, devise, numerotation)
+  - Ecran de verrouillage de session
+
+
+================================================================================
+2. PILE TECHNIQUE ET DEPENDANCES
+================================================================================
+
+Declarees dans pyproject.toml (build-backend : setuptools) :
+
+  PySide6      -> Interface graphique Qt 6 (widgets, QSS, signaux/slots)
+  SQLAlchemy   -> ORM et acces base de donnees
+  alembic      -> Migrations de schema
+  pandas       -> Manipulation de donnees / preparation des rapports
+  openpyxl     -> Export Excel (.xlsx)
+  bcrypt       -> Hachage des mots de passe
+  reportlab    -> Generation PDF
+
+Base de donnees : SQLite, fichier local "korgo_pro.db"
+  (core/database.py -> DATABASE_URL = "sqlite:///korgo_pro.db")
+
+Observation : aucune version n'est epinglee (pas de contraintes >=/==, pas de
+requirements.txt ni de lock file). Le build CI reinstalle les paquets sans
+version, ce qui rend les compilations non reproductibles dans le temps.
+================================================================================
+3. ARCHITECTURE ET ARBORESCENCE
+================================================================================
+
+Le projet suit une separation en couches proche du MVC :
+
+  main.py                 Point d'entree de l'application
+  core/                   Couche metier + persistance
+    database.py           Engine SQLAlchemy, SessionLocal, Base, get_db()
+    database_manager.py   Outillage d'administration de la base (10 Ko)
+    log_manager.py        Journalisation des activites (5 Ko)
+    sale_log_manager.py   Journal des operations de vente (5 Ko)
+    proforma_invoice_manager.py  Logique metier des proformas (18 Ko)
+    security.py           Hachage/verification des mots de passe
+    bruteforce_protection.py     Anti-force brute (singleton)
+    startup_manager.py    Orchestration du demarrage + splash
+    models/               Modeles ORM
+      user.py, customer.py, activity_log.py, sale_log.py,
+      sale_models.py (9 Ko), stock_models.py (8 Ko)
+  controllers/
+    auth_controller.py    Authentification et recuperation d'utilisateur
+  ui/
+    views/                14 vues Qt (voir section 7)
+    themes/               8 feuilles de style QSS + theme_manager.py
+    icons/                icon_manager.py + 30 icones (SVG/PNG/ICO)
+  utils/
+    print_service.py      Generation/rendu des documents (68 Ko)
+    print_dialogs.py      Boites de dialogue d'impression (45 Ko)
+    settings_manager.py   Parametres entreprise (singleton, JSON)
+    resource_path.py      Resolution des chemins (compatible PyInstaller)
+    project_paths.py, helpers.py, icon_manager.py
+  alembic/                env.py + revisions de migration
+  docs/                   architecture.md/.mmd/.png, audits securite
+  .github/workflows/      build-release.yml (CI/CD)
+  build/, dist/           Artefacts PyInstaller (non versionnes)
+  venv/                   Environnement virtuel local
+
+Flux general (conforme a docs/architecture.md) :
+  LoginView -> AuthController -> DB
+  LoginView --(signal login_successful)--> MainWindow
+  MainWindow -> QStackedWidget de vues, permissions par role
+  Vues -> Managers (core) -> SQLAlchemy -> SQLite
+================================================================================
+4. POINT D'ENTREE ET CYCLE DE DEMARRAGE
+================================================================================
+
+main.py (59 lignes) execute, dans l'ordre :
+  1. Base.metadata.create_all(bind=engine)  -> cree les tables manquantes
+  2. Activation du High DPI (PassThrough) pour ecrans 4K/Retina
+  3. Creation de QApplication
+  4. Affichage d'un splash screen moderne (ModernSplashScreen) avec
+     progression 30 % / 60 % / 90 % / 100 %
+  5. Chargement du theme "light" via ui/themes/theme_manager.load_theme
+  6. Application de l'icone de l'application
+  7. Creation de LoginView ; un signal login_successful ouvre MainWindow
+  8. Fondu de sortie du splash, puis app.exec()
+
+Point notable : le code est ecrit au niveau module (pas de fonction main() ni
+de garde `if __name__ == "__main__":`). Le module ne peut donc pas etre
+importe sans lancer l'application entiere.
+
+Un StartupManager + StartupWorker (QThread) existent dans core/, avec des
+etapes de progression, mais ne sont pas utilises par main.py : le chemin de
+demarrage reel est synchrone. Ce module est donc du code mort en l'etat.
+
+
+================================================================================
+5. MODELE DE DONNEES (BASE SQLITE)
+================================================================================
+
+Modele utilisateur — core/models/user.py
+  users : id, username (unique), password_hash, email (optionnel, unique),
+          role (defaut "CAISSIER"), active, created_at, last_login,
+          last_ip, must_change_password (defaut True)
+  Methode to_dict() pour la serialisation.
+
+Modele stock — core/models/stock_models.py
+  products             : code, name, category, description, quantity,
+                         min_stock, max_stock, purchase_price, sale_price,
+                         supplier_id, location, barcode, active, timestamps
+                         Proprietes calculees : stock_value, profit_margin,
+                         profit_per_unit, total_potential_profit,
+                         is_low_stock, is_out_of_stock
+  suppliers            : code, nom, contact_person, email, phone, address,
+                         city, country, website, notes, payment_terms, active
+  inventory_movements  : mouvements de stock
+  expense_categories   : categories de depenses
+  expenses             : category_id, amount, description, payment_method
+                         (CASH/BANK/MOBILE_MONEY), reference, supplier_id,
+                         user_id, date
+  purchase_orders      : order_number, supplier_id, statut
+                         (PENDING/ORDERED/RECEIVED/CANCELLED), total_amount,
+                         expected_delivery, received_date
+  purchase_order_items : order_id, product_id, quantity, unit_price,
+                         total_price, received_quantity
+  stock_alerts         : product_id, alert_type (LOW_STOCK/OUT_OF_STOCK/
+                         EXPIRING), threshold, message, is_read
+
+Modele ventes — core/models/sale_models.py
+  sales                : sale_number, customer_id, cashier_id, sale_date,
+                         subtotal, discount_amount, tax_amount, total_amount,
+                         amount_paid, change_amount, payment_method,
+                         payment_status, sale_status, currency (FCFA),
+                         type_document (FACTURE/AVOIR), origine_proforma_id,
+                         date_conversion, utilisateur_conversion,
+                         statut (BROUILLON, EMISE, PARTIELLEMENT_PAYEE,
+                         PAYEE, EN_RETARD, ANNULEE), date_expiration, version
+                         Propriete calculee : profit
+  sale_items           : lignes de vente (quantite, prix unitaire, remises)
+  sale_returns / sale_return_items : retours de vente (motif, remboursement)
+  proforma_invoices    : proforma_number, customer_id, created_by,
+                         created_date, valid_until, montants, remises, taxes,
+                         status (BROUILLON, EN_ATTENTE, ENVOYEE, ACCEPTEE,
+                         REFUSEE, EXPIREE, CONVERTIE), terms_and_conditions,
+                         currency, converted_to_sale_id
+  proforma_invoice_items : lignes de proforma (product_id nullable = libre)
+
+Autres : customers, activity_logs, sale_logs.
+
+Traçabilite : le couple Sale.origine_proforma_id /
+ProformaInvoice.converted_to_sale_id assure le lien bidirectionnel entre le
+devis et la facture definitive — bonne pratique metier.
+
+Devise par defaut : FCFA (marche ouest-africain), TVA par defaut : 20 %.
+================================================================================
+6. MODULES METIER (CORE)
+================================================================================
+
+core/database.py
+  Engine SQLite avec check_same_thread=False (necessaire pour Qt multi-thread,
+  mais expose a des acces concurrents si des threads ecrivent en parallele).
+  Fournit SessionLocal, Base, init_database() et un generateur get_db().
+
+core/database_manager.py
+  Outil d'administration de la base : inspection des tables, colonnes, cles
+  etrangeres, index, comptage de lignes, et execution de requetes SQL en
+  LECTURE SEULE. Securise par liste blanche regex :
+      ^\s*(SELECT|WITH|EXPLAIN QUERY PLAN|PRAGMA)\s
+  plus une liste noire complementaire (INTO OUTFILE, INTO DUMPFILE, LOAD_FILE,
+  INFORMATION_SCHEMA, PRAGMA WRITEABLE_SCHEMA, ATTACH DATABASE).
+  Le comptage de lignes passe par un mapping table -> modele ORM plutot que
+  par des f-strings SQL.
+
+core/proforma_invoice_manager.py (le plus gros manager, 18 Ko)
+  Cycle de vie complet des proformas : creation, numerotation, calcul des
+  totaux/remises/taxes, changement de statut, conversion en vente.
+
+core/log_manager.py / core/sale_log_manager.py
+  Journalisation des actions applicatives et des operations de vente
+  (audit trail).
+
+core/security.py
+  hash_password()    : bcrypt avec sel genere (bcrypt.gensalt())
+  verify_password()  : verifie bcrypt ; repli SHA256 pour anciens comptes
+  migrate_old_hash() : re-hache en bcrypt apres verification reussie
+
+core/bruteforce_protection.py
+  Singleton thread-safe (double-checked locking). 5 tentatives echouees
+  maximum, verrouillage de 15 minutes par nom d'utilisateur.
+  Limite : etat purement en memoire — un redemarrage reinitialise tout.
+
+controllers/auth_controller.py
+  authenticate()    : verifie l'utilisateur actif, valide le mot de passe,
+                       met a jour last_login, migre automatiquement le hash
+                       SHA256 vers bcrypt, retourne un dict utilisateur
+  verify_password()  : re-verification (utilisee pour les actions sensibles)
+  get_user_by_id()   : lecture d'un utilisateur
+
+
+================================================================================
+7. INTERFACE UTILISATEUR (UI)
+================================================================================
+
+Vues (ui/views), taille indicative du fichier :
+  stock_view.py               227,5 Ko  <-- tres volumineux
+  admin_view.py                94,2 Ko  <-- tres volumineux
+  proforma_invoice_view.py     80,0 Ko  <-- tres volumineux
+  sale_view.py                 59,6 Ko
+  settings_view.py             42,0 Ko
+  dashboard_view.py            33,3 Ko
+  login_view.py                21,2 Ko
+  sale_widgets.py              20,9 Ko
+  main_window.py               17,4 Ko
+  sale_dialogs.py              14,3 Ko
+  sale_services.py             12,5 Ko
+  lock_screen.py               10,8 Ko
+  splash_screen.py              6,0 Ko
+  splash_screen_enhanced.py     1,9 Ko  (semble inutilise)
+
+MainWindow (ui/views/main_window.py)
+  - Header avec logo d'entreprise redimensionne (KeepAspectRatio) + nom
+  - Menu lateral repliable (220 px etendu / 60 px replie)
+  - QStackedWidget pour la navigation entre vues
+  - Taille minimale 800x500 (adaptee aux petits ecrans)
+  - Ecoute settings_changed du SettingsManager (rafraichit titre/logo/nom)
+  - _apply_role_permissions() applique les droits selon le role :
+      CAISSIER, GERANT/GESTIONNAIRE, SUPERVISEUR, ASSISTANT, ADMIN
+    L'acces aux Parametres est reserve a ADMIN (message d'erreur sinon)
+
+Themes (ui/themes) : 8 feuilles QSS — main, login, admin, dashboard,
+stock_view, sale_view, light, dark. Chargement via theme_manager.load_theme()
+et resource_path() pour rester compatible avec l'executable PyInstaller.
+
+Icones : IconManager centralise, 20 SVG + 10 PNG + logo.ico.
+================================================================================
+8. UTILITAIRES (UTILS)
+================================================================================
+
+print_service.py (68 Ko)  Moteur de generation des documents : factures,
+                          proformas, recus ; mise en page et rendu
+                          (un modele HTML de test existe : facture_test.html)
+print_dialogs.py (45 Ko)  Dialogues d'apercu / configuration d'impression
+settings_manager.py       Singleton QObject, signal settings_changed(dict),
+                          persistance dans company_settings.json.
+                          Cles : company_name, address, phone, email, logo,
+                          currency (FCFA), tax_rate (20.0), invoice_footer,
+                          theme, language (fr), invoice_prefix (FAC),
+                          invoice_start, payment_terms (30), discount,
+                          date_format (dd/MM/yyyy), animations.
+                          Fusion automatique avec les valeurs par defaut pour
+                          les cles manquantes (tolerant aux montees de version).
+                          Accesseurs dedies : get_company_info(),
+                          get_billing_info(), get_company_info_for_invoice()
+                          (ajoute IFU, RCCM, boite postale).
+resource_path.py          Resolution des ressources en mode script et en mode
+                          executable gele (sys._MEIPASS)
+project_paths.py, helpers.py, icon_manager.py : utilitaires courts
+
+
+================================================================================
+9. SECURITE
+================================================================================
+
+Mesures en place (documentees dans docs/audit_securite_changements.txt) :
+
+  [OK] Mots de passe haches avec bcrypt + sel aleatoire
+  [OK] Migration transparente SHA256 -> bcrypt a la connexion reussie
+  [OK] Protection anti-force brute : 5 essais, 15 min de verrouillage
+  [OK] Console SQL d'administration en lecture seule (liste blanche regex
+       remplacant l'ancienne liste noire contournable)
+  [OK] Suppression des f-strings SQL dans get_table_data() / comptage
+  [OK] Journal d'activite (activity_logs) et journal des ventes (sale_logs)
+  [OK] Permissions par role appliquees dans MainWindow
+  [OK] Champs de tracabilite : last_ip, last_login, must_change_password
+  [OK] Compte desactive (active=False) refuse a l'authentification
+
+Faiblesses residuelles :
+
+  [!] Le repli SHA256 dans verify_password() reste actif indefiniment : tant
+      qu'un compte ancien ne se connecte pas, son hash faible subsiste.
+  [!] L'etat anti-force brute est en memoire : redemarrer l'application
+      annule les verrouillages (contournement trivial en local).
+  [!] La base SQLite et company_settings.json ne sont pas chiffres et sont
+      lisibles par tout utilisateur ayant acces au dossier.
+  [!] La base korgo_pro.db et users_export.json sont presents dans le dossier
+      de travail ; users_export.json peut contenir des donnees sensibles.
+  [!] Les erreurs sont remontees par print() plutot que par le module logging,
+      ce qui les rend invisibles dans une build sans console (console=False).
+  [!] Blocs `except (ValueError, Exception)` et `except:` nus : masquent des
+      erreurs reelles.
+  [!] SECURITY.md est le modele GitHub par defaut, non personnalise
+      (versions 5.1.x / 4.0.x sans rapport avec la version 0.1.0 du projet).
+  [!] must_change_password vaut True par defaut mais aucun controle
+      d'application n'a ete trouve dans le flux d'authentification.
+  Alembic -> schema de la base
+================================================================================
+10. MIGRATIONS DE BASE DE DONNEES (ALEMBIC)
+================================================================================
+
+alembic.ini + alembic/env.py + revisions :
+
+  92a3de20ce0e  add currency field to Sale
+  ed15b98aa383  add currency field to Sale (doublon apparent)
+  d4cb3dc41905  ajout champs note / verses / notes
+  d92bd2ad085e  ajout champs website et notes
+  d8d1761a9b17  fix customers
+  add_proforma_and_invoice_fields  (revision a identifiant non genere)
+
+Points d'attention :
+  - Dei revisions portent le meme intitule "add currency field to Sale" :
+    risque de branche/duplication dans l'historique Alembic.
+  - Une revision utilise un nom de fichier manuel au lieu d'un hash genere,
+    ce qui n'est pas conventionnel et complique le chainage down_revision.
+  - main.py appelle Base.metadata.create_all() : sur une base neuve les
+    tables sont creees hors Alembic, la table alembic_version n'est donc pas
+    forcement estampillee (risque de conflit au prochain `alembic upgrade`).
+  - Des scripts de migration ad hoc coexistent avec Alembic :
+    init_db.py, migrate_sale_logs.py, recreate_db.py, reset_db.py.
+
+
+================================================================================
+11. BUILD, PACKAGING ET CI/CD
+================================================================================
+
+Packaging local : PyInstaller (korgo_pro.spec present, mais *.spec est
+ignores de .gitignore). version_info.txt est present pour les metadonnees
+Windows de l'executable.
+
+CI/CD : .github/workflows/build-release.yml
+  Declencheurs  : push sur main, tags "v*", declenchement manuel
+  Runner        : windows-latest, Python 3.11 avec cache pip
+  Etapes        :
+    1. Checkout
+    2. Installation de PyInstaller + PySide6, SQLAlchemy, alembic, pandas,
+       openpyxl, bcrypt, reportlab
+    3. Regeneration du fichier spec dans le workflow (gitignore) -> build
+       reproductible dans la CI
+    4. pyinstaller korgo_pro.spec (mode fenetre console=False, UPX active,
+       icone ui/icons/logo.ico, exclusion tkinter/PyQt5/PyQt6/pytest,
+       hiddenimports incluant les sous-modules des paquets et de l'app)
+    5. Verification de dist\KorgoPro\KorgoPro.exe (echec sinon)
+    6. Sur tag v* : Compress-Archive + GitHub Release (notes auto)
+    7. Sinon : artefact de build "KorgoPro-build"
+
+Appreciation : pipeline correct et fonctionnel. Il manque une etape de tests
+et le pin des versions des dependances.
+
+
+================================================================================
+12. TESTS ET QUALITE
+================================================================================
+
+Fichiers de test presents a la racine :
+  test_bruteforce.py, test_bugs.py, test_deps.py, test_functional.py,
+  test_functional2.py, test_functional3.py, test_invoice_template.py
+Sorties archivees : test_output.txt, test_bugs_output.txt
+Un dossier .pytest_cache existe (pytest a deja ete utilise).
+
+Constats :
+  - Seuls 3 motifs `def test_` / `import pytest` ont ete detectes a la
+    racine : la plupart de ces fichiers sont des scripts de verification
+    manuelle plutot que de vraies suites pytest.
+  - Aucun dossier tests/ structure, aucune configuration pytest dans
+    pyproject.toml, aucune couverture mesuree.
+  - Aucun test n'est execute dans la CI.
+  - Aucun linter/formateur (ruff, flake8, black) configure.
+  - Verification effectuee pour ce rapport : python -m compileall sur
+    core, controllers, utils, ui et main.py -> AUCUNE erreur de syntaxe.
+================================================================================
+13. METRIQUES DU CODE
+================================================================================
+
+  Fichiers suivis (hors venv/build/dist/.git/__pycache__) :  132
+  Fichiers Python                                          :   60
+  Lignes de code Python (total)                            : 22 866
+  Moyenne par fichier                                      : ~381 lignes
+  Feuilles de style QSS                                    :   8
+  Icones (SVG + PNG + ICO)                                 :   32
+  Revisions Alembic                                        :   6
+  Modeles ORM (tables)                                     : ~17
+
+Repartition par extension : .py 60 | .svg 20 | .png 10 | .qss 8 | .txt 7 |
+.md 4 | .json 4 | .xlsx 2 | .ico 2 | .db 2 | .html 1 | .ini 1 | .toml 1 |
+.mmd 1 | .yml 1 | .mako 1 | .spec 1
+
+Concentration du code : les 4 plus gros fichiers UI (stock_view,
+admin_view, proforma_invoice_view, sale_view) representent a eux seuls
+environ 460 Ko, soit la grande majorite du volume source. stock_view.py
+(pres de 228 Ko) est un point chaud de maintenance majeur.
+
+
+================================================================================
+14. HISTORIQUE DU PROJET (GIT)
+================================================================================
+
+  67b634a  2026-08-26  Ajout workflow GitHub Actions pour build automatique
+                       + release de Korgo Pro
+  ef9a18e  2026-08-24  patch apres observation chez un client
+  b322dee  2026-08-06  Corrections de bugs et ajout fonctionnalites securite
+  23e5a40  2026-08-06  amelioration design impression
+  dcb30b1  2026-08-03  resolution proforma
+  070d3e0  2026-07-18  amelioration du login_view
+  8954af9  2026-06-27  Correction de login_view.py
+  365d4b6  2026-06-25  premier commit
+
+Duree du projet : ~2 mois (25/06/2026 -> 26/08/2026), 8 commits.
+Le commit "patch apres observation chez un client" indique un deploiement
+reel chez un utilisateur et une boucle de retour terrain.
+
+ETAT DU DEPOT (git status — note) :
+  Des centaines de fichiers supprimes sont en attente sous
+  korgo-beta2/KorgoPro/_internal/... : une build PyInstaller complete (avec
+  toute la base tzdata) avait ete commitee par erreur. Ces suppressions ne
+  sont pas encore validees et version_info.txt est non suivie.
+  Le depot contient donc historiquement des artefacts binaires ; le
+  nettoyage est en cours mais non finalise.
+================================================================================
+15. POINTS FORTS
+================================================================================
+
+  + Separation en couches claire et coherente (ui / controllers / core /
+    utils), respectee dans l'ensemble du code.
+  + Couverture fonctionnelle metier large : stock, caisse, proforma ->
+    facture, retours, depenses, achats, alertes.
+  + Traçabilite metier soignee : sale_logs, activity_logs, versionnage des
+    factures, lien proforma <-> vente dans les deux sens.
+  + Securite prise au serieux et documentee : audit ecrit, correction reelle
+    d'une injection SQL, migration de hash transparente, anti-force brute.
+  + Parametrage entreprise centralise avec propagation temps reel par signal
+    Qt (settings_changed) — le logo et le nom se mettent a jour a chaud.
+  + Compatibilite executable pensee des le depart (resource_path /
+    sys._MEIPASS), High DPI active, taille minimale adaptee aux petits ecrans.
+  + Pipeline CI/CD fonctionnel avec verification post-build et publication
+    automatique de release sur tag.
+  + Documentation d'architecture presente (Markdown + Mermaid + PNG) et
+    audits ecrits (audit_login_view.md, audit securite).
+  + Modeles ORM enrichis de proprietes calculees (marge, valeur du stock,
+    profit) qui evitent la duplication de logique dans l'UI.
+  + Code entierement compilable sous Python 3.11 sans erreur de syntaxe.
+
+
+================================================================================
+16. PROBLEMES IDENTIFIES ET RISQUES
+================================================================================
+
+CRITIQUE
+  C1. Depot historiquement pollue par des artefacts de build (korgo-beta2/,
+      base tzdata complete) avec des centaines de suppressions non commitees.
+  C2. Aucun test automatise fiable ni execute en CI. Sur 22 866 lignes, une
+      regression peut passer inapercue jusqu'a la production.
+  C3. Absence de README.md : aucune instruction d'installation, de lancement,
+      de creation du premier administrateur ni de sauvegarde.
+
+MAJEUR
+  M1. Fichiers monolithiques : stock_view.py (~228 Ko), admin_view.py
+      (~94 Ko), proforma_invoice_view.py (~80 Ko). Maintenance difficile.
+  M2. Dependances non versionnees -> builds non reproductibles, risque de
+      casse silencieuse a la prochaine version majeure des librairies.
+  M3. Cohabitation Alembic / create_all() / scripts ad hoc : le schema reel
+      peut diverger des migrations. Deux revisions "currency" en doublon.
+  M4. Aucune strategie de sauvegarde de korgo_pro.db visible. Un fichier
+      SQLite unique, non chiffre, sans sauvegarde automatique = risque de
+      perte totale des donnees comptables du client.
+  M5. Anti-force brute purement en memoire (contournable par redemarrage).
+  M6. Fichiers de donnees sensibles a la racine du depot de travail :
+      korgo_pro.db, korgo_prol.db, users_export.json, activity_log.txt.
+
+MINEUR
+  m1. print() partout au lieu de logging ; en build sans console toutes les
+      erreurs sont perdues.
+  m2. Blocs except trop larges (`except:`, `except (ValueError, Exception)`).
+  m3. Code mort ou inutilise : startup_manager.py non utilise par main.py,
+      splash_screen_enhanced.py non reference, diagnonstique.py (faute de
+      frappe dans le nom) laisse a la racine.
+  m4. main.py sans fonction main() ni garde __main__.
+  m5. Doublon self.setStyleSheet("") consecutif dans apply_light_theme().
+  m6. Fichier ".txt" vide/anonyme a la racine ; rapports .xlsx generes
+      commites ; facture_test.html a la racine.
+  m7. SECURITY.md non personnalise (modele GitHub par defaut).
+  m8. Deux bases (korgo_pro.db et korgo_prol.db) — faute de frappe probable.
+  m9. datetime.utcnow() est deprecie a partir de Python 3.12.
+  m10. must_change_password defini mais jamais applique dans le flux de login.
+    L'ensemble du code compile correctement sous Python 3.11.4.

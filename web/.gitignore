@@ -1,0 +1,31 @@
+# Dépendances
+node_modules/
+
+# Builds
+dist/
+dist-ssr/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Éditeurs / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Env (contient l'URL et la clé publique du projet Supabase)
+.env
+.env.local
+.env.*.local
+# .env.example est versionné (modèle sans secret)
+!.env.example

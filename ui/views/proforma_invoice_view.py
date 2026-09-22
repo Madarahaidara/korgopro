@@ -26,6 +26,7 @@ from core.models.stock_models import Product
 from core.models.customer import Customer
 from core.proforma_invoice_manager import ProformaInvoiceManager
 from utils.settings_manager import SettingsManager
+from core.store_manager import scope_products_query
 
 logger = logging.getLogger(__name__)
 
@@ -259,6 +260,8 @@ class ProductService:
     def search_products(self, search: str = "") -> List[Product]:
         try:
             query = self.db_session.query(Product).filter(Product.active == True)
+            # Multi-magasins : produits du magasin actif uniquement
+            query = scope_products_query(query, self.db_session, Product)
             if search:
                 search_term = f"%{search}%"
                 query = query.filter(
@@ -272,7 +275,9 @@ class ProductService:
     
     def get_all_products(self) -> List[Product]:
         try:
-            return self.db_session.query(Product).filter(Product.active == True).order_by(Product.name).all()
+            query = self.db_session.query(Product).filter(Product.active == True)
+            query = scope_products_query(query, self.db_session, Product)
+            return query.order_by(Product.name).all()
         except Exception as e:
             logger.error(f"Erreur chargement produits: {e}")
             return []

@@ -3,7 +3,6 @@ from pathlib import Path
 
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
-from sqlalchemy.orm import declarative_base
 
 from alembic import context
 
@@ -12,34 +11,42 @@ import sys
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
-# Créer la base de données déclarative
-Base = declarative_base()
+# Charger les variables d'environnement depuis .env (même source que core/database.py)
+import os
+try:  # pragma: no cover - dépendance optionnelle
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(PROJECT_ROOT, ".env"))
+except Exception:
+    pass
 
-# Importer les modèles APRÈS avoir créé la Base
-# Cela évite les imports circulaires
-from core.models.sale_models import Sale, SaleItem, Payment, SaleReturn, SaleReturnItem
-from core.models.stock_models import Product, Supplier, InventoryMovement, ExpenseCategory, Expense, PurchaseOrder, PurchaseOrderItem, StockAlert
-from core.models.customer import Customer
-from core.models.user import User
-from core.models.activity_log import ActivityLog
-from core.models.sale_log import SaleLog
+# Utiliser LA vraie Base déclarative de l'application, et non une copie locale.
+# Les modèles s'enregistrent sur core.database.Base ; sinon target_metadata
+# serait vide et les migrations Alembic ne refléteraient pas le schéma réel.
+from core.database import Base
 
-# Utilisez votre metadata
-target_metadata = Base.metadata
+# Importer TOUS les modèles pour peupler Base.metadata
+# (y compris les modèles de trésorerie, absents avant).
+from core.models import customer, user, activity_log, sale_log  # noqa: F401,E402
+from core.models import sale_models  # noqa: F401,E402
+from core.models import stock_models  # noqa: F401,E402
+from core.models import treasury_models  # noqa: F401,E402
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
 
-# Interpret the config file for Python logging.
-# This line sets up loggers basically.
+# Source de vérité pour l'URL : variable d'environnement DATABASE_URL,
+# sinon la valeur sqlalchemy.url d'alembic.ini (repli SQLite).
+_DBVAR = os.environ.get(
+    "DATABASE_URL",
+    config.get_main_option("sqlalchemy.url") or "sqlite:///korgo_pro.db",
+)
+config.set_main_option("sqlalchemy.url", _DBVAR)
+
+# Interpréter la config pour le logging.
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# add your model's MetaData object here
-# for 'autogenerate' support
-# from myapp import mymodel
-# target_metadata = mymodel.Base.metadata
 target_metadata = Base.metadata
 
 # other values from the config, defined by the needs of env.py,

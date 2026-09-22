@@ -5,9 +5,29 @@ from sqlalchemy.orm import Session, joinedload
 
 from core.models.stock_models import Product, Supplier
 from core.models.sale_models import Sale, SaleItem, Customer, Payment
+from core.models.treasury_models import TreasuryAccount, TreasuryMovement
+from core.treasury_manager import TreasuryManager
 from core.sale_log_manager import SaleLogManager
+# Multi-magasins : filtrage du catalogue + rattachement des ventes
+from core.store_manager import apply_store_scope, current_store_id_for, scope_products_query
 
 logger = logging.getLogger(__name__)
+
+
+def default_cash_account(db_session):
+    """Compte de trésorerie par defaut pour les encaissements de ventes.
+
+    Priorite : premier compte actif de type CASH, sinon premier compte actif.
+    """
+    acc = (db_session.query(TreasuryAccount)
+           .filter(TreasuryAccount.is_active == True,  # noqa: E712
+                   TreasuryAccount.account_type == 'CASH')
+           .order_by(TreasuryAccount.id).first())
+    if not acc:
+        acc = (db_session.query(TreasuryAccount)
+               .filter(TreasuryAccount.is_active == True)  # noqa: E712
+               .order_by(TreasuryAccount.id).first())
+    return acc
 
 
 class SaleService:
@@ -36,6 +56,8 @@ class SaleService:
                 sale_number=sale_data["sale_number"],
                 customer_id=sale_data.get("customer_id"),
                 cashier_id=sale_data["cashier_id"],
+                # Multi-magasins : la vente appartient au magasin actif
+                store_id=sale_data.get("store_id") or current_store_id_for(self.db_session),
                 subtotal=sale_data["subtotal"],
                 discount_amount=sale_data["discount_amount"],
                 tax_amount=sale_data["tax_amount"],
@@ -78,6 +100,31 @@ class SaleService:
                 collected_by=sale_data["cashier_id"]
             )
             self.db_session.add(payment)
+
+            # Trésorerie : encaissement automatique de l'argent réellement
+            # reçu (amount_paid - change_amount) sur le compte de caisse par
+            # defaut. Mêmes conventions que le registre factures
+            # (reference_type="SALE", categorie "Ventes"). Une vente à crédit
+            # sans acompte ne génère aucun mouvement.
+            cash_in = float(sale_data.get("amount_paid") or 0) - float(
+                sale_data.get("change_amount") or 0)
+            if cash_in > 0.001:
+                account = default_cash_account(self.db_session)
+                if account is not None:
+                    treasury = TreasuryManager(session=self.db_session)
+                    result = treasury.add_movement(
+                        account_id=account.id, movement_type="IN",
+                        amount=cash_in,
+                        reference=sale.sale_number,
+                        description="Encaissement vente " + str(sale.sale_number),
+                        category="Ventes", reference_type="SALE",
+                        reference_id=sale.id,
+                        user_id=sale_data.get("cashier_id"),
+                    )
+                    if not result.get("success"):
+                        self.db_session.rollback()
+                        return False, None, ("Erreur trésorerie : "
+                                             + str(result.get("error")))
 
             self.db_session.commit()
 
@@ -126,6 +173,29 @@ class SaleService:
 
             if sale.payment_method == "CRÉDIT" and sale.customer:
                 sale.customer.balance -= sale.total_amount
+
+            # Trésorerie : reversement des encaissements lies a cette vente
+            # (mouvement OUT compense sur les memes comptes).
+            linked = (self.db_session.query(TreasuryMovement)
+                      .filter(TreasuryMovement.reference_type == "SALE",
+                              TreasuryMovement.reference_id == sale.id,
+                              TreasuryMovement.movement_type == "IN").all())
+            if linked:
+                treasury = TreasuryManager(session=self.db_session)
+                for mv in linked:
+                    result = treasury.add_movement(
+                        account_id=mv.account_id, movement_type="OUT",
+                        amount=mv.amount, reference=sale.sale_number,
+                        description=("Annulation vente "
+                                     + str(sale.sale_number)),
+                        category="Ventes", reference_type="SALE_CANCEL",
+                        reference_id=sale.id,
+                        user_id=user_info.get("id"),
+                    )
+                    if not result.get("success"):
+                        self.db_session.rollback()
+                        return False, ("Erreur trésorerie : "
+                                       + str(result.get("error")))
 
             sale.sale_status = "CANCELLED"
             sale.notes = f"Annulée: {reason}"
@@ -191,6 +261,8 @@ class ProductService:
     def get_paginated_products(self, page: int = 1, filters: Optional[Dict] = None) -> Tuple[List[Product], int]:
         try:
             query = self.db_session.query(Product).options(joinedload(Product.supplier)).filter(Product.active == True)
+            # Multi-magasins : uniquement le stock du magasin actif
+            query = scope_products_query(query, self.db_session, Product)
 
             if filters:
                 if filters.get("search"):
@@ -219,7 +291,9 @@ class ProductService:
 
     def get_product_categories(self) -> List[str]:
         try:
-            categories = self.db_session.query(Product.category).filter(Product.active == True).distinct().order_by(Product.category).all()
+            query = self.db_session.query(Product.category).filter(Product.active == True)
+            query = scope_products_query(query, self.db_session, Product)
+            categories = query.distinct().order_by(Product.category).all()
             return [cat[0] for cat in categories if cat[0]]
         except Exception as e:
             logger.error(f"Erreur récupération catégories: {e}")
@@ -227,7 +301,11 @@ class ProductService:
 
     def get_suppliers(self) -> List[str]:
         try:
-            suppliers = self.db_session.query(Supplier.name).join(Product, Product.supplier_id == Supplier.id).filter(Product.active == True).distinct().order_by(Supplier.name).all()
+            query = self.db_session.query(Supplier.name).join(
+                Product, Product.supplier_id == Supplier.id
+            ).filter(Product.active == True)
+            query = apply_store_scope(query, self.db_session, Product.store_id)
+            suppliers = query.distinct().order_by(Supplier.name).all()
             return [sup[0] for sup in suppliers if sup[0]]
         except Exception as e:
             logger.error(f"Erreur récupération fournisseurs: {e}")
@@ -235,7 +313,9 @@ class ProductService:
 
     def get_all_product_names(self) -> List[str]:
         try:
-            products = self.db_session.query(Product.code, Product.name).filter(Product.active == True).order_by(Product.name).all()
+            query = self.db_session.query(Product.code, Product.name).filter(Product.active == True)
+            query = scope_products_query(query, self.db_session, Product)
+            products = query.order_by(Product.name).all()
             return [f"{p.code} - {p.name}" if p.code else p.name for p in products]
         except Exception as e:
             logger.error(f"Erreur récupération noms: {e}")

@@ -48,7 +48,10 @@ class LoadingWidget(QWidget):
 
 
 class LoginWorker(QThread):
-    finished = Signal(dict)
+    # Signal(object) et non Signal(dict) : authenticate() renvoie None en cas
+    # d'échec, et emit(None) sur un Signal(dict) déclenche le warning Shiboken
+    # « Cannot copy-convert (NoneType) to C++ » à chaque tentative ratée.
+    finished = Signal(object)
     error = Signal(str)
     
     def __init__(self, username, password, auth_controller):
@@ -337,7 +340,7 @@ class LoginView(QWidget):
         
         right_layout.addSpacing(6)
         
-        self.username = LoginInputField("👤", "Nom d'utilisateur")
+        self.username = LoginInputField("👤", "Email ou nom d'utilisateur")
         right_layout.addWidget(self.username)
         
         right_layout.addSpacing(12)
@@ -454,7 +457,7 @@ class LoginView(QWidget):
         """Déclenche l'authentification avec effet visuel"""
         # Validation rapide
         if not self.username.text().strip():
-            self.error_label.setText("⚠️ Veuillez saisir votre nom d'utilisateur")
+            self.error_label.setText("⚠️ Veuillez saisir votre email ou nom d'utilisateur")
             self.error_label.show()
             self.slide_error()
             self.username.setFocus()
