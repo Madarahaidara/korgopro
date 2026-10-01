@@ -1,0 +1,34 @@
+{
+  "name": "korgo-pro-mobile",
+  "version": "0.1.0",
+  "main": "index.js",
+  "private": true,
+  "description": "Korgo Pro — version mobile (React Native / Expo) pour le terrain : caisse, encaissement, inventaire.",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "doctor": "expo-doctor",
+    "check": "node _check_syntax.cjs && node _check_imports.cjs && node _check_refs.cjs",
+    "test:rpc": "node scripts/test-mobile-rpc-http.mjs"
+  },
+  "dependencies": {
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "@react-navigation/bottom-tabs": "^7.19.2",
+    "@react-navigation/drawer": "^7.14.2",
+    "@react-navigation/native": "^7.4.1",
+    "@supabase/supabase-js": "^2.117.1",
+    "expo": "~57.0.24",
+    "expo-print": "~57.0.2",
+    "expo-sharing": "~57.0.22",
+    "expo-status-bar": "~57.0.1",
+    "react": "19.2.3",
+    "react-native": "0.86.3",
+    "react-native-gesture-handler": "~2.32.0",
+    "react-native-reanimated": "4.5.1",
+    "react-native-safe-area-context": "~5.7.0",
+    "react-native-screens": "~4.26.0",
+    "react-native-svg": "^15.15.5",
+    "react-native-url-polyfill": "^4.0.0"
+  }
+}

@@ -89,8 +89,33 @@ const DEFAULT_DB = {
 };
 
 /**
+ * Magasin par défaut, avec la même règle que le desktop
+ * (`core.store_manager.default_store`) : celui marqué `is_default`, sinon le
+ * plus ancien (plus petit id).
+ *
+ * L'ORDRE EST IMPORTANT : les données historiques sans magasin (store_id NULL)
+ * sont rattachées au magasin PAR DÉFAUT. Le desktop applique exactement la même
+ * règle (`store_scope` inclut `store_id IS NULL` pour le magasin par défaut) :
+ * les deux applications doivent désigner le même magasin, sinon le web
+ * n'affiche pas les produits que le desktop montre.
+ */
+export function defaultStore(stores) {
+  const list = Array.isArray(stores) ? stores : [];
+  const flagged = list.find((s) => s.is_default === true);
+  if (flagged) return flagged;
+  return list.reduce((best, s) => (best === null || s.id < best.id ? s : best), null);
+}
+
+/**
  * Migration multi-magasins : garantit qu'il existe au moins un magasin.
- * Les données existantes sans magasin sont rattachées au magasin principal.
+ * Les données existantes sans magasin sont rattachées au magasin par défaut.
+ *
+ * Le magasin de secours (id 1) n'est utilisé QUE lorsque la base ne contient
+ * aucun magasin (mode local, ou avant hydratation Supabase). Dès que les
+ * magasins réels sont chargés, ils remplacent cette liste : l'interface ne doit
+ * jamais continuer à afficher ce magasin de secours, sinon elle désigne un
+ * magasin qui ne filtre aucun produit (cf. StoreContext, qui relit la liste à
+ * chaque changement d'état de synchronisation).
  */
 export function ensureStores(db) {
   if (!Array.isArray(db.stores) || !db.stores.length) {
@@ -109,15 +134,29 @@ export function ensureStores(db) {
   if (!Array.isArray(db.stores) || !db.stores.some((s) => s.active !== false)) {
     db.stores[0].active = true;
   }
-  // Rattache les entités orphelines au premier magasin.
-  const defaultStoreId = db.stores[0].id;
-  ['products', 'sales', 'proformas', 'inventoryMovements'].forEach((key) => {
+  // Rattache les entités orphelines au magasin par défaut.
+  //
+  // ATTENTION : n'ajouter ici que les collections dont la table possède
+  // réellement une colonne `store_id`. `proforma_invoices` n'en a PAS : y
+  // injecter un store_id fait échouer l'écriture PostgREST (42703 « column
+  // proforma_invoices.store_id does not exist ») et bloque toute la
+  // synchronisation du lot de collections concerné.
+  const defaultStoreId = defaultStore(db.stores)?.id ?? null;
+  ['products', 'sales', 'inventoryMovements'].forEach((key) => {
     if (Array.isArray(db[key])) {
       db[key].forEach((it) => {
         if (!it.store_id) it.store_id = defaultStoreId;
       });
     }
   });
+  // Nettoyage des caches écrits par une version antérieure : les proformas y
+  // portaient un `store_id` inexistant en base. On retire cette propriété
+  // résiduelle, sinon l'écriture PostgREST de la collection échouerait (42703).
+  if (Array.isArray(db.proformas)) {
+    db.proformas.forEach((p) => {
+      if (p && 'store_id' in p) delete p.store_id;
+    });
+  }
   return db;
 }
 
@@ -364,6 +403,10 @@ export function flush() {
     })
     .catch((e) => {
       syncState.lastError = e.message;
+      // Les collections en échec restent en attente : le bandeau de
+      // synchronisation les affiche et son bouton « Synchroniser » peut
+      // relancer l'écriture.
+      names.forEach((n) => pendingNames.add(n));
       syncState.pending = 0;
       emitStatus();
       console.error('Synchronisation Supabase impossible :', e.message);

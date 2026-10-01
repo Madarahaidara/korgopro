@@ -88,10 +88,16 @@ class SaleService:
                 self.db_session.add(sale_item)
                 product.quantity -= item["quantity"]
 
-            if sale_data["payment_method"] == "CRÉDIT" and sale_data.get("customer_id"):
+            if str(sale_data["payment_method"]).upper() in ("CRÉDIT", "CREDIT") \
+                    and sale_data.get("customer_id"):
                 customer = self.db_session.query(Customer).get(sale_data["customer_id"])
                 if customer:
-                    customer.balance += sale_data["total_amount"]
+                    # Seule la part non encaissée devient une dette : un acompte
+                    # versé à la création ne doit pas rester dans le solde dû.
+                    cash_in = float(sale_data.get("amount_paid") or 0) - float(
+                        sale_data.get("change_amount") or 0)
+                    due = max(float(sale_data["total_amount"] or 0) - cash_in, 0)
+                    customer.balance = float(customer.balance or 0) + due
 
             payment = Payment(
                 sale_id=sale.id,
@@ -171,8 +177,11 @@ class SaleService:
                 if product:
                     product.quantity += item.quantity
 
-            if sale.payment_method == "CRÉDIT" and sale.customer:
-                sale.customer.balance -= sale.total_amount
+            if str(sale.payment_method or "").upper() in ("CRÉDIT", "CREDIT") and sale.customer:
+                # On ne reverse que la part encore due (le solde porté à la
+                # création de la vente, diminué des encaissements déjà faits).
+                due = max(float(sale.total_amount or 0) - float(sale.amount_paid or 0), 0)
+                sale.customer.balance = max(float(sale.customer.balance or 0) - due, 0)
 
             # Trésorerie : reversement des encaissements lies a cette vente
             # (mouvement OUT compense sur les memes comptes).

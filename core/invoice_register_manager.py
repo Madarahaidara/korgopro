@@ -142,6 +142,15 @@ class InvoiceRegisterManager:
             else:
                 sale.payment_status = "PARTIAL"
                 sale.statut = "PARTIELLEMENT_PAYEE"
+            # Le client doit moins : on diminue son solde dû du montant encaissé
+            # (même convention que les RPC `app_register_payment` du mobile et
+            # de `receivePayment` du web ; sans cela la dette restait à vie).
+            if sale.customer_id:
+                customer = db.query(Customer).filter(
+                    Customer.id == sale.customer_id).first()
+                if customer:
+                    customer.balance = max(
+                        (customer.balance or 0) - amount, 0)
             treasury_result = None
             if account_id:
                 treasury_result = self._treasury.add_movement(

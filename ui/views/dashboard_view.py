@@ -4,15 +4,17 @@ from PySide6.QtWidgets import (
     QSizePolicy
 )
 from PySide6.QtCore import Qt, QTimer, QMargins 
-from PySide6.QtCore import QDateTime
+from PySide6.QtCore import QDateTime, QThread, Signal
 from PySide6.QtGui import QPainter, QColor, QPen, QFont, QBrush
 from PySide6.QtWidgets import QGraphicsDropShadowEffect
 
 # Import différé de QtCharts (très lourd au chargement)
-# Les imports sont faits dans setup_chart() et load_chart_data()
+# Les imports sont faits dans setup_chart() et le rendu du graphe.
 
 from core.database import SessionLocal
 from sqlalchemy import func, desc
+from sqlalchemy.orm import joinedload
+from collections import defaultdict
 from datetime import datetime, timedelta
 
 # IMPORTS COMPLETS DES MODÈLES
@@ -22,6 +24,108 @@ from core.models.user import User
 
 # IMPORT DU SETTINGS MANAGER
 from utils.settings_manager import SettingsManager
+from ui.loading import LoadingOverlay
+
+
+class DashboardDataWorker(QThread):
+    """Collecte les donnees du tableau de bord hors du thread de l'interface.
+
+    Chaque requete est un aller-retour reseau vers Supabase : les executer dans
+    le slot du QTimer (30 s) gelait la fenetre ~1 s a chaque passage. Le worker
+    ne touche AUCUN widget : il renvoie des valeurs Python simples, le rendu
+    restant dans le thread UI (voir `DashboardView._apply_data`).
+    """
+
+    data_ready = Signal(object)
+    failed = Signal(str)
+
+    def run(self):
+        try:
+            payload = self.collect()
+        except Exception as exc:                   # noqa: BLE001
+            self.failed.emit(str(exc))
+            return
+        self.data_ready.emit(payload)
+
+    @staticmethod
+    def collect():
+        """Execute les requetes et renvoie un dictionnaire de valeurs brutes."""
+        db = SessionLocal()
+        try:
+            now = datetime.now()
+            today = now.date()
+            start_of_day = datetime.combine(today, datetime.min.time())
+            start_of_month = datetime(today.year, today.month, 1)
+
+            total_today = db.query(func.sum(Sale.total_amount)).filter(
+                Sale.sale_date >= start_of_day,
+                Sale.sale_status == "COMPLETED"
+            ).scalar() or 0
+
+            total_month = db.query(func.sum(Sale.total_amount)).filter(
+                Sale.sale_date >= start_of_month,
+                Sale.sale_status == "COMPLETED"
+            ).scalar() or 0
+
+            active_customers = db.query(func.count(Customer.id)).filter(
+                Customer.active == True                    # noqa: E712
+            ).scalar() or 0
+
+            low_stock = db.query(func.count(Product.id)).filter(
+                Product.quantity <= Product.min_stock,
+                Product.active == True                     # noqa: E712
+            ).scalar() or 0
+
+            # Graphe : totaux journaliers des 30 derniers jours (1 requete).
+            daily_totals = defaultdict(float)
+            for sale_date, amount in db.query(
+                    Sale.sale_date, Sale.total_amount).filter(
+                    Sale.sale_date >= now - timedelta(days=30),
+                    Sale.sale_date <= now,
+                    Sale.sale_status == "COMPLETED").all():
+                if sale_date:
+                    daily_totals[sale_date.date()] += float(amount or 0)
+
+            # Produits les plus vendus des 7 derniers jours.
+            top_products = db.query(
+                Product.name,
+                func.sum(SaleItem.quantity).label("total_quantity"),
+                func.sum(SaleItem.line_total).label("total_revenue")
+            ).join(SaleItem, SaleItem.product_id == Product.id) \
+             .join(Sale, Sale.id == SaleItem.sale_id) \
+             .filter(
+                Sale.sale_date >= now - timedelta(days=7),
+                Sale.sale_status == "COMPLETED"
+            ).group_by(Product.id, Product.name) \
+             .order_by(desc("total_quantity")).limit(5).all()
+
+            # 10 dernieres ventes (hors annulations). Attention :
+            # `Customer.full_name` est un @property Python (pas une colonne) :
+            # on charge le client avec joinedload et on compose en Python.
+            recent_sales = db.query(Sale) \
+             .options(joinedload(Sale.customer)) \
+             .filter(Sale.sale_status != "CANCELLED") \
+             .order_by(desc(Sale.sale_date)).limit(10).all()
+
+            return {
+                "total_today": float(total_today or 0),
+                "total_month": float(total_month or 0),
+                "active_customers": int(active_customers or 0),
+                "low_stock": int(low_stock or 0),
+                "chart": dict(daily_totals),
+                "top_products": [
+                    (name, int(quantity or 0), float(revenue or 0))
+                    for name, quantity, revenue in top_products
+                ],
+                "recent_sales": [
+                    (s.sale_number, s.sale_date,
+                     s.customer.full_name if s.customer else "—",
+                     s.payment_status)
+                    for s in recent_sales
+                ],
+            }
+        finally:
+            db.close()
 
 
 class DashboardView(QWidget):
@@ -33,8 +137,14 @@ class DashboardView(QWidget):
         self.init_ui()
         self.setup_chart()
         self.apply_light_theme()
+        #: Worker de collecte en cours (voir `load_real_data`).
+        self._data_worker = None
+        self._data_loaded = False
+        # Voile anti-gel : affiché seulement au premier chargement (cartes
+        # vides) ; les rafraîchissements de 30 s ne font que changer le libellé.
+        self._overlay = LoadingOverlay(
+            self, "Chargement du tableau de bord…")
         self.load_real_data()
-        self.debug_sales_data()
         # Timer pour rafraîchir les données périodiquement
         self.refresh_timer = QTimer()
         self.refresh_timer.timeout.connect(self.refresh_data)
@@ -363,71 +473,141 @@ class DashboardView(QWidget):
         
         self.chart_view.setChart(self.chart)
     
-    def _get_db_session(self):
-        """Crée une session DB fraîche pour chaque appel (pas de session persistante)"""
-        return SessionLocal()
     
     def load_real_data(self):
-        """Charge les données réelles depuis la base de données"""
-        db = self._get_db_session()
-        try:
-            # Mettre à jour l'heure de mise à jour
-            update_time = datetime.now().strftime("%H:%M:%S")
-            self.update_label.setText(f"Dernière mise à jour: {update_time}")
-            
-            # 1. Calculer les ventes du jour
-            today = datetime.now().date()
-            start_of_day = datetime.combine(today, datetime.min.time())
-            
-            total_today = db.query(func.sum(Sale.total_amount)).filter(
-                Sale.sale_date >= start_of_day,
-                Sale.sale_status == "COMPLETED"
-            ).scalar() or 0
-            
-            # Utiliser la devise depuis les paramètres
-            currency = self.settings_manager.get_setting('currency', 'FCFA')
-            # Mettre à jour la carte des ventes du jour
-            self.update_card_value(self.total_sales_card, f"{total_today:,.0f} {currency}")
-            
-            # 2. Calculer les ventes du mois
-            start_of_month = datetime(today.year, today.month, 1)
-            
-            total_month = db.query(func.sum(Sale.total_amount)).filter(
-                Sale.sale_date >= start_of_month,
-                Sale.sale_status == "COMPLETED"
-            ).scalar() or 0
-            
-            # Mettre à jour la carte des ventes du mois
-            self.update_card_value(self.month_sales_card, f"{total_month:,.0f} {currency}")
-            
-            # 3. Nombre de clients actifs
-            active_customers = db.query(func.count(Customer.id)).filter(
-                Customer.active == True
-            ).scalar() or 0
-            
-            self.update_card_value(self.active_customers_card, f"{active_customers}")
-            
-            # 4. Produits en stock bas
-            low_stock_products = db.query(func.count(Product.id)).filter(
-                Product.quantity <= Product.min_stock,
-                Product.active == True
-            ).scalar() or 0
-            
-            self.update_card_value(self.low_stock_card, f"{low_stock_products}")
-            
-            # 5. Charger le graphique des 30 derniers jours
-            self.load_chart_data(db)
-            
-            # 6. Charger les produits les plus vendus
-            self.load_top_products(db)
-            
-            # 7. Charger les ventes récentes
-            self.load_recent_sales(db)
-            
-        except Exception as e:
-            print(f"Erreur lors du chargement des données: {e}")
-        finally:
-            db.close()
+        """Demande une collecte en arriere-plan (aucune requete dans le thread UI).
+
+        Le QTimer de 30 s et l'ouverture de l'ecran passent par ici : la fenetre
+        ne se fige donc plus pendant que les donnees sont lues.
+        """
+        worker = self._data_worker
+        if worker is not None and worker.isRunning():
+            # Collecte precedente encore en cours : on ne les empile pas.
+            return
+        self._data_worker = DashboardDataWorker(self)
+        self._data_worker.data_ready.connect(self._apply_data)
+        self._data_worker.failed.connect(self._on_data_error)
+        if self._data_loaded:
+            # Données déjà affichées : retour discret, pas de voile clignotant.
+            self.update_label.setText("Actualisation…")
+        else:
+            self._overlay.start()
+        self._data_worker.start()
+
+    # ------------------------------------------------------------------
+    # Rendu (thread UI) : uniquement de l'affichage, aucune requete.
+    # ------------------------------------------------------------------
+    def _apply_data(self, data):
+        """Applique les donnees collectees par `DashboardDataWorker`."""
+        self._data_loaded = True
+        self._overlay.stop()
+        currency = self.settings_manager.get_setting('currency', 'FCFA')
+        self.update_label.setText(
+            f"Dernière mise à jour: {datetime.now().strftime('%H:%M:%S')}")
+
+        self.update_card_value(
+            self.total_sales_card, f"{data['total_today']:,.0f} {currency}")
+        self.update_card_value(
+            self.month_sales_card, f"{data['total_month']:,.0f} {currency}")
+        self.update_card_value(
+            self.active_customers_card, f"{data['active_customers']}")
+        self.update_card_value(self.low_stock_card, f"{data['low_stock']}")
+
+        self._render_chart(data.get("chart") or {})
+        self._render_top_products(data.get("top_products") or [], currency)
+        self._render_recent_sales(data.get("recent_sales") or [])
+
+    def _on_data_error(self, message):
+        """Connexion indisponible : on l'affiche au lieu de figer la fenetre."""
+        self._overlay.stop()
+        print(f"Erreur lors du chargement des données: {message}")
+        self.update_label.setText("Dernière mise à jour: échec de connexion")
+
+    def _render_chart(self, daily_totals):
+        """Trace le graphe des 30 derniers jours (rendu seul, sans requete)."""
+        from PySide6.QtCharts import QLineSeries
+
+        self.chart.removeAllSeries()
+
+        revenue_series = QLineSeries()
+        revenue_series.setName("Revenu quotidien")
+        pen = QPen(QColor(59, 130, 246))
+        pen.setWidth(3)
+        pen.setStyle(Qt.SolidLine)
+        revenue_series.setPen(pen)
+
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=30)
+
+        max_value = 0
+        for i in range(31):
+            current_date = start_date + timedelta(days=i)
+            total = float(daily_totals.get(current_date.date(), 0) or 0)
+            revenue_series.append(
+                QDateTime(current_date).toMSecsSinceEpoch(), total)
+            max_value = max(max_value, total)
+
+        # Si pas de données réelles, pas de graphique (éviter données de démo)
+        if max_value == 0:
+            self.chart_view.update()
+            return
+
+        self.chart.addSeries(revenue_series)
+        revenue_series.attachAxis(self.date_axis)
+        revenue_series.attachAxis(self.value_axis)
+
+        self.date_axis.setRange(QDateTime(start_date), QDateTime(end_date))
+        self.value_axis.setRange(0, max_value * 1.2)
+
+        revenue_series.setPointsVisible(True)
+        revenue_series.setPointLabelsVisible(True)
+        revenue_series.setPointLabelsFormat("@yPoint")
+
+        self.chart_view.update()
+
+    def _render_top_products(self, rows, currency):
+        """Remplit le tableau des produits les plus vendus."""
+        self.top_products_table.setRowCount(len(rows))
+        for row, (name, quantity, revenue) in enumerate(rows):
+            self.top_products_table.setItem(
+                row, 0, QTableWidgetItem(str(row + 1)))
+            self.top_products_table.setItem(row, 1, QTableWidgetItem(str(name)))
+            self.top_products_table.setItem(row, 2, QTableWidgetItem(f"{quantity}"))
+            self.top_products_table.setItem(
+                row, 3, QTableWidgetItem(f"{revenue:,.0f} {currency}"))
+
+    def _render_recent_sales(self, rows):
+        """Remplit le tableau des ventes récentes (statuts colorés)."""
+        status_map = {
+            "PAID": "Payé",
+            "PENDING": "En attente",
+            "PARTIAL": "Partiel",
+            "CANCELLED": "Annulé",
+        }
+        status_colors = {
+            "PAID": QColor(220, 252, 231),      # Vert clair
+            "PENDING": QColor(254, 226, 226),   # Rouge clair
+            "PARTIAL": QColor(254, 249, 195),   # Jaune clair
+            "CANCELLED": QColor(229, 231, 235),  # Gris clair
+        }
+
+        self.recent_sales_table.setRowCount(len(rows))
+        for row, (number, sale_date, customer_name, status) in enumerate(rows):
+            self.recent_sales_table.setItem(
+                row, 0, QTableWidgetItem(number or ""))
+            self.recent_sales_table.setItem(
+                row, 1,
+                QTableWidgetItem(sale_date.strftime("%d/%m/%Y %H:%M")
+                                 if sale_date else "-"))
+            self.recent_sales_table.setItem(
+                row, 2, QTableWidgetItem(customer_name or "Non renseigné"))
+
+            status_item = QTableWidgetItem(status_map.get(status, status or "-"))
+            status_item.setTextAlignment(Qt.AlignCenter)
+            color = status_colors.get(status)
+            if color is not None:
+                status_item.setBackground(color)
+            self.recent_sales_table.setItem(row, 3, status_item)
     
     def update_card_value(self, card_frame, new_value):
         """Met à jour la valeur d'une carte de statistique"""
@@ -436,270 +616,6 @@ class DashboardView(QWidget):
             value_label = layout.itemAt(1).widget()
             if value_label:
                 value_label.setText(new_value)
-    
-    def debug_sales_data(self):
-        """Méthode de débogage pour vérifier les ventes"""
-        db = self._get_db_session()
-        try:
-            print("\n=== DÉBOGAGE DES DONNÉES DE VENTES ===")
-            
-            # 1. Vérifier le nombre total de ventes
-            total_sales = db.query(func.count(Sale.id)).scalar()
-            print(f"Nombre total de ventes dans la base: {total_sales}")
-            
-            # 2. Vérifier les ventes COMPLETED
-            completed_sales = db.query(func.count(Sale.id)).filter(
-                Sale.sale_status == "COMPLETED"
-            ).scalar()
-            print(f"Ventes COMPLETED: {completed_sales}")
-            
-            # 3. Vérifier les dates des dernières ventes
-            recent_sales = db.query(Sale).order_by(desc(Sale.sale_date)).limit(5).all()
-            print("\n5 dernières ventes:")
-            for sale in recent_sales:
-                print(f"  - {sale.sale_number}: {sale.sale_date} - {sale.total_amount} - {sale.sale_status}")
-            
-            # 4. Vérifier la requête spécifique du graphique
-            end_date = datetime.now()
-            start_date = end_date - timedelta(days=30)
-            
-            print(f"\nPériode analysée: {start_date.date()} à {end_date.date()}")
-            
-            sales_in_period = db.query(
-                func.date(Sale.sale_date).label('date'),
-                func.sum(Sale.total_amount).label('total'),
-                func.count(Sale.id).label('count')
-            ).filter(
-                Sale.sale_date >= start_date,
-                Sale.sale_date <= end_date,
-                Sale.sale_status == "COMPLETED"
-            ).group_by(func.date(Sale.sale_date)).all()
-            
-            print(f"Résultats groupés par jour: {len(sales_in_period)} jours avec ventes")
-            for result in sales_in_period:
-                print(f"  - {result.date}: {result.count} ventes, total = {result.total}")
-            
-            print("=== FIN DÉBOGAGE ===\n")
-            
-        except Exception as e:
-            print(f"Erreur lors du débogage: {e}")
-        finally:
-            db.close()
-        
-    def load_chart_data(self, db=None):
-        """Charge les données du graphique des 30 derniers jours"""
-        from PySide6.QtCharts import QLineSeries
-        
-        close_session = False
-        if db is None:
-            db = self._get_db_session()
-            close_session = True
-        
-        try:
-            print("Chargement des données du graphique...")
-            
-            # Supprimer les séries existantes
-            self.chart.removeAllSeries()
-            
-            # Créer une nouvelle série
-            revenue_series = QLineSeries()
-            revenue_series.setName("Revenu quotidien")
-            
-            # Style de la ligne
-            pen = QPen(QColor(59, 130, 246))
-            pen.setWidth(3)
-            pen.setStyle(Qt.SolidLine)
-            revenue_series.setPen(pen)
-            
-            # Obtenir les données des 30 derniers jours
-            end_date = datetime.now()
-            start_date = end_date - timedelta(days=30)
-            
-            # Récupérer toutes les ventes de la période
-            all_sales = db.query(Sale).filter(
-                Sale.sale_date >= start_date,
-                Sale.sale_date <= end_date,
-                Sale.sale_status == "COMPLETED"
-            ).all()
-            
-            print(f"Ventes trouvées dans la période: {len(all_sales)}")
-            
-            # Grouper manuellement par jour
-            from collections import defaultdict
-            daily_totals = defaultdict(float)
-            
-            for sale in all_sales:
-                # Extraire la date (sans l'heure)
-                sale_date = sale.sale_date.date()
-                daily_totals[sale_date] += sale.total_amount
-            
-            print(f"Jours avec ventes: {len(daily_totals)}")
-            
-            # Remplir la série
-            data_points = []
-            max_value = 0
-            
-            for i in range(31):
-                current_date = start_date + timedelta(days=i)
-                current_date_py = current_date.date()
-                
-                total = daily_totals.get(current_date_py, 0)
-                data_points.append((current_date, total))
-                max_value = max(max_value, total)
-            
-            # Trier par date
-            data_points.sort(key=lambda x: x[0])
-            
-            # Ajouter à la série
-            for date, total in data_points:
-                qdatetime = QDateTime(date)
-                revenue_series.append(qdatetime.toMSecsSinceEpoch(), total)
-            
-            print(f"Points dans la série: {revenue_series.count()}, Max: {max_value}")
-            
-            # Si pas de données réelles, pas de graphique (éviter données de démo)
-            if max_value == 0:
-                print("Aucune donnée réelle disponible pour le graphique")
-                # Afficher un message plutôt que des données de démo
-                self.chart.removeAllSeries()
-                self.chart_view.update()
-                return
-            
-            # Ajouter la série au graphique
-            self.chart.addSeries(revenue_series)
-            
-            # Attacher les axes
-            revenue_series.attachAxis(self.date_axis)
-            revenue_series.attachAxis(self.value_axis)
-            
-            # Ajuster les axes
-            self.date_axis.setRange(QDateTime(start_date), QDateTime(end_date))
-            
-            if max_value > 0:
-                self.value_axis.setRange(0, max_value * 1.2)
-            else:
-                self.value_axis.setRange(0, 10000)
-            
-            # Rendre visible
-            revenue_series.setPointsVisible(True)
-            revenue_series.setPointLabelsVisible(True)
-            revenue_series.setPointLabelsFormat("@yPoint")
-            
-            self.chart_view.update()
-            
-        except Exception as e:
-            print(f"Erreur lors du chargement du graphique: {e}")
-            import traceback
-            traceback.print_exc()
-        finally:
-            if close_session:
-                db.close()
-    
-    def load_top_products(self, db=None):
-        """Charge les produits les plus vendus des 7 derniers jours"""
-        close_session = False
-        if db is None:
-            db = self._get_db_session()
-            close_session = True
-        
-        try:
-            start_date = datetime.now() - timedelta(days=7)
-            
-            # Requête pour les produits les plus vendus
-            top_products = db.query(
-                Product.name,
-                func.sum(SaleItem.quantity).label('total_quantity'),
-                func.sum(SaleItem.line_total).label('total_revenue')
-            ).join(SaleItem, SaleItem.product_id == Product.id)\
-             .join(Sale, Sale.id == SaleItem.sale_id)\
-             .filter(
-                Sale.sale_date >= start_date,
-                Sale.sale_status == "COMPLETED"
-            ).group_by(Product.id, Product.name)\
-             .order_by(desc('total_quantity'))\
-             .limit(5).all()
-            
-            # Utiliser la devise depuis les paramètres
-            currency = self.settings_manager.get_setting('currency', 'FCFA')
-            
-            # Remplir le tableau
-            self.top_products_table.setRowCount(len(top_products))
-            
-            for row, product in enumerate(top_products):
-                # # (colonne 0) : rang
-                self.top_products_table.setItem(row, 0, QTableWidgetItem(str(row + 1)))
-                # Produit (colonne 1)
-                self.top_products_table.setItem(row, 1, QTableWidgetItem(product.name))
-                # Qté (colonne 2)
-                self.top_products_table.setItem(row, 2, QTableWidgetItem(f"{product.total_quantity}"))
-                # Revenu (colonne 3)
-                self.top_products_table.setItem(row, 3, QTableWidgetItem(f"{product.total_revenue:,.0f} {currency}"))
-            
-        except Exception as e:
-            print(f"Erreur lors du chargement des produits: {e}")
-        finally:
-            if close_session:
-                db.close()
-    
-    def load_recent_sales(self, db=None):
-        """Charge les ventes récentes"""
-        close_session = False
-        if db is None:
-            db = self._get_db_session()
-            close_session = True
-        
-        try:
-            # Obtenir les 10 dernières ventes
-            recent_sales = db.query(Sale).join(Customer, Sale.customer_id == Customer.id, isouter=True)\
-                .filter(Sale.sale_status != "CANCELLED")\
-                .order_by(desc(Sale.sale_date))\
-                .limit(10).all()
-            
-            # Remplir le tableau
-            self.recent_sales_table.setRowCount(len(recent_sales))
-            
-            for row, sale in enumerate(recent_sales):
-                # N° Vente (colonne 0)
-                self.recent_sales_table.setItem(row, 0, QTableWidgetItem(sale.sale_number))
-                
-                # Date (colonne 1) - format court
-                if sale.sale_date:
-                    date_str = sale.sale_date.strftime("%d/%m/%Y %H:%M")
-                else:
-                    date_str = "-"
-                self.recent_sales_table.setItem(row, 1, QTableWidgetItem(date_str))
-                
-                # Client (colonne 2)
-                customer_name = sale.customer.full_name if sale.customer else "Non renseigné"
-                self.recent_sales_table.setItem(row, 2, QTableWidgetItem(customer_name))
-                
-                # Statut avec couleur (colonne 3)
-                status_text = sale.payment_status
-                # Traduire le statut en français
-                status_map = {
-                    "PAID": "Payé",
-                    "PENDING": "En attente",
-                    "PARTIAL": "Partiel",
-                    "CANCELLED": "Annulé"
-                }
-                display_status = status_map.get(status_text, status_text)
-                status_item = QTableWidgetItem(display_status)
-                status_item.setTextAlignment(Qt.AlignCenter)
-                if sale.payment_status == "PAID":
-                    status_item.setBackground(QColor(220, 252, 231))  # Vert clair
-                elif sale.payment_status == "PENDING":
-                    status_item.setBackground(QColor(254, 226, 226))  # Rouge clair
-                elif sale.payment_status == "PARTIAL":
-                    status_item.setBackground(QColor(254, 249, 195))  # Jaune clair
-                elif sale.payment_status == "CANCELLED":
-                    status_item.setBackground(QColor(229, 231, 235))  # Gris clair
-                self.recent_sales_table.setItem(row, 3, status_item)
-            
-        except Exception as e:
-            print(f"Erreur lors du chargement des ventes récentes: {e}")
-        finally:
-            if close_session:
-                db.close()
     
     def refresh_data(self):
         """Rafraîchit toutes les données"""
@@ -714,9 +630,14 @@ class DashboardView(QWidget):
             print(f"Erreur lors du rafraîchissement: {e}")
     
     def closeEvent(self, event):
-        """Arrêter le timer lors de la fermeture"""
+        """Arrêter le timer (et le worker) lors de la fermeture"""
         if hasattr(self, 'refresh_timer'):
             self.refresh_timer.stop()
+        # Un QThread detruit pendant son execution fait planter Qt : on lui
+        # laisse le temps de finir (la requete est bornee cote base).
+        worker = getattr(self, "_data_worker", None)
+        if worker is not None and worker.isRunning():
+            worker.wait(2000)
         super().closeEvent(event)
     
     def apply_light_theme(self):

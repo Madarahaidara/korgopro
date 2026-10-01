@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (
     QLabel, QPushButton, QStackedWidget, QApplication,
     QMessageBox
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer, QThread, Signal
 from ui.views.dashboard_view import DashboardView
 from ui.views.sale_view import SaleView
 from ui.views.invoice_register_view import InvoiceRegisterView
@@ -45,6 +45,28 @@ MENU_ENTRIES = (
     ("btn_admin", "access_admin", "admin_view", "Administration"),
     ("btn_settings", "manage_settings", "settings_view", "Paramètres"),
 )
+
+
+class SessionHeartbeatWorker(QThread):
+    """Battement de session unique, hors du thread de l'interface.
+
+    ``single_session.session.touch()`` est un appel reseau (RPC Supabase) :
+    l'executer dans un slot de ``QTimer`` gelait la fenetre a chaque battement
+    (5 min) et jusqu'a la retransmission TCP si le reseau etait coupe.
+    """
+
+    state_ready = Signal(object)
+
+    def run(self):
+        from core import single_session
+
+        try:
+            result = single_session.session.touch()
+        except Exception as exc:                   # noqa: BLE001
+            logger.warning("[SESSION] verification impossible : %s", exc)
+            return
+        if result:
+            self.state_ready.emit(result)
 
 
 class MainWindow(QMainWindow):
@@ -91,6 +113,56 @@ class MainWindow(QMainWindow):
             
         # Appliquer le logo et le nom
         self.apply_company_logo_and_name()
+
+        # --- Session unique : battement de coeur -------------------------
+        # Toutes les 5 min, on prolonge la session ; si un autre appareil a
+        # repris le compte, l'utilisateur est deconnecte automatiquement
+        # (le serveur refuse ensuite toute ecriture : cf. session_is_active).
+        # La verification est faite dans un thread : `touch()` est un appel
+        # reseau, l'executer dans le thread UI gelait la fenetre.
+        from core import single_session
+        self._session_worker = None
+        self.session_timer = QTimer(self)
+        self.session_timer.timeout.connect(self.check_single_session)
+        self.session_timer.start(single_session.HEARTBEAT_SECONDS * 1000)
+
+    def check_single_session(self):
+        """Verifie la session en arriere-plan (jamais dans le thread UI)."""
+        worker = self._session_worker
+        if worker is not None and worker.isRunning():
+            # Verification precedente encore en cours : on ne les empile pas.
+            return
+        self._session_worker = SessionHeartbeatWorker(self)
+        self._session_worker.state_ready.connect(self._on_session_state)
+        self._session_worker.start()
+
+    def _on_session_state(self, result):
+        """Exploite le resultat du battement (thread UI : seulement l'interface)."""
+        if not result or result.get("active") is not False:
+            return
+
+        # Session reprise ailleurs : on rend la main proprement.
+        timer = getattr(self, "session_timer", None)
+        if timer is not None:
+            timer.stop()
+        QMessageBox.warning(
+            self,
+            "Session ferm\u00e9e",
+            "Votre session a \u00e9t\u00e9 ferm\u00e9e : ce compte est d\u00e9j\u00e0 "
+            "utilis\u00e9 sur un autre appareil.\n\n"
+            "Reconnectez-vous pour reprendre la main.",
+        )
+        self.close_session("REPRISE_PAR_AUTRE_APPAREIL")
+        self.logout()
+
+    def close_session(self, reason: str = "FERMETURE_APPLICATION"):
+        """Libere le verrou de session applicative (au mieux)."""
+        from core import single_session
+
+        try:
+            single_session.session.close(reason)
+        except Exception as exc:                   # noqa: BLE001
+            print(f"[SESSION] liberation impossible : {exc}")
 
     def _build_ui(self):
         central = QWidget()
@@ -232,22 +304,25 @@ class MainWindow(QMainWindow):
         }
 
         self.views = {}
+        self._view_factories = factories
         for attr, permission, view_attr, title in MENU_ENTRIES:
             button = getattr(self, attr)
-            # Le tableau de bord est l'?cran d'accueil : toujours disponible.
+            # Le tableau de bord est l'écran d'accueil : toujours disponible.
             if not (view_attr == "dashboard_view" or can(role, permission)):
                 continue
 
-            view = factories[view_attr]()
-            setattr(self, view_attr, view)
-            self.views[view_attr] = view
-            self.stack.addWidget(view)
+            # Les vues sont construites A LA DEMANDE (voir _show_view) : les
+            # construire toutes ici executait leurs requetes dans le thread de
+            # l'interface, ce qui gelait la fenetre ~15 s au login (une seule
+            # requete = un aller-retour vers Supabase).
+            if view_attr == "dashboard_view":
+                self._show_view(view_attr, title, refresh=False)
 
             if view_attr == "settings_view":
                 button.clicked.connect(self._check_and_switch_to_settings)
             else:
                 button.clicked.connect(
-                    lambda _checked=False, v=view, t=title: self._switch_view(v, t)
+                    lambda _checked=False, k=view_attr, t=title: self._show_view(k, t)
                 )
 
         self.btn_toggle.clicked.connect(self._toggle_menu)
@@ -259,14 +334,35 @@ class MainWindow(QMainWindow):
         root_layout.addWidget(header)
         root_layout.addWidget(body)
         self.setCentralWidget(central)
+
+    def _show_view(self, key, title, refresh=True):
+        """Affiche une vue en la construisant au premier acces.
+
+        La construction (et donc ses requetes) n'a lieu qu'au moment ou
+        l'utilisateur ouvre l'ecran : jamais dans le chemin de connexion.
+        """
+        view = self.views.get(key)
+        if view is None:
+            factory = self._view_factories.get(key)
+            if factory is None:
+                logger.error("Vue inconnue demandee : %s", key)
+                return
+            view = factory()
+            setattr(self, key, view)
+            self.views[key] = view
+            self.stack.addWidget(view)
+            # La vue vient d'etre construite avec ses donnees : inutile de la
+            # rafraichir une seconde fois (double requetes pour rien).
+            refresh = False
+        self._switch_view(view, title, refresh=refresh)
         
     def _check_and_switch_to_settings(self):
         """Vérifie les permissions avant d'accéder aux paramètres."""
         role = normalize_role(self.user_data.get("role"))
-        settings_view = self.views.get("settings_view")
 
-        if settings_view is not None and can(role, "manage_settings"):
-            self._switch_view(settings_view, "Paramètres")
+        if can(role, "manage_settings"):
+            # Construction a la demande (voir _show_view).
+            self._show_view("settings_view", "Paramètres")
         else:
             QMessageBox.warning(
                 self,
@@ -275,7 +371,9 @@ class MainWindow(QMainWindow):
                 f"Votre rôle : {role_display_name(role) or role}"
             )
             # Revenir au dashboard
-            self._switch_view(self.views["dashboard_view"], "Dashboard")
+            dashboard = self.views.get("dashboard_view")
+            if dashboard is not None:
+                self._switch_view(dashboard, "Dashboard", refresh=False)
 
     def _apply_role_permissions(self):
         """Applique les permissions de navigation du rôle connecté.
@@ -301,17 +399,19 @@ class MainWindow(QMainWindow):
 
         # Le tableau de bord est la vue d'accueil de tous les rôles (la
         # permission ``view_dashboard`` leur est accordée sans exception).
-        self.stack.setCurrentWidget(self.views["dashboard_view"])
+        dashboard = self.views.get("dashboard_view")
+        if dashboard is not None:
+            self.stack.setCurrentWidget(dashboard)
 
-    def _switch_view(self, view, title):
+    def _switch_view(self, view, title, refresh=True):
         """Change la vue actuelle"""
         self.stack.setCurrentWidget(view)
         self.page_title.setText(title)
         # Rafraîchir la vue quand on y accède
-        if hasattr(view, 'refresh'):
+        if refresh and hasattr(view, 'refresh'):
             view.refresh()
         # 🆕 Rafraîchir spécifiquement la vue documents
-        if hasattr(view, 'load_all_documents'):
+        if refresh and hasattr(view, 'load_all_documents'):
             view.load_all_documents()
             
     def lock_session(self):
@@ -477,12 +577,30 @@ class MainWindow(QMainWindow):
         """Retour à la page de connexion"""
         from ui.views.login_view import LoginView
 
+        # Session unique : libère le verrou pour les autres postes.
+        self.close_session("DECONNEXION")
+
         # Créer et afficher la fenêtre de connexion
         self.login_view = LoginView()
         self.login_view.show()
 
         # Cacher la fenêtre actuelle
         self.close()
+
+    def closeEvent(self, event):
+        """Libère la session applicative à la fermeture de l'application."""
+        timer = getattr(self, "session_timer", None)
+        if timer is not None:
+            timer.stop()
+        # Un QThread detruit pendant son execution fait planter Qt : on lui
+        # laisse le temps de finir (borne par DB_CONNECT_TIMEOUT cote base).
+        worker = getattr(self, "_session_worker", None)
+        if worker is not None and worker.isRunning():
+            worker.wait(3000)
+        # `logout()` appelle `close()` après avoir déjà libéré la session :
+        # le second appel est sans effet (session déjà fermée).
+        self.close_session("FERMETURE_APPLICATION")
+        super().closeEvent(event)
         
     def get_user_info(self):
         """Retourne les informations utilisateur"""

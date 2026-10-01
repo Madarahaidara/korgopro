@@ -138,12 +138,25 @@ const VIRTUAL_FIELDS = new Set([
 // Conversions de nommage / format
 // ---------------------------------------------------------------------------
 
+/**
+ * `balance` est virtuel UNIQUEMENT pour les comptes de trésorerie (alias local
+ * calculé de `current_balance`, cf. `treasuryApi.listAccounts`). Pour les
+ * clients, `balance` est une vraie colonne SQL : c'est la dette du client.
+ * Filtrer cette clé ici perdait silencieusement le solde crédité d'une vente à
+ * crédit : le desktop/mobile ne le voyait jamais, et la prochaine hydratation
+ * remettait la dette à zéro.
+ */
+function isVirtualField(collection, key) {
+  if (key === 'balance') return collection?.name !== 'customers';
+  return VIRTUAL_FIELDS.has(key);
+}
+
 /** web -> SQL : renomme les clés et retire les champs virtuels. */
 export function toSqlRow(collection, row) {
-  const rename = collection.rename || {};
+  const rename = (collection && collection.rename) || {};
   const out = {};
   Object.entries(row || {}).forEach(([key, value]) => {
-    if (VIRTUAL_FIELDS.has(key)) return;
+    if (isVirtualField(collection, key)) return;
     if (value === undefined) return;
     const col = rename[key] || key;
     out[col] = value;
@@ -186,6 +199,15 @@ const CHUNK = 400;
 const remoteIds = new Map();
 
 /**
+ * Identifiants des LIGNES ENFANTS (sale_items, proforma_invoice_items) connus
+ * côté distant : `Map<table, Map<idEnfant, idParent>>`.
+ *
+ * Sert à décider si une ligne enfant existe déjà en base (mise à jour) ou si
+ * elle a été saisie dans le navigateur (insertion avec un id local négatif).
+ */
+const remoteChildIds = new Map();
+
+/**
  * Mémorise les identifiants distants connus d'une collection.
  * Accepte un tableau ou un `Set` (voir pushCollection, qui travaille en Set).
  */
@@ -194,10 +216,37 @@ export function rememberRemoteIds(name, ids) {
   remoteIds.set(name, new Set(list.filter((id) => id != null)));
 }
 
+/** Mémorise les identifiants des lignes enfants d'une table distante. */
+export function rememberRemoteChildIds(table, children) {
+  const map = new Map();
+  (children || []).forEach((child) => {
+    if (child && child.id != null) map.set(child.id, child.parentId ?? null);
+  });
+  remoteChildIds.set(table, map);
+}
+
 /** Oublie les identifiants distants connus (déconnexion / réinitialisation). */
 export function forgetRemoteIds(name = null) {
-  if (name) remoteIds.delete(name);
-  else remoteIds.clear();
+  if (name) {
+    remoteIds.delete(name);
+    return;
+  }
+  remoteIds.clear();
+  remoteChildIds.clear();
+}
+
+/**
+ * Identifiant d'une ligne enfant créée dans le navigateur.
+ *
+ * Les tables enfants partagent une clé primaire GLOBALE (séquence PostgreSQL) :
+ * réutiliser `index + 1` — comme le faisait le web — écrasait les lignes d'un
+ * autre document (la 2e vente écrasait les lignes de la 1re). Un id local est
+ * donc NÉGATIF (jamais produit par une séquence) et déterministe (parent +
+ * position) : les envois successifs mettent à jour la même ligne au lieu d'en
+ * créer des doublons, y compris après un rechargement de la page.
+ */
+export function localChildId(parentId, index) {
+  return -(Number(parentId) * 1000 + (Number(index) || 0) + 1);
 }
 
 
@@ -231,6 +280,11 @@ export async function fetchCollection(collection) {
 
   const { key, table, foreignKey, order } = collection.items;
   const children = await fetchTable(table, order);
+  // Référence des lignes enfants réellement présentes côté distant.
+  rememberRemoteChildIds(
+    table,
+    children.map((child) => ({ id: child.id, parentId: child[foreignKey] }))
+  );
   const grouped = new Map();
   children.forEach((child) => {
     const parentId = child[foreignKey];
@@ -295,30 +349,90 @@ export async function pushCollection(collection, rows) {
   //    les RLS, ne peut donc pas être vidée par erreur.
   const keptIds = new Set(payload.map((r) => r.id));
   const known = remoteIds.get(collection.name);
+  const knownChildren = remoteChildIds.get(collection.items?.table) || new Map();
   if (known) {
     const stale = Array.from(known).filter((id) => !keptIds.has(id));
+    // Les lignes enfants sont supprimées d'abord : la clé étrangère est en
+    // NO ACTION (sale_items.sale_id -> sales.id), donc supprimer un document
+    // sans ses lignes échouerait.
+    if (collection.items && stale.length) {
+      const orphans = [];
+      knownChildren.forEach((parentId, childId) => {
+        if (stale.includes(parentId)) orphans.push(childId);
+      });
+      for (const part of chunked(orphans)) {
+        await run(
+          supabase.from(collection.items.table).delete().in('id', part)
+        );
+      }
+    }
     for (const part of chunked(stale)) {
       await run(supabase.from(collection.table).delete().in('id', part));
     }
   }
 
   // 3) Lignes enfants : remplacement complet par parent modifié
+  //
+  // ATTENTION (clé primaire globale) : les tables `sale_items` /
+  // `proforma_invoice_items` partagent UNE SEULE séquence d'identifiants. Un id
+  // de ligne égal à sa position dans le document (comportement précédent)
+  // réécrivait donc les lignes d'un autre document — la 2e vente écrasait les
+  // lignes de la 1re. Les lignes créées dans le navigateur reçoivent désormais
+  // un id local négatif déterministe (voir `localChildId`), mémorisé dans la
+  // ligne : les envois suivants restent idempotents et aucune ligne distante
+  // n'est écrasée.
   if (collection.items) {
     const { key, table, foreignKey } = collection.items;
     const childRows = [];
+    const expectedChildIds = new Set();
+    const parentIds = new Set();
+
     list.forEach((row) => {
       if (row.id == null) return;
+      parentIds.add(row.id);
       (row[key] || []).forEach((child, index) => {
         const clean = toSqlRow({ rename: {} }, child);
         clean[foreignKey] = row.id;
-        if (clean.id == null) clean.id = index + 1;
+        // La ligne existe-t-elle deja cote distant, ET appartient-elle bien a ce
+        // document ? Un id local peut coincider avec celui d'une ligne d'un
+        // AUTRE document (les ids sont globaux) : la conserver deplacerait et
+        // ecraserait cette ligne.
+        const remoteParent = clean.id != null && clean.id >= 0
+          ? knownChildren.get(clean.id)
+          : undefined;
+        const isRemoteChild = remoteParent != null && Number(remoteParent) === Number(row.id);
+        if (!isRemoteChild) {
+          clean.id = localChildId(row.id, index);
+          // Mémorisé localement : le prochain envoi mettra à jour cette ligne
+          // au lieu d'en insérer une autre.
+          if (child && typeof child === 'object') child.id = clean.id;
+        }
+        expectedChildIds.add(clean.id);
         childRows.push(clean);
       });
     });
+
+    // Lignes saisies dans le navigateur puis retirées : elles n'existent que
+    // côté web (id négatif) et ne sont plus attendues -> on les supprime.
+    const removedLocalLines = [];
+    knownChildren.forEach((parentId, childId) => {
+      if (childId < 0 && parentIds.has(parentId) && !expectedChildIds.has(childId)) {
+        removedLocalLines.push(childId);
+      }
+    });
+    for (const part of chunked(removedLocalLines)) {
+      await run(supabase.from(table).delete().in('id', part));
+    }
+
     if (childRows.length) {
       for (const part of chunked(childRows)) {
         await run(supabase.from(table).upsert(part, { onConflict: 'id' }));
       }
+      // Les lignes viennent d'être écrites : elles sont désormais connues
+      // (nécessaire pour supprimer une ligne ajoutée puis retirée avant toute
+      // nouvelle hydratation).
+      childRows.forEach((row) => knownChildren.set(row.id, row[foreignKey]));
+      remoteChildIds.set(table, knownChildren);
     }
   }
 
@@ -335,10 +449,21 @@ export async function pushAll(dbData, names = null) {
     ? COLLECTIONS.filter((c) => names.includes(c.name))
     : COLLECTIONS;
   const report = {};
+  const errors = [];
   for (const collection of targets) {
     const rows = dbData[collection.name];
     if (!Array.isArray(rows)) continue;
-    report[collection.name] = await pushCollection(collection, rows);
+    try {
+      report[collection.name] = await pushCollection(collection, rows);
+    } catch (e) {
+      // Une collection en échec (colonne absente, contrainte, RLS...) ne doit
+      // pas empêcher la synchronisation des collections suivantes : elles
+      // resteraient muettes sans aucun message. L'erreur est agrégée et
+      // remontée à la fin pour que le bandeau de synchronisation l'affiche.
+      report[collection.name] = 0;
+      errors.push(`${collection.table} : ${e.message}`);
+    }
   }
+  if (errors.length) throw new Error(errors.join(' | '));
   return report;
 }

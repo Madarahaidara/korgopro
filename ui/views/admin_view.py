@@ -19,6 +19,7 @@ from core.log_manager import LogManager
 from core.database_manager import DatabaseManager
 from core.sale_log_manager import SaleLogManager
 from ui.views.sys_logs_dialog import SysLogsDialog
+from ui.loading import LoadingOverlay
 from utils.settings_manager import SettingsManager
 # Source unique des rôles et permissions (partagée avec le frontend web).
 from core.permissions import (
@@ -65,6 +66,60 @@ class DbInfoWorker(QThread):
         try:
             self.finished.emit(self.db_manager.get_database_info())
         except Exception as e:
+            self.failed.emit(str(e))
+
+
+class ActivitiesWorker(QThread):
+    """Journal système : requêtes hors du thread UI.
+
+    get_logs() + get_statistics() coûtent 2 allers-retours réseau (~300 ms à
+    147 ms de RTT) et étaient exécutés à l'ouverture de l'onglet, au clic sur
+    « Filtrer » et à chaque page — dans le thread UI.
+    """
+
+    loaded = Signal(dict)
+    failed = Signal(str)
+
+    def __init__(self, log_manager, filters, limit, offset, parent=None):
+        super().__init__(parent)
+        self.log_manager = log_manager
+        self.filters = filters
+        self.limit = limit
+        self.offset = offset
+
+    def run(self):
+        try:
+            result = self.log_manager.get_logs(
+                filters=self.filters if self.filters else None,
+                limit=self.limit,
+                offset=self.offset,
+            )
+            stats = self.log_manager.get_statistics()
+            self.loaded.emit({"result": result, "stats": stats})
+        except Exception as e:  # noqa: BLE001 - signal d'échec dédié
+            self.failed.emit(str(e))
+
+
+class SaleLogsWorker(QThread):
+    """Journal des ventes : requêtes hors du thread UI (même principe)."""
+
+    loaded = Signal(dict)
+    failed = Signal(str)
+
+    def __init__(self, sale_log_manager, filters, limit, offset, parent=None):
+        super().__init__(parent)
+        self.sale_log_manager = sale_log_manager
+        self.filters = filters
+        self.limit = limit
+        self.offset = offset
+
+    def run(self):
+        try:
+            result = self.sale_log_manager.get_sale_logs(
+                **self.filters, limit=self.limit, offset=self.offset)
+            stats = self.sale_log_manager.get_sale_statistics()
+            self.loaded.emit({"result": result, "stats": stats})
+        except Exception as e:  # noqa: BLE001 - signal d'échec dédié
             self.failed.emit(str(e))
 
 
@@ -125,7 +180,14 @@ class AdminView(QWidget):
         self.logs_per_page = 50
         self.current_sale_logs_page = 0
         self.sale_logs_per_page = 50
-        
+
+        # Workers de chargement (anti-gel) : les requêtes réseau partent en
+        # arrière-plan ; le thread UI ne fait que le rendu des résultats.
+        self._activities_worker = None
+        self._activities_pending = False
+        self._sale_logs_worker = None
+        self._sale_logs_pending = False
+
         self.init_ui()
         
     def load_users_from_db(self):
@@ -640,6 +702,10 @@ class AdminView(QWidget):
         self.activity_table.verticalHeader().setVisible(False)
         
         layout.addWidget(self.activity_table)
+        # Voile anti-gel posé sur le tableau (latence Supabase visible sans
+        # bloquer les filtres de la barre d'outils).
+        self._activities_overlay = LoadingOverlay(
+            self.activity_table, "Chargement du journal…")
         
         # Pagination
         pagination_frame = QFrame()
@@ -664,30 +730,57 @@ class AdminView(QWidget):
         self.load_real_activities()
     
     def load_real_activities(self):
-        """Charger les activités réelles depuis la base de données"""
+        """Prépare les filtres puis lance le chargement dans un worker.
+
+        get_logs() + get_statistics() coûtent 2 requêtes réseau (~300 ms) :
+        exécutées dans le thread UI (bouton « Filtrer », pagination,
+        ouverture de l'onglet), elles gelaient la fenêtre.
+        """
         filters = {}
-        
+
         username = self.username_filter.text().strip()
         if username:
             filters['username'] = username
-        
+
         action = self.action_filter.currentText()
         if action != "Toutes les actions":
             filters['action'] = action
-        
+
         start_date = self.start_date.date().toPython()
         end_date = self.end_date.date().toPython()
         if start_date:
             filters['start_date'] = datetime.combine(start_date, datetime.min.time())
         if end_date:
             filters['end_date'] = datetime.combine(end_date, datetime.max.time())
-        
-        result = self.log_manager.get_logs(
-            filters=filters if filters else None,
-            limit=self.logs_per_page,
-            offset=self.current_logs_page * self.logs_per_page
-        )
-        
+
+        if (self._activities_worker is not None
+                and self._activities_worker.isRunning()):
+            # Chargement en cours : on relancera à la fin (filtres récents).
+            self._activities_pending = True
+            return
+        self._activities_worker = ActivitiesWorker(
+            self.log_manager, filters, self.logs_per_page,
+            self.current_logs_page * self.logs_per_page, parent=self)
+        self._activities_worker.loaded.connect(self._render_activities)
+        self._activities_worker.failed.connect(self._on_activities_error)
+        self._activities_worker.finished.connect(self._on_activities_finished)
+        self._activities_overlay.start()
+        self._activities_worker.start()
+
+    def _on_activities_finished(self):
+        if self._activities_pending:
+            self._activities_pending = False
+            self.load_real_activities()
+
+    def _on_activities_error(self, message):
+        self._activities_overlay.stop()
+        QMessageBox.warning(self, "Erreur",
+                            f"Impossible de charger les logs: {message}")
+
+    def _render_activities(self, payload):
+        """Rendu du journal système (aucune requête : données du worker)."""
+        self._activities_overlay.stop()
+        result = payload['result']
         if result['success']:
             logs = result['logs']
             total = result['total']
@@ -733,13 +826,17 @@ class AdminView(QWidget):
                 ip_item.setTextAlignment(Qt.AlignCenter)
                 self.activity_table.setItem(row, 5, ip_item)
             
-            self.update_logs_statistics()
+            self.update_logs_statistics(payload['stats'])
         else:
             QMessageBox.warning(self, "Erreur", f"Impossible de charger les logs: {result.get('error')}")
     
-    def update_logs_statistics(self):
-        """Mettre à jour les statistiques des logs système"""
-        stats = self.log_manager.get_statistics()
+    def update_logs_statistics(self, stats=None):
+        """Mettre à jour les statistiques des logs système.
+
+        `stats` est collecté par le worker ; `None` → requête directe.
+        """
+        if stats is None:
+            stats = self.log_manager.get_statistics()
         if stats['success']:
             self.logs_stats_label.setText(
                 f"📊 Total: {stats['total_logs']} logs | "
@@ -892,6 +989,10 @@ class AdminView(QWidget):
         self.sale_logs_table.setAlternatingRowColors(True)
         
         layout.addWidget(self.sale_logs_table)
+        # Voile anti-gel posé sur le tableau (latence Supabase visible sans
+        # bloquer les filtres de la barre d'outils).
+        self._sale_logs_overlay = LoadingOverlay(
+            self.sale_logs_table, "Chargement des logs de ventes…")
         
         # Pagination
         pagination_frame = QFrame()
@@ -916,39 +1017,66 @@ class AdminView(QWidget):
         self.load_sale_logs()
     
     def load_sale_logs(self):
-        """Charger les logs de ventes avec les filtres"""
+        """Prépare les filtres puis lance le chargement dans un worker.
+
+        get_sale_logs() + get_sale_statistics() sortent du thread UI : le
+        thread ne fait que le rendu (`_render_sale_logs`).
+        """
         filters = {}
-        
+
         sale_number = self.sale_number_filter.text().strip()
         if sale_number:
             filters['sale_number'] = sale_number
-        
+
         action = self.sale_action_filter.currentText()
         if action != "Toutes les actions":
             filters['action'] = action
-        
+
         username = self.sale_cashier_filter.text().strip()
         if username:
             filters['username'] = username
-        
+
         customer_name = self.sale_customer_filter.text().strip()
         if customer_name:
             filters['customer_name'] = customer_name
-        
+
         start_date = self.sale_start_date.date().toPython()
         if start_date:
             filters['start_date'] = datetime.combine(start_date, datetime.min.time())
-        
+
         end_date = self.sale_end_date.date().toPython()
         if end_date:
             filters['end_date'] = datetime.combine(end_date, datetime.max.time())
-        
-        result = self.sale_log_manager.get_sale_logs(
-            **filters,
-            limit=self.sale_logs_per_page,
-            offset=self.current_sale_logs_page * self.sale_logs_per_page
-        )
-        
+
+        if (self._sale_logs_worker is not None
+                and self._sale_logs_worker.isRunning()):
+            # Chargement en cours : on relancera à la fin (filtres récents).
+            self._sale_logs_pending = True
+            return
+        self._sale_logs_worker = SaleLogsWorker(
+            self.sale_log_manager, filters, self.sale_logs_per_page,
+            self.current_sale_logs_page * self.sale_logs_per_page, parent=self)
+        self._sale_logs_worker.loaded.connect(self._render_sale_logs)
+        self._sale_logs_worker.failed.connect(self._on_sale_logs_error)
+        self._sale_logs_worker.finished.connect(self._on_sale_logs_finished)
+        self._sale_logs_overlay.start()
+        self._sale_logs_worker.start()
+
+    def _on_sale_logs_finished(self):
+        if self._sale_logs_pending:
+            self._sale_logs_pending = False
+            self.load_sale_logs()
+
+    def _on_sale_logs_error(self, message):
+        self._sale_logs_overlay.stop()
+        QMessageBox.warning(
+            self, "Erreur",
+            f"Impossible de charger les logs de ventes: {message}")
+
+    def _render_sale_logs(self, payload):
+        """Rendu du journal des ventes (aucune requête : données du worker)."""
+        self._sale_logs_overlay.stop()
+        result = payload['result']
         if result['success']:
             logs = result['logs']
             total = result['total']
@@ -1039,13 +1167,17 @@ class AdminView(QWidget):
                 self.sale_logs_table.setItem(row, 10, ip_item)
             
             # Mettre à jour les statistiques
-            self.update_sale_stats()
+            self.update_sale_stats(payload['stats'])
         else:
             QMessageBox.warning(self, "Erreur", f"Impossible de charger les logs de ventes: {result.get('error')}")
     
-    def update_sale_stats(self):
-        """Mettre à jour les statistiques des ventes"""
-        stats = self.sale_log_manager.get_sale_statistics()
+    def update_sale_stats(self, stats=None):
+        """Mettre à jour les statistiques des ventes.
+
+        `stats` est collecté par le worker ; `None` → requête directe.
+        """
+        if stats is None:
+            stats = self.sale_log_manager.get_sale_statistics()
         if stats['success']:
             self.sale_stats_label.setText(
                 f"📊 Total logs: {stats['total_sale_logs']} | "

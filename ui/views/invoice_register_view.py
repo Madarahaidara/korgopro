@@ -4,8 +4,9 @@ from PySide6.QtWidgets import (
     QPushButton, QLineEdit, QComboBox, QLabel, QHeaderView, QMessageBox,
     QDialog, QFormLayout, QDoubleSpinBox, QDialogButtonBox, QGroupBox,
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QThread, QTimer, Signal
 from core.invoice_register_manager import InvoiceRegisterManager
+from ui.loading import LoadingOverlay
 
 STATUS_LABELS = {
     "ALL": "Tous les statuts",
@@ -13,6 +14,51 @@ STATUS_LABELS = {
     "PARTIAL": "Partiellement payées",
     "PENDING": "Impayées",
 }
+
+
+class InvoiceRegisterWorker(QThread):
+    """Recharge le registre hors du thread UI (3 requêtes par exécution).
+
+    `txt_search.textChanged -> refresh` déclenchait ces 3 requêtes à chaque
+    caractère saisi : à ~147 ms d'aller-retour vers Supabase, le thread Qt
+    n'avait plus le temps de repeindre ni de traiter les clics. Le worker
+    ouvre sa propre session et n'émet que des listes de texte (aucun objet
+    ORM) pour que le rendu reste sans requête paresseuse.
+    """
+
+    loaded = Signal(dict)
+    failed = Signal(str)
+
+    def __init__(self, status, search, parent=None):
+        super().__init__(parent)
+        self.status = status
+        self.search = search
+
+    def run(self):
+        manager = InvoiceRegisterManager()
+        try:
+            result = manager.list_invoices(status=self.status, search=self.search)
+            invoices = result.get("invoices", []) if result.get("success") else []
+
+            rows = []
+            for inv in invoices:
+                due = (inv.total_amount or 0) - (inv.amount_paid or 0)
+                customer = inv.customer.full_name if inv.customer else "—"
+                rows.append([
+                    inv.sale_number,
+                    customer,
+                    inv.sale_date.strftime("%d/%m/%Y %H:%M")
+                    if inv.sale_date else "—",
+                    "{:,.0f}".format(inv.total_amount or 0).replace(",", " "),
+                    "{:,.0f}".format(inv.amount_paid or 0).replace(",", " "),
+                    "{:,.0f}".format(max(due, 0)).replace(",", " "),
+                    inv.payment_status or "—",
+                ])
+
+            summary = manager.get_register_summary()
+            self.loaded.emit({"rows": rows, "summary": summary})
+        except Exception as exc:  # noqa: BLE001 - signal d'échec dédiée
+            self.failed.emit(str(exc))
 
 
 class PaymentDialog(QDialog):
@@ -65,7 +111,17 @@ class InvoiceRegisterView(QWidget):
         super().__init__()
         self.user_data = user_data or {}
         self.manager = InvoiceRegisterManager()
+        # Anti-gel : debounce 300 ms + worker (voir refresh/_start_refresh).
+        self._worker = None
+        self._refresh_pending = False
+        self._debounce = QTimer(self)
+        self._debounce.setSingleShot(True)
+        self._debounce.setInterval(300)
+        self._debounce.timeout.connect(self._start_refresh)
         self.setup_ui()
+        # Voile anti-gel : signal visuel de la latence Supabase pendant que
+        # le worker charge les factures (arrêté dans _populate/_on_refresh_error).
+        self._overlay = LoadingOverlay(self, "Chargement des factures…")
         self.refresh()
 
     def setup_ui(self):
@@ -130,13 +186,40 @@ class InvoiceRegisterView(QWidget):
         layout.addLayout(actions)
 
     def refresh(self):
-        result = self.manager.list_invoices(
+        """Demande un rafraîchissement (debouncé : zéro requête par frappe)."""
+        self._debounce.start()
+
+    def _start_refresh(self):
+        """Lance le worker de chargement (slot du debounce de 300 ms)."""
+        if self._worker is not None and self._worker.isRunning():
+            # Un rafraîchissement est déjà en cours : on relancera à la fin
+            # pour refléter l'état des filtres le plus récent.
+            self._refresh_pending = True
+            return
+        self._worker = InvoiceRegisterWorker(
             status=self.combo_status.currentData() or "ALL",
             search=self.txt_search.text().strip() or None,
+            parent=self,
         )
-        invoices = result.get("invoices", []) if result.get("success") else []
+        self._worker.loaded.connect(self._populate)
+        self._worker.failed.connect(self._on_refresh_error)
+        self._worker.finished.connect(self._on_worker_finished)
+        self._overlay.start()
+        self._worker.start()
 
-        summary = self.manager.get_register_summary()
+    def _on_worker_finished(self):
+        if self._refresh_pending:
+            self._refresh_pending = False
+            self._debounce.start(0)
+
+    def _on_refresh_error(self, message):
+        self._overlay.stop()
+        print(f"Erreur lors du rafraîchissement du registre: {message}")
+
+    def _populate(self, payload):
+        """Rendu uniquement : toutes les valeurs viennent du worker."""
+        self._overlay.stop()
+        summary = payload.get("summary") or {}
         if summary.get("success"):
             self.card_count.setText(str(summary["count"]))
             self.card_total.setText(
@@ -147,21 +230,9 @@ class InvoiceRegisterView(QWidget):
                 "{:,.0f} FCFA".format(summary["due"]).replace(",", " "))
 
         self.table.setRowCount(0)
-        for inv in invoices:
+        for values in payload.get("rows", []):
             row = self.table.rowCount()
             self.table.insertRow(row)
-            due = (inv.total_amount or 0) - (inv.amount_paid or 0)
-            customer = inv.customer.full_name if inv.customer else "—"
-            values = [
-                inv.sale_number,
-                customer,
-                inv.sale_date.strftime("%d/%m/%Y %H:%M")
-                if inv.sale_date else "—",
-                "{:,.0f}".format(inv.total_amount or 0).replace(",", " "),
-                "{:,.0f}".format(inv.amount_paid or 0).replace(",", " "),
-                "{:,.0f}".format(max(due, 0)).replace(",", " "),
-                inv.payment_status or "—",
-            ]
             for col, value in enumerate(values):
                 item = QTableWidgetItem(str(value))
                 if col >= 3:

@@ -180,6 +180,31 @@ QLineEdit:disabled {
     border-radius: 10px;
 }
 
+/* ---- Session unique : reprise de main sur l'autre appareil ---- */
+#TakeoverButton {
+    background-color: #2F4255;
+    color: white;
+    border: none;
+    border-radius: 10px;
+    padding: 10px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    min-height: 18px;
+}
+
+#TakeoverButton:hover {
+    background-color: #3d566e;
+}
+
+#TakeoverButton:pressed {
+    background-color: #24313f;
+}
+
+#TakeoverButton:disabled {
+    background: #d1d5db;
+    color: #9ca3af;
+}
+
 /* ---- Label de sécurité ---- */
 #SecureLabel {
     color: #9ca3af;

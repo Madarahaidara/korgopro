@@ -5,7 +5,7 @@ Workflow: Brouillon → Pro Forma → Validation → Facture Définitive → Pai
 """
 
 from enum import Enum
-from PySide6.QtCore import Qt, Signal, QTimer, QDateTime, QDate
+from PySide6.QtCore import Qt, Signal, QTimer, QDateTime, QDate, QThread
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QLineEdit, QPushButton, QTableWidget,
@@ -27,6 +27,7 @@ from core.models.customer import Customer
 from core.proforma_invoice_manager import ProformaInvoiceManager
 from utils.settings_manager import SettingsManager
 from core.store_manager import scope_products_query
+from ui.loading import LoadingOverlay
 
 logger = logging.getLogger(__name__)
 
@@ -1786,6 +1787,59 @@ class ProformaDialog(QDialog):
 
 
 # ============= VUE PRINCIPALE =============
+class ProformaListWorker(QThread):
+    """Charge la liste des proformas hors du thread UI.
+
+    `search_input.textChanged -> apply_filters -> load_proformas` exécutait
+    la requête réseau dans le thread Qt à chaque frappe. Le worker ouvre sa
+    propre session (aucun objet partagé avec le thread UI), agrège les
+    statistiques et n'émet que des lignes de texte prêtes à afficher.
+    """
+
+    loaded = Signal(dict)
+    failed = Signal(str)
+
+    def __init__(self, filters, parent=None):
+        super().__init__(parent)
+        self.filters = dict(filters)
+
+    def run(self):
+        session = SessionLocal()
+        try:
+            proformas = ProformaService(session).list_proformas(self.filters)
+            rows = []
+            draft_count = 0
+            accepted_count = 0
+            total_amount = 0.0
+            for p in proformas:
+                if p.status == "BROUILLON":
+                    draft_count += 1
+                elif p.status == "ACCEPTEE":
+                    accepted_count += 1
+                amount = float(p.total_amount or 0)
+                total_amount += amount
+                customer_name = p.customer.full_name if p.customer else "N/A"
+                rows.append([
+                    p.proforma_number,
+                    customer_name,
+                    p.created_date.strftime("%d/%m/%Y") if p.created_date else "",
+                    p.valid_until.strftime("%d/%m/%Y") if p.valid_until else "",
+                    f"{amount:,.0f}",
+                    p.status,
+                ])
+            self.loaded.emit({
+                "rows": rows,
+                "total": len(proformas),
+                "draft_count": draft_count,
+                "accepted_count": accepted_count,
+                "total_amount": total_amount,
+            })
+        except Exception as exc:  # noqa: BLE001 - signal d'échec dédiée
+            self.failed.emit(str(exc))
+        finally:
+            session.close()
+
+
 class EnhancedProformaInvoiceView(QWidget):
     """Vue principale des proformas"""
     
@@ -1796,8 +1850,19 @@ class EnhancedProformaInvoiceView(QWidget):
         self.service = ProformaService(self.session)
         
         self.current_filters = {"status": "ALL", "search": "", "date_filter": "all"}
-        
+
+        # Anti-gel : debounce 300 ms + worker (voir load_proformas).
+        self._proforma_worker = None
+        self._load_pending = False
+        self._debounce = QTimer(self)
+        self._debounce.setSingleShot(True)
+        self._debounce.setInterval(300)
+        self._debounce.timeout.connect(self._start_load_proformas)
+
         self.setup_ui()
+        # Voile anti-gel : signal visuel de la latence Supabase (arrêté dans
+        # _apply_proformas/_on_proforma_error).
+        self._overlay = LoadingOverlay(self, "Chargement des proformas…")
         self.load_proformas()
     
     def closeEvent(self, event):
@@ -1919,51 +1984,76 @@ class EnhancedProformaInvoiceView(QWidget):
         self.load_proformas()
     
     def load_proformas(self):
-        proformas = self.service.list_proformas(self.current_filters)
-        
+        """Demande un rechargement de la liste (debounce 300 ms).
+
+        Les frappes dans la barre de recherche (`apply_filters`) ne lancent
+        plus aucune requête dans le thread UI : elles relancent simplement le
+        minuteur, qui démarre `ProformaListWorker` au repos.
+        """
+        self._debounce.start()
+
+    def _start_load_proformas(self):
+        """Slot du debounce : lance le worker (requêtes hors thread UI)."""
+        if (self._proforma_worker is not None
+                and self._proforma_worker.isRunning()):
+            # Chargement en cours : on relancera à la fin avec les filtres
+            # les plus récents.
+            self._load_pending = True
+            return
+        self._proforma_worker = ProformaListWorker(
+            self.current_filters, parent=self)
+        self._proforma_worker.loaded.connect(self._apply_proformas)
+        self._proforma_worker.failed.connect(self._on_proforma_error)
+        self._proforma_worker.finished.connect(self._on_proforma_finished)
+        self._overlay.start()
+        self._proforma_worker.start()
+
+    def _on_proforma_finished(self):
+        if self._load_pending:
+            self._load_pending = False
+            self._debounce.start(0)
+
+    def _on_proforma_error(self, message):
+        self._overlay.stop()
+        logger.error(f"Erreur chargement proformas: {message}")
+
+    def _apply_proformas(self, payload):
+        """Rendu uniquement (aucune requête) : valeurs produites par le worker."""
+        self._overlay.stop()
         # Dashboard
-        total_count = len(proformas)
-        draft_count = len([p for p in proformas if p.status == "BROUILLON"])
-        accepted_count = len([p for p in proformas if p.status == "ACCEPTEE"])
-        total_amount = sum(p.total_amount for p in proformas)
-        
-        # Update dashboard
-        self.total_label.setText(f"Total: {total_count}")
-        self.draft_label.setText(f"Brouillons: {draft_count}")
-        self.accepted_label.setText(f"Acceptées: {accepted_count}")
-        self.amount_label.setText(f"Montant: {total_amount:,.0f} FCFA")
-        
+        self.total_label.setText(f"Total: {payload['total']}")
+        self.draft_label.setText(f"Brouillons: {payload['draft_count']}")
+        self.accepted_label.setText(f"Acceptées: {payload['accepted_count']}")
+        self.amount_label.setText(
+            f"Montant: {payload['total_amount']:,.0f} FCFA")
+
         # Update table
-        self.table.setRowCount(len(proformas))
-        
-        for row, p in enumerate(proformas):
+        rows = payload.get("rows", [])
+        self.table.setRowCount(len(rows))
+
+        for row, values in enumerate(rows):
             # N°
-            num_item = QTableWidgetItem(p.proforma_number)
-            self.table.setItem(row, 0, num_item)
-            
+            self.table.setItem(row, 0, QTableWidgetItem(values[0]))
+
             # Client
-            customer_name = p.customer.full_name if p.customer else "N/A"
-            self.table.setItem(row, 1, QTableWidgetItem(customer_name))
-            
+            self.table.setItem(row, 1, QTableWidgetItem(values[1]))
+
             # Date
-            date_str = p.created_date.strftime("%d/%m/%Y") if p.created_date else ""
-            self.table.setItem(row, 2, QTableWidgetItem(date_str))
-            
+            self.table.setItem(row, 2, QTableWidgetItem(values[2]))
+
             # Échéance
-            valid_str = p.valid_until.strftime("%d/%m/%Y") if p.valid_until else ""
-            self.table.setItem(row, 3, QTableWidgetItem(valid_str))
-            
+            self.table.setItem(row, 3, QTableWidgetItem(values[3]))
+
             # Montant
-            amount_item = QTableWidgetItem(f"{p.total_amount:,.0f}")
+            amount_item = QTableWidgetItem(values[4])
             amount_item.setTextAlignment(Qt.AlignRight)
             self.table.setItem(row, 4, amount_item)
-            
+
             # Statut
-            status_item = QTableWidgetItem(p.status)
-            self.table.setItem(row, 5, status_item)
-        
+            self.table.setItem(row, 5, QTableWidgetItem(values[5]))
+
         self.table.resizeColumnsToContents()
-        self.status_label.setText(f"{len(proformas)} proforma(s)")
+        self.status_label.setText(f"{payload['total']} proforma(s)")
     
     def create_new(self):
         dialog = ProformaDialog(user_id=self.current_user_id, parent=self)

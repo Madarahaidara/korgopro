@@ -53,19 +53,22 @@ class LoginWorker(QThread):
     # « Cannot copy-convert (NoneType) to C++ » à chaque tentative ratée.
     finished = Signal(object)
     error = Signal(str)
-    
-    def __init__(self, username, password, auth_controller):
+
+    def __init__(self, username, password, auth_controller, force=False):
         super().__init__()
         self.username = username
         self.password = password
         self.auth_controller = auth_controller
-        
+        # Session unique : force=True = « Déconnecter l'autre appareil ».
+        self.force = force
+
     def run(self):
         try:
             time.sleep(0.5)
             user_data = self.auth_controller.authenticate(
                 self.username,
-                self.password
+                self.password,
+                force=self.force
             )
             self.finished.emit(user_data)
         except Exception as e:
@@ -396,6 +399,18 @@ class LoginView(QWidget):
         self.error_label.setWordWrap(True)
         self.error_label.hide()
         right_layout.addWidget(self.error_label)
+
+        # Session unique : reprise de main quand le compte est deja ouvert
+        # ailleurs (refus SESSION_ACTIVE). Masqué sinon.
+        self.btn_takeover = QPushButton(
+            "Déconnecter l'autre appareil et se connecter"
+        )
+        self.btn_takeover.setObjectName("TakeoverButton")
+        self.btn_takeover.setCursor(Qt.PointingHandCursor)
+        self.btn_takeover.setFixedHeight(40)
+        self.btn_takeover.hide()
+        self.btn_takeover.clicked.connect(self.on_takeover_pressed)
+        right_layout.addWidget(self.btn_takeover)
         
         # Espacement bas
         right_layout.addStretch(2)
@@ -455,6 +470,14 @@ class LoginView(QWidget):
 
     def on_login_pressed(self):
         """Déclenche l'authentification avec effet visuel"""
+        self._start_login(force=False)
+
+    def on_takeover_pressed(self):
+        """Session unique : « Déconnecter l'autre appareil et se connecter »."""
+        self._start_login(force=True)
+
+    def _start_login(self, force: bool = False):
+        """Lance la tentative de connexion (`force` = reprise de main)."""
         # Validation rapide
         if not self.username.text().strip():
             self.error_label.setText("⚠️ Veuillez saisir votre email ou nom d'utilisateur")
@@ -472,14 +495,18 @@ class LoginView(QWidget):
         
         self.set_loading_state(True)
         self.error_label.hide()
+        self.btn_takeover.hide()
         
         from controllers.auth_controller import AuthController
         auth = AuthController()
-        
+        # Conserve pour l'affichage du refus (session deja ouverte ailleurs).
+        self.auth_controller = auth
+
         self.worker = LoginWorker(
             self.username.text().strip(),
             self.password.text(),
-            auth
+            auth,
+            force
         )
         self.worker.finished.connect(self.on_authentication_finished)
         self.worker.error.connect(self.on_authentication_error)
@@ -523,6 +550,7 @@ class LoginView(QWidget):
         self.password.setEnabled(not loading)
         self.btn_login.setEnabled(not loading)
         self.btn_cancel.setEnabled(not loading)
+        self.btn_takeover.setEnabled(not loading)
         
         if loading:
             self.loading_widget.show()
@@ -538,12 +566,26 @@ class LoginView(QWidget):
         self.set_loading_state(False)
         
         if not user_data:
-            self.password.clear()
+            auth = getattr(self, "auth_controller", None)
+            message = getattr(auth, "last_error", None)
+            conflict = getattr(auth, "last_error_code", None) == "SESSION_ACTIVE"
+
+            if not conflict:
+                # Mauvais mot de passe : on efface. Sur un refus de session les
+                # identifiants sont VALIDES : on les garde pour la reprise en
+                # un clic (bouton « Déconnecter l'autre appareil »).
+                self.password.clear()
             self.password.setFocus()
-            
-            # Animation shake sur le champ mot de passe
-            self.error_label.setText("❌ Identifiants incorrects")
+
+            # Session unique : message metier (« deja connecte ailleurs »)
+            # prioritaire sur le message generique de mauvais identifiants.
+            if message:
+                self.error_label.setText(f"⚠ {message}")
+            else:
+                self.error_label.setText("❌ Identifiants incorrects")
             self.error_label.show()
+            # Bouton de reprise visible uniquement sur SESSION_ACTIVE.
+            self.btn_takeover.setVisible(conflict)
             self.slide_error()
             
             # Effet shake sur le conteneur
@@ -551,6 +593,7 @@ class LoginView(QWidget):
             return
         
         # Succès - animation de transition
+        self.btn_takeover.hide()
         self.success_animation()
         QTimer.singleShot(500, lambda: self.login_successful.emit(user_data, "light"))
 

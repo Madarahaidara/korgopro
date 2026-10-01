@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "Korgo Pro Terrain",
+    "slug": "korgo-pro-mobile",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "korgopro",
+    "userInterfaceStyle": "light",
+    "primaryColor": "#2F4255",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#2F4255"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.korgopro.mobile"
+    },
+    "android": {
+      "package": "com.korgopro.mobile",
+      "adaptiveIcon": {
+        "backgroundColor": "#2F4255",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      }
+    },
+    "extra": {
+      "commentaire": "Le .env (EXPO_PUBLIC_SUPABASE_URL / EXPO_PUBLIC_SUPABASE_ANON_KEY) est la seule source de configuration réseau."
+    },
+    "plugins": [
+      "expo-sharing"
+    ]
+  }
+}

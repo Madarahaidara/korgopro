@@ -147,6 +147,12 @@ class ProductLoaderThread(QThread):
             self.error_occurred.emit(f"Erreur chargement produits: {str(e)}")
 
     def stop(self):
+        """Attendre la fin du thread — UNIQUEMENT à la fermeture de l'app.
+
+        Ne jamais appeler depuis un slot de l'interface : `wait()` bloque le
+        thread UI (jusqu'à 1 s par frappe). Voir P0.4 dans
+        docs/diagnostic_gel_desktop.md.
+        """
         self.quit()
         self.wait(1000)
 

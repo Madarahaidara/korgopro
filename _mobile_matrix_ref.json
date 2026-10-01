@@ -1,0 +1,72 @@
+{
+  "ADMIN": [
+    "access_admin",
+    "cancel_sales",
+    "create_sales",
+    "export_data",
+    "manage_customers",
+    "manage_database",
+    "manage_proformas",
+    "manage_settings",
+    "manage_stock",
+    "manage_stores",
+    "manage_treasury",
+    "manage_users",
+    "view_audit_logs",
+    "view_dashboard",
+    "view_invoice_register",
+    "view_reports",
+    "view_sales",
+    "view_stock",
+    "view_treasury"
+  ],
+  "GESTIONNAIRE": [
+    "cancel_sales",
+    "create_sales",
+    "export_data",
+    "manage_customers",
+    "manage_proformas",
+    "manage_stock",
+    "manage_stores",
+    "manage_treasury",
+    "view_dashboard",
+    "view_invoice_register",
+    "view_reports",
+    "view_sales",
+    "view_stock",
+    "view_treasury"
+  ],
+  "SUPERVISEUR": [
+    "access_admin",
+    "cancel_sales",
+    "create_sales",
+    "export_data",
+    "manage_customers",
+    "manage_proformas",
+    "manage_stock",
+    "manage_stores",
+    "manage_treasury",
+    "view_audit_logs",
+    "view_dashboard",
+    "view_invoice_register",
+    "view_reports",
+    "view_sales",
+    "view_stock",
+    "view_treasury"
+  ],
+  "ASSISTANT": [
+    "create_sales",
+    "manage_customers",
+    "manage_proformas",
+    "view_dashboard",
+    "view_invoice_register"
+  ],
+  "CAISSIER": [
+    "create_sales",
+    "manage_customers",
+    "manage_proformas",
+    "view_dashboard",
+    "view_invoice_register",
+    "view_treasury"
+  ]
+}

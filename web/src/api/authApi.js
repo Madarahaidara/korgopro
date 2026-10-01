@@ -47,8 +47,11 @@ async function callAdminRpc(fn, params) {
  *
  * En mode Supabase, `username` accepte un email OU un nom d'utilisateur : le
  * nom est d'abord resolu en email via le profil public.users.
+ *
+ * `options.force` : reprendre la main si le compte est déjà connecté ailleurs
+ * (session unique — voir supabase_single_session.sql).
  */
-export async function login(username, password) {
+export async function login(username, password, options = {}) {
   if (db.mode === 'supabase') {
     const ident = String(username || '').trim();
     let email = ident;
@@ -67,7 +70,7 @@ export async function login(username, password) {
       }
       email = profile.data.email;
     }
-    return authenticateRemote(supabase, email, password);
+    return authenticateRemote(supabase, email, password, options);
   }
 
   const user = db.data.users.find(

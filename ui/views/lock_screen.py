@@ -405,6 +405,9 @@ class LockScreen(QDialog):
         )
 
         auth = AuthController()
+        # Conserve pour afficher un refus metier (session deja ouverte
+        # ailleurs) plutot que « mot de passe incorrect ».
+        self.auth_controller = auth
 
         self.worker = UnlockWorker(
             self.username.text(),
@@ -466,8 +469,16 @@ class LockScreen(QDialog):
 
             self.password.clear()
 
+            # Refus metier (session deja ouverte ailleurs) prioritaire sur
+            # le message generique de mauvais mot de passe.
+            message = getattr(
+                getattr(self, "auth_controller", None),
+                "last_error",
+                None
+            )
+
             self.error_label.setText(
-                "❌ Mot de passe incorrect"
+                f"❌ {message}" if message else "❌ Mot de passe incorrect"
             )
 
             self.error_label.show()

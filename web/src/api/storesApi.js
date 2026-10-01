@@ -2,8 +2,16 @@
 // Service des magasins (multi-stock).
 // Chaque produit / vente / mouvement est rattaché à un magasin (store_id).
 // Le magasin « actif » est mémorisé dans le localStorage.
+//
+// SOURCE UNIQUE DE VÉRITÉ du magasin actif : `korgo_pro_active_store`
+// (localStorage) + `db.data.stores` (base hydratée). L'interface (StoreContext)
+// lit le magasin actif via `getActiveStoreId()` : elle ne peut donc jamais
+// afficher un magasin différent de celui utilisé pour filtrer les listes.
 // ============================================================================
-import { db, ensureStores } from './db';
+import { db, ensureStores, defaultStore } from './db';
+
+// Réexporté pour les appelants qui n'importent que ce service.
+export { defaultStore };
 
 const ACTIVE_STORE_KEY = 'korgo_pro_active_store';
 
@@ -16,14 +24,19 @@ export function listStores(includeInactive = false) {
     .sort((a, b) => a.code.localeCompare(b.code));
 }
 
-/** Retourne l'identifiant du magasin actif (par défaut : le premier). */
+/**
+ * Retourne l'identifiant du magasin actif.
+ *
+ * Si le magasin mémorisé n'existe pas (ou plus) dans la base — cas fréquent
+ * après la première hydratation Supabase ou après suppression d'un magasin —
+ * on retombe sur le magasin par défaut (le même que le desktop), et JAMAIS sur
+ * un identifiant inconnu de la base.
+ */
 export function getActiveStoreId() {
   const stores = listStores(true);
-  let id = Number(localStorage.getItem(ACTIVE_STORE_KEY));
-  if (!stores.some((s) => s.id === id)) {
-    id = stores[0] ? stores[0].id : null;
-  }
-  return id;
+  const id = Number(localStorage.getItem(ACTIVE_STORE_KEY));
+  if (stores.some((s) => s.id === id)) return id;
+  return defaultStore(stores)?.id ?? null;
 }
 
 /** Définit le magasin actif. */

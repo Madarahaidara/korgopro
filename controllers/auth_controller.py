@@ -24,12 +24,33 @@ from core.supabase_auth import resolve_email, supabase_available, verify_credent
 
 
 class AuthController:
-    def authenticate(self, username: str, password: str):
-        """Authentifier un utilisateur (Supabase Auth en priorite)."""
+    #: Dernier refus metier (session deja ouverte ailleurs) affiche par la vue.
+    #: `None` = pas de probleme particular.
+    last_error = None
+    #: Code brut du refus (`SESSION_ACTIVE`, ...) : permet a la vue de savoir
+    #: si elle doit proposer la reprise de main (« Deconnecter l'autre ... »).
+    last_error_code = None
+
+    def authenticate(self, username: str, password: str, force: bool = False):
+        """Authentifier un utilisateur (Supabase Auth en priorite).
+
+        SESSION UNIQUE : apres verification du mot de passe, la session
+        applicative est ouverte (core.single_session). Si un autre appareil est
+        deja connecte a ce compte, la connexion est REFUSEE (None) et
+        `last_error` / `last_error_code` expliquent pourquoi (affiches par
+        LoginView, qui propose alors la reprise avec `force=True`). Une panne
+        reseau ou une base non migree ne bloque jamais la connexion
+        (fail-open, cf. core.single_session).
+        """
+        # Chaque tentative repart d'un blanc : un refus de session ne doit pas
+        # s'afficher apres un simple mauvais mot de passe (et inversement).
+        self.last_error = None
+        self.last_error_code = None
         try:
             with SessionLocal() as session:
                 if supabase_available(session):
-                    return self._authenticate_supabase(session, username, password)
+                    return self._authenticate_supabase(
+                        session, username, password, force)
                 return self._authenticate_local(session, username, password)
         except Exception as e:
             print(f"Erreur d'authentification: {e}")
@@ -38,7 +59,8 @@ class AuthController:
     # ------------------------------------------------------------------
     # Source de verite : Supabase Auth
     # ------------------------------------------------------------------
-    def _authenticate_supabase(self, session, username: str, password: str):
+    def _authenticate_supabase(self, session, username: str, password: str,
+                               force: bool = False):
         email = resolve_email(session, username)
         if not email:
             return None
@@ -53,11 +75,77 @@ class AuthController:
         if not user or not user.active:
             # Compte banni cote Supabase Auth, ou profil desactive : l'acces
             # desktop suit le meme statut que l'acces web.
+            self.last_error = None
+            return None
+
+        # Session unique : un seul appareil connecte par compte.
+        self.last_error = self._open_single_session(email, force=force)
+        if self.last_error:
             return None
 
         user.last_login = datetime.utcnow()
         session.commit()
         return self._as_dict(user)
+
+    def _open_single_session(self, email: str, force: bool = False):
+        """Ouvre la session applicative. Retourne un message si elle est refusee.
+
+        Le refus doit intervenir AVANT `last_login` : un compte refuse ne doit
+        pas laisser d'heure de connexion « reussie » dans l'historique.
+        """
+        from core import single_session
+
+        holder = single_session.session
+        held = (holder.email or "").strip().lower()
+        target = (email or "").strip().lower()
+
+        # Ecran verrouille : ce poste DETIENT deja le verrou. Un reset() avec
+        # un nouvel UUID ferait croire au serveur qu'il s'agit d'un AUTRE
+        # appareil, et la connexion serait refusee a tort. On rafraichit la
+        # session existante (touch) au lieu d'en ouvrir une nouvelle.
+        if not force and held and held == target:
+            state = holder.touch()
+            if state is None or state.get("active") is not False:
+                # Session toujours la notre (ou verrou indisponible :
+                # fail-open, cf. core.single_session).
+                return None
+            # Session reprise par un autre appareil : on retente une ouverture
+            # normale, qui sera refusee (sauf force) avec le code metier.
+
+        # Changement de compte sur ce poste : liberer le verrou de l'ancien.
+        if holder.email and held != target:
+            holder.close("CHANGEMENT_COMPTE")
+
+        self.last_error_code = None
+        holder.reset()
+        result = holder.open(email, force=force)
+        if result.get("ok"):
+            holder.opened_at = datetime.utcnow()
+            return None
+        self.last_error_code = result.get("code")
+
+        if result.get("code") != "SESSION_ACTIVE":
+            # Erreur metier explicite (compte inconnu, profil inactif...).
+            return result.get("message") or (
+                "Connexion refusee par le verrou de session."
+            )
+        # SESSION_ACTIVE : la vue affiche le message et propose le bouton
+        # « Déconnecter l'autre appareil et se connecter » (force=True).
+        other = result.get("other") or {}
+        device = other.get("platform_label") or "un autre appareil"
+        if other.get("device"):
+            device = f"{device} ({other['device']})"
+        return (
+            f"Deja connecte ailleurs : {device} depuis "
+            f"{other.get('since_minutes', 0)} min. "
+            "Choisissez « Déconnecter l'autre appareil » pour reprendre la main."
+        )
+
+    def close_session(self, reason: str = "DECONNEXION") -> None:
+        """Libere le verrou de session (deconnexion / fermeture)."""
+        from core import single_session
+
+        single_session.session.close(reason)
 
     # ------------------------------------------------------------------
     # Repli de developpement (SQLite sans Supabase Auth)

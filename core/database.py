@@ -53,14 +53,41 @@ def _create_engine(url: str):
             connect_args={"check_same_thread": False},
         )
 
+    # --- Garde-fous reseau (anti-gel de l'interface) -----------------------
+    # Le desktop parle a PostgreSQL (Supabase) a travers Internet. Sans bornes,
+    # une connexion perdue OU une requete qui attend un verrou cote serveur
+    # bloque le thread appelant SANS LIMITE : libpq attend la retransmission
+    # TCP de l'OS (21 s et plus) et PostgreSQL n'applique aucun delai maximal
+    # par defaut. Chaque borne ci-dessous est configurable (.env.example).
+    connect_timeout = int(os.environ.get("DB_CONNECT_TIMEOUT", "10"))
+    statement_timeout = int(os.environ.get("DB_STATEMENT_TIMEOUT_MS", "60000"))
+
+    connect_args = {
+        "sslmode": os.environ.get("DB_SSLMODE", "require"),
+        # Abandonne une connexion injoignable au lieu d'attendre Windows.
+        "connect_timeout": connect_timeout,
+        # Detecte les connexions coupees en silence par le pooler / le NAT
+        # (mise en veille, changement de Wi-Fi) sans attendre la requete suivante.
+        "keepalives": 1,
+        "keepalives_idle": 30,
+        "keepalives_interval": 10,
+        "keepalives_count": 3,
+    }
+    if statement_timeout > 0:
+        # 0 = desactive (a n'utiliser que pour une restauration/export massif).
+        connect_args["options"] = f"-c statement_timeout={statement_timeout}"
+
     return create_engine(
         url,
         echo=_echo,
         pool_pre_ping=True,          # vérifie la connexion avant usage (réseau)
         pool_size=int(os.environ.get("DB_POOL_SIZE", "5")),
         max_overflow=int(os.environ.get("DB_MAX_OVERFLOW", "10")),
-        pool_recycle=int(os.environ.get("DB_POOL_RECYCLE", "1800")),
-        connect_args={"sslmode": os.environ.get("DB_SSLMODE", "require")},
+        # Le pooler Supabase ferme les connexions inactives : on recycle avant.
+        pool_recycle=int(os.environ.get("DB_POOL_RECYCLE", "300")),
+        # Ne jamais attendre indefiniment une connexion du pool.
+        pool_timeout=int(os.environ.get("DB_POOL_TIMEOUT", "10")),
+        connect_args=connect_args,
     )
 
 

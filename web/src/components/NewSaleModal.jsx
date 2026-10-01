@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
-import { createSale } from '../api/salesApi';
+import { createSale, isCreditPayment } from '../api/salesApi';
 import { listProducts, listCustomers } from '../api/catalogApi';
 import { getSettings } from '../api/settingsApi';
 import { formatMoney } from '../api/db';
@@ -107,16 +107,30 @@ export default function NewSaleModal({ user, onSave, onClose }) {
   const taxable = subtotal - discountValue;
   const tax = (taxable * taxRate) / 100;
   const total = taxable + tax;
-  const paid = paymentMethod === 'CASH' ? Math.max(Number(amountPaid) || 0, 0) : total;
+  // « CRÉDIT » : le montant saisi est un simple acompte (vide = vente à terme).
+  // « CASH »      : le montant saisi est celui reçu (monnaie rendue s'il dépasse).
+  // Les autres moyens (Mobile Money, carte, banque) sont réputés immédiats.
+  const credit = isCreditPayment(paymentMethod);
+  const entered = Math.max(Number(amountPaid) || 0, 0);
+  const paid = (paymentMethod === 'CASH' || credit) ? entered : total;
   const change = Math.max(paid - total, 0);
+  const due = Math.max(total - paid, 0);
 
   const save = () => {
     if (lines.length === 0) {
       toast('Ajoutez au moins un produit.', 'danger');
       return;
     }
+    if (credit && !customerId) {
+      toast('Une vente à crédit doit être rattachée à un client.', 'danger');
+      return;
+    }
     if (paymentMethod === 'CASH' && paid > 0 && paid < total) {
       toast('Le montant reçu est inférieur au total.', 'danger');
+      return;
+    }
+    if (credit && paid > total) {
+      toast("L'acompte ne peut pas dépasser le total de la vente.", 'danger');
       return;
     }
     const sale = createSale({
@@ -137,7 +151,9 @@ export default function NewSaleModal({ user, onSave, onClose }) {
     });
     toast(change > 0
       ? `Vente ${sale.number} enregistrée. Monnaie à rendre : ${formatMoney(change, settings.currency)}`
-      : `Vente ${sale.number} enregistrée avec succès.`);
+      : sale.due > 0
+        ? `Vente ${sale.number} enregistrée à crédit. Reste dû : ${formatMoney(sale.due, settings.currency)}`
+        : `Vente ${sale.number} enregistrée avec succès.`);
     onSave();
   };
 
@@ -210,7 +226,9 @@ export default function NewSaleModal({ user, onSave, onClose }) {
               <select className="select" value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
                 <option value="CASH">Espèces</option>
                 <option value="MOBILE_MONEY">Mobile Money</option>
-                <option value="BANK">Banque</option>
+                <option value="CARD">Carte bancaire</option>
+                <option value="BANK">Banque / virement</option>
+                <option value="CRÉDIT">Crédit (paiement différé)</option>
               </select>
             </div>
           </div>
@@ -260,11 +278,12 @@ export default function NewSaleModal({ user, onSave, onClose }) {
               <input className="input" type="number" min="0" step="any" value={discount}
                 onChange={(e) => setDiscount(e.target.value)} placeholder="0" />
             </div>
-            {paymentMethod === 'CASH' && (
+            {(paymentMethod === 'CASH' || credit) && (
               <div className="field" style={{ width: 130 }}>
-                <label>Montant reçu</label>
+                <label>{credit ? 'Acompte' : 'Montant reçu'}</label>
                 <input className="input" type="number" min="0" step="any" value={amountPaid}
-                  onChange={(e) => setAmountPaid(e.target.value)} placeholder={String(Math.round(total))} />
+                  onChange={(e) => setAmountPaid(e.target.value)}
+                  placeholder={credit ? '0' : String(Math.round(total))} />
               </div>
             )}
             <div className="text-right">
@@ -274,7 +293,12 @@ export default function NewSaleModal({ user, onSave, onClose }) {
               )}
               <div className="align-end"><span className="text-muted">Taxe ({taxRate}%)</span> <b style={{ minWidth: 100, display: 'inline-block', textAlign: 'right' }}>{formatMoney(tax, settings.currency)}</b></div>
               <div style={{ fontSize: 20, fontWeight: 800 }}>Total : {formatMoney(total, settings.currency)}</div>
-              {paymentMethod === 'CASH' && paid > 0 && (
+              {credit ? (
+                <div style={{ fontWeight: 700, color: due > 0 ? '#b45309' : '#059669' }}>
+                  {due > 0 ? `Reste dû : ${formatMoney(due, settings.currency)}` : 'Crédit payé intégralement'}
+                  {due > 0 && !customerId ? ' — client requis' : ''}
+                </div>
+              ) : paymentMethod === 'CASH' && paid > 0 && (
                 <div style={{ fontWeight: 700, color: change > 0 ? '#059669' : undefined }}>
                   {change > 0 ? `À rendre : ${formatMoney(change, settings.currency)}` : 'Payé exactement '}<Icon name="check" size={16} style={{ verticalAlign: '-2px' }} />
                 </div>
@@ -284,8 +308,8 @@ export default function NewSaleModal({ user, onSave, onClose }) {
 
           <div className="form-actions">
             <button className="btn" onClick={onClose}>Annuler</button>
-            <button className="btn btn-success btn-lg" onClick={save} disabled={lines.length === 0}>
-              <Icon name="cash" size={16} style={{ verticalAlign: '-2px' }} /> Encaisser {lines.length > 0 ? formatMoney(total, settings.currency) : ''}
+            <button className={`btn btn-lg ${credit ? 'btn-primary' : 'btn-success'}`} onClick={save} disabled={lines.length === 0}>
+              <Icon name={credit ? 'user' : 'cash'} size={16} style={{ verticalAlign: '-2px' }} /> {credit ? 'Vendre à crédit' : 'Encaisser'} {lines.length > 0 ? formatMoney(total, settings.currency) : ''}
             </button>
           </div>
         </div>

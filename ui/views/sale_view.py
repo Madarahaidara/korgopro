@@ -46,6 +46,7 @@ ROLES = describe_roles()
 
 # Import des modèles
 from core.database import SessionLocal
+from ui.loading import LoadingOverlay
 from core.models.stock_models import Product, Supplier
 from core.models.sale_models import Sale, SaleItem, Customer, Payment
 from core.sale_log_manager import SaleLogManager
@@ -89,6 +90,9 @@ class SaleView(QWidget):
         self.total_pages = 1
         self.filters = {}
         self.loader_thread = None
+        # Anti-gel (P0.4) : génération des chargements + garde-fou des threads.
+        self._load_generation = 0
+        self._loader_refs = []
         
         # Responsivité
         self.is_compact_layout = False
@@ -365,6 +369,10 @@ class SaleView(QWidget):
         self.products_table.product_selected.connect(self.on_product_selected)
         self.products_table.doubleClicked.connect(self.add_to_cart)
         layout.addWidget(self.products_table)
+        # Voile anti-gel posé sur la table produits (latence Supabase pendant
+        # la recherche) : les filtres et le panier restent utilisables.
+        self._products_overlay = LoadingOverlay(
+            self.products_table, "Recherche des produits…")
         
         # Pagination
         pagination_layout = QHBoxLayout()
@@ -1028,19 +1036,46 @@ class SaleView(QWidget):
         self.products_table.setEnabled(False)
         self.add_to_cart_btn.setEnabled(False)
         
-        if self.loader_thread and self.loader_thread.isRunning():
-            self.loader_thread.stop()
+        # Anti-gel (P0.4) : ne JAMAIS appeler stop()/wait() ici — attendre le
+        # thread en cours gelait le thread UI jusqu'à 1 s par frappe. Les
+        # résultats des recherches précédentes sont écartés via la génération.
+        self._load_generation += 1
+        load_id = self._load_generation
         
-        self.loader_thread = ProductLoaderThread(
+        thread = ProductLoaderThread(
             self.product_service,
             self.current_page,
             self.filters
         )
-        self.loader_thread.products_loaded.connect(self.on_products_loaded)
-        self.loader_thread.error_occurred.connect(self.on_load_error)
-        self.loader_thread.start()
+        thread.products_loaded.connect(
+            lambda products, total, lid=load_id: self.on_products_loaded(
+                products, total, lid))
+        thread.error_occurred.connect(
+            lambda msg, lid=load_id: self.on_load_error(msg, lid))
+        thread.finished.connect(
+            lambda _f=False, th=thread: self._release_loader(th))
+        # Référence explicite : un QThread Python détruit pendant son
+        # exécution fait planter Qt (« Destroyed while thread still running »).
+        self._loader_refs.append(thread)
+        self.loader_thread = thread
+        self._products_overlay.start()
+        thread.start()
     
-    def on_products_loaded(self, products: List[Product], total: int):
+    def _release_loader(self, thread):
+        """Libère la référence d'un thread terminé (évite le GC d'un QThread
+        encore en cours d'exécution)."""
+        if thread in self._loader_refs:
+            self._loader_refs.remove(thread)
+    
+    def on_products_loaded(self, products: List[Product], total: int,
+                           load_id: int = None):
+        # Apparié à start() MÊME pour un résultat périmé (compteur de
+        # génération) : chaque thread livre exactement un signal.
+        self._products_overlay.stop()
+        if load_id is not None and load_id != self._load_generation:
+            # Résultat périmé : un nouveau chargement a démarré depuis.
+            # Le résultat valide (génération courante) réactivera la table.
+            return
         self.products_table.display_products(products, self.CURRENCY)
         self.products_table.setEnabled(True)
         
@@ -1050,7 +1085,11 @@ class SaleView(QWidget):
         self.prev_btn.setEnabled(self.current_page > 1)
         self.next_btn.setEnabled(self.current_page < self.total_pages)
     
-    def on_load_error(self, error_msg: str):
+    def on_load_error(self, error_msg: str, load_id: int = None):
+        # Apparié à start() même pour une erreur périmée (voir ci-dessus).
+        self._products_overlay.stop()
+        if load_id is not None and load_id != self._load_generation:
+            return  # erreur périmée : le chargement courant gère l'état
         self.toast.show(error_msg, "error")
         self.products_table.setEnabled(True)
     
@@ -1544,9 +1583,11 @@ class SaleView(QWidget):
     
     def _cleanup_resources(self):
         """Nettoie toutes les ressources pour éviter les fuites mémoire"""
-        if self.loader_thread and self.loader_thread.isRunning():
-            self.loader_thread.stop()
-            self.loader_thread.wait(2000)
+        for thread in list(self._loader_refs):
+            thread.stop()
+            thread.wait(2000)
+        self._loader_refs.clear()
+        self.loader_thread = None
         
         if hasattr(self, 'timer') and self.timer.isActive():
             self.timer.stop()

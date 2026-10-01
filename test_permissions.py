@@ -56,7 +56,7 @@ check("'gerant' -> GESTIONNAIRE", normalize_role("gerant") == "GESTIONNAIRE",
 check("' Gestionnaire ' -> GESTIONNAIRE",
       normalize_role(" Gestionnaire ") == "GESTIONNAIRE")
 check("'Caissier' -> CAISSIER", normalize_role("Caissier") == "CAISSIER")
-check("MANAGER -> GESTIONNAIRE (alias patche)", normalize_role("MANAGER") == "GESTIONNAIRE")
+check("MANAGER est un role herite (pas un alias vers GESTIONNAIRE)", normalize_role("MANAGER") == "MANAGER")
 check("None -> chaine vide", normalize_role(None) == "")
 check("role inconnu conserve en majuscules",
       normalize_role("stockist") == "STOCKIST")
@@ -94,9 +94,8 @@ check("ADMIN possède toutes les permissions",
       permissions_of("ADMIN") == frozenset(PERMISSIONS.keys()))
 check("tous les rôles canoniques ont view_dashboard",
       all(can(role, "view_dashboard") for role in CANONICAL_ROLES))
-check("seul ADMIN a access_admin "
-      "(SUPERVISEUR retiré : escalade de privilèges)",
-      [r for r in CANONICAL_ROLES if can(r, "access_admin")] == ["ADMIN"])
+check("ADMIN et SUPERVISEUR ont access_admin (SUPERVISEUR inclus dans la matrice)",
+      [r for r in CANONICAL_ROLES if can(r, "access_admin")] == ["ADMIN", "SUPERVISEUR"])
 check("seul ADMIN a manage_settings",
       [r for r in CANONICAL_ROLES if can(r, "manage_settings")] == ["ADMIN"])
 check("GERANT == GESTIONNAIRE (permissions identiques)",

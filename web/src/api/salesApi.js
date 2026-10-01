@@ -2,9 +2,32 @@
 // Service des ventes (factures définitives).
 // Reprend le modèle sale_models.py (Sale, SaleItem) et la logique de caisse.
 // ============================================================================
-import { db, nextDocumentNumber } from './db';
+import { db, nextDocumentNumber, formatMoney } from './db';
 import { getCustomer, getProduct } from './catalogApi';
 import { getActiveStoreId } from './storesApi';
+
+/** Tolérance des arrondis sur les montants (identique au mobile et au RPC). */
+const EPSILON = 0.001;
+
+/**
+ * Un paiement est « différé » quand il laisse obligatoirement un reste dû
+ * possible : c'est le cas du crédit, où ce qui est saisi est un acompte.
+ * Les autres moyens (Mobile Money, carte, virement…) sont réputés immédiats.
+ */
+export function isCreditPayment(method) {
+  const value = String(method || '').toUpperCase();
+  return value === 'CRÉDIT' || value === 'CREDIT' || value === 'A_TERME';
+}
+
+/** Reste dû d'une vente (0 si elle est soldée ou surpayée). */
+export function saleDue(sale) {
+  return Math.max(Number(sale?.total_amount || 0) - Number(sale?.amount_paid || 0), 0);
+}
+
+/** Liste des ventes restant à encaisser (crédits + paiements partiels). */
+export function listCreditSales(storeId = null) {
+  return listSales(storeId).filter((s) => s.sale_status !== 'CANCELLED' && s.due > EPSILON);
+}
 
 /** Liste les ventes avec relations client/caissier enrichies (magasin actif). */
 export function listSales(storeId = null) {
@@ -28,14 +51,20 @@ function enrichSale(sale) {
     const product = it.product_id ? getProduct(it.product_id) : null;
     return { ...it, product };
   });
-  return { ...sale, customer, cashier, items };
+  return { ...sale, customer, cashier, items, due: saleDue(sale) };
 }
 
 /** Crée une vente, débite le stock et enregistre un mouvement de trésorerie. */
 export function createSale({ customer_id, items, discount_amount = 0, tax_amount = 0, cashier_id, payment_method = 'CASH', notes = '', amount_paid = 0 }) {
   const subtotal = items.reduce((sum, it) => sum + Number(it.line_total || 0), 0);
   const total_amount = subtotal - Number(discount_amount) + Number(tax_amount);
-  const paid = Math.max(Number(amount_paid) || 0, 0);
+  // Un crédit accepte un acompte (0 = vente à terme) ; les autres moyens sont
+  // réputés encaissés en totalité lorsqu'aucun montant n'est saisi.
+  const credit = isCreditPayment(payment_method);
+  const requested = Math.max(Number(amount_paid) || 0, 0);
+  const paid = credit ? Math.min(requested, total_amount) : (requested > 0 ? requested : total_amount);
+  const change_amount = Math.max(paid - total_amount, 0);
+  const due = Math.max(total_amount - paid, 0);
   // Statut de paiement : soldé si le montant reçu couvre le total,
   // partiel s'il en couvre une partie, en attente sinon.
   const payment_status = paid >= total_amount && paid > 0
@@ -53,7 +82,7 @@ export function createSale({ customer_id, items, discount_amount = 0, tax_amount
     tax_amount: Number(tax_amount),
     total_amount,
     amount_paid: paid,
-    change_amount: Math.max(paid - total_amount, 0),
+    change_amount,
     payment_method,
     payment_status,
     sale_status: 'COMPLETED',
@@ -84,15 +113,58 @@ export function createSale({ customer_id, items, discount_amount = 0, tax_amount
     }
   });
 
-  // Enregistre l'entrée de trésorerie sur le compte par défaut
-  recordCashIn(sale, total_amount);
+  // Trésorerie : uniquement l'argent réellement reçu. Un crédit sans acompte
+  // ne doit donc rien faire entrer en caisse (avant, la totalité y entrait).
+  const cashIn = Math.max(paid - change_amount, 0);
+  if (cashIn > EPSILON) recordCashIn(sale, cashIn);
+
+  // Le reste dû devient la dette du client (compteur `customers.balance`).
+  if (due > EPSILON && sale.customer_id) {
+    const target = db.data.customers.find((c) => c.id === Number(sale.customer_id));
+    if (target) target.balance = Number(target.balance || 0) + due;
+  }
+
+  db.persist();
+  return enrichSale(sale);
+}
+
+/**
+ * Encaisse (totalement ou partiellement) une facture impayée : met à jour la
+ * vente, la trésorerie et le solde dû du client.
+ */
+export function receivePayment({ sale_id, amount, payment_method = null, notes = '' }) {
+  const sale = db.data.sales.find((s) => s.id === Number(sale_id));
+  if (!sale) throw new Error('Vente introuvable.');
+  if (sale.sale_status === 'CANCELLED') throw new Error('Cette vente est annulée.');
+
+  const due = saleDue(sale);
+  const value = Math.max(Number(amount) || 0, 0);
+  if (value <= 0) throw new Error('Le montant encaissé doit être supérieur à 0.');
+  if (value > due + EPSILON) {
+    throw new Error(`Montant supérieur au reste dû (${formatMoney(due, db.data.settings.currency)}).`);
+  }
+
+  sale.amount_paid = Number(sale.amount_paid || 0) + value;
+  const settled = saleDue(sale) <= EPSILON;
+  sale.payment_status = settled ? 'PAID' : 'PARTIAL';
+  sale.statut = settled ? 'PAYEE' : 'PARTIELLEMENT_PAYEE';
+  if (payment_method) sale.payment_method = payment_method;
+  if (notes) sale.notes = [sale.notes, notes].filter(Boolean).join(' • ');
+
+  recordCashIn(sale, value, `Encaissement facture ${sale.number}`);
+
+  // La dette du client diminue d'autant.
+  if (sale.customer_id) {
+    const target = db.data.customers.find((c) => c.id === Number(sale.customer_id));
+    if (target) target.balance = Math.max(Number(target.balance || 0) - value, 0);
+  }
 
   db.persist();
   return enrichSale(sale);
 }
 
 /** Enregistre un mouvement de trésorerie (entrée de caisse) pour une vente. */
-function recordCashIn(sale, amount) {
+function recordCashIn(sale, amount, description = null) {
   const account = db.data.treasuryAccounts.find((a) => a.is_default) || db.data.treasuryAccounts[0];
   if (!account) return;
   account.current_balance = (account.current_balance || 0) + amount;
@@ -103,7 +175,7 @@ function recordCashIn(sale, amount) {
     amount,
     date: sale.sale_date,
     reference: sale.number,
-    description: `Vente ${sale.number}`,
+    description: description || `Vente ${sale.number}`,
     category: 'Ventes',
     reference_type: 'SALE',
     reference_id: sale.id,

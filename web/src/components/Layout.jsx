@@ -91,13 +91,19 @@ export default function Layout({ children }) {
             <select
               className="select"
               style={{ maxWidth: 190 }}
-              value={activeId ?? ''}
+              value={activeStore ? activeStore.id : ''}
               onChange={(e) => selectStore(e.target.value)}
               aria-label="Magasin actif"
             >
-              {stores.filter((s) => s.active !== false).map((s) => (
-                <option key={s.id} value={s.id}>{s.name}</option>
-              ))}
+              {!activeStore && <option value="">Chargement…</option>}
+              {stores
+                // Le magasin actif doit rester visible même s'il a été désactivé :
+                // sinon le navigateur afficherait le premier magasin de la liste et
+                // l'interface mentirait sur le magasin réellement utilisé.
+                .filter((s) => s.active !== false || s.id === activeId)
+                .map((s) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
             </select>
             {canManageStores && (
               <>

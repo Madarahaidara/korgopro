@@ -34,7 +34,7 @@ class _FakeSettings:
     def get_setting(self, key, default=None):
         return self._data.get(key, default)
 
-    def set_setting(self, key, value):
+    def set_setting(self, key, value, emit=False):
         self._data[key] = value
         return True
 

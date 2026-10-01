@@ -11,6 +11,8 @@
     "lint": "eslint src --ext .js,.jsx",
     "check:supabase": "node scripts/check-supabase.mjs",
     "test:link": "node scripts/test-web-supabase-link.mjs",
+    "test:store": "node scripts/test-web-store-sync.mjs",
+    "test:credit": "node scripts/test-web-credit-sale.mjs",
     "test:browser": "node scripts/test-web-browser-live.mjs"
   },
   "dependencies": {

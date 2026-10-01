@@ -1192,7 +1192,7 @@ Pour {quantity} unités:
                 )
                 return
 
-            if sale.payment_method != "CRÉDIT":
+            if str(sale.payment_method or "").upper() not in ("CRÉDIT", "CREDIT"):
                 QMessageBox.information(
                     self, "Info",
                     f"La vente #{sale_number} n'est pas une vente à crédit "
@@ -1207,12 +1207,15 @@ Pour {quantity} unités:
                 )
                 return
 
-            total = sale.total_amount
+            total = float(sale.total_amount or 0)
+            # On n'encaisse que le reste dû : un acompte a pu être versé à la
+            # création, il ne faut pas le redemander au client.
+            due = max(total - float(sale.amount_paid or 0), 0)
 
             confirm = QMessageBox.question(
                 self, "Confirmation",
                 f"Convertir la vente à crédit #{sale_number} en paiement en espèces ?\n\n"
-                f"Montant à encaisser : {total:,.0f} {self.currency}\n"
+                f"Montant à encaisser : {due:,.0f} {self.currency}\n"
                 f"La dette du client sera soldée et la vente passera en statut 'PAYÉ'.",
                 QMessageBox.Yes | QMessageBox.No,
                 QMessageBox.No
@@ -1241,7 +1244,8 @@ Pour {quantity} unités:
 
             # Réduire la dette du client (crédit soldé)
             if sale.customer:
-                sale.customer.balance -= total
+                sale.customer.balance = max(
+                    float(sale.customer.balance or 0) - due, 0)
 
             # Passer la vente en espèces / payée
             sale.payment_method = "ESPÈCES"
@@ -1250,10 +1254,10 @@ Pour {quantity} unités:
             sale.amount_paid = total
             sale.change_amount = 0
 
-            # Enregistrer le paiement en espèces
+            # Enregistrer le paiement en espèces (le reste dû uniquement)
             payment = Payment(
                 sale_id=sale.id,
-                amount=total,
+                amount=due,
                 payment_method="ESPÈCES",
                 collected_by=user_id,
                 notes=f"Conversion crédit -> espèces pour {sale_number}"
@@ -1271,9 +1275,9 @@ Pour {quantity} unités:
                 user_role=user_role,
                 customer_id=sale.customer_id,
                 customer_name=customer_name,
-                total_amount=total,
+                total_amount=due,
                 payment_method="ESPÈCES",
-                details=f"Vente à crédit convertie en espèces - encaissement de {total:,.2f}"
+                details=f"Vente à crédit convertie en espèces - encaissement de {due:,.2f}"
             )
 
             self.db_session.commit()
@@ -1285,7 +1289,7 @@ Pour {quantity} unités:
             QMessageBox.information(
                 self, "Succès",
                 f"La vente à crédit #{sale_number} a été encaissée en espèces "
-                f"({total:,.2f}). Le client est soldé."
+                f"({due:,.2f}). Le client est soldé."
             )
 
         except Exception as e:
@@ -1408,9 +1412,11 @@ Pour {quantity} unités:
                             f"Le produit '{product.name}' est désactivé, le stock n'a pas été restauré."
                         )
 
-            # Reverser le solde crédit du client (si vente à crédit)
-            if sale.payment_method == "CRÉDIT" and sale.customer:
-                sale.customer.balance -= sale.total_amount
+            # Reverser le solde crédit du client (si vente à crédit) : seulement
+            # la part restée impayée, moins les encaissements déjà enregistrés.
+            if str(sale.payment_method or "").upper() in ("CRÉDIT", "CREDIT") and sale.customer:
+                credit_due = max(float(sale.total_amount or 0) - float(sale.amount_paid or 0), 0)
+                sale.customer.balance = max(float(sale.customer.balance or 0) - credit_due, 0)
 
             # Suppression douce : la vente reste en base mais est marquée annulée
             sale.sale_status = "CANCELLED"

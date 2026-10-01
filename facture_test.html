@@ -1,386 +1,279 @@
 <!DOCTYPE html>
-    <html lang="fr">
-    <head>
-    <meta charset="UTF-8" />
-    <title>Facture</title>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<title>Facture Pro Forma</title>
 
-    <style>
-        *{
-            margin:0;
-            padding:0;
-            box-sizing:border-box;
-        }
+<style>
+    *{
+        margin:0;
+        padding:0;
+        box-sizing:border-box;
+    }
 
+    body{
+        background:#ffffff;
+        font-family: 'Times New Roman', Times, serif;
+        color:#1a1a1a;
+        font-size:10pt;
+        line-height:1.4;
+    }
+
+    .page{
+        width:210mm;
+        min-height:297mm;
+        margin:auto;
+        padding:10mm 10mm;
+        position:relative;
+    }
+
+    /* En-tête */
+    .header-table{
+        width:100%;
+        border-collapse:collapse;
+        margin-bottom:15px;
+    }
+    .header-table td{
+        padding:5px 0;
+        vertical-align:top;
+    }
+    .company-name{
+        font-size:22pt;
+        font-weight:bold;
+        color:#1a5490;
+    }
+    .company-info{
+        font-size:8pt;
+        color:#4b5563;
+    }
+    .title{
+        font-size:18pt;
+        font-weight:bold;
+        text-decoration:underline;
+        color:#1a5490;
+    }
+    .date{
+        font-size:10pt;
+        color:#4b5563;
+        text-align:right;
+    }
+    .invoice-number{
+        font-size:12pt;
+        font-weight:bold;
+        color:#1a5490;
+        margin-top:5px;
+    }
+
+    /* Informations client */
+    .info-block{
+        margin-bottom:10px;
+        padding:8px 0;
+    }
+    .info-block b{
+        font-weight:600;
+    }
+    .customer-info{
+        margin:8px 0;
+        font-size:10pt;
+    }
+    .customer-name{
+        font-size:11pt;
+        font-weight:bold;
+    }
+    .customer-address{
+        font-size:9pt;
+        color:#4b5563;
+    }
+    .customer-contact{
+        font-size:9pt;
+        color:#4b5563;
+    }
+    .object-title{
+        font-size:10pt;
+        font-weight:bold;
+    }
+
+    /* Tableau */
+    .main-table{
+        width:100%;
+        border-collapse:collapse;
+        margin:15px 0;
+    }
+    .main-table th{
+        background-color:#f3f4f6;
+        font-weight:bold;
+        font-size:9pt;
+        text-align:center;
+        border:1px solid #000;
+        padding:6px 4px;
+        text-transform:uppercase;
+    }
+    .main-table td{
+        border:1px solid #000;
+        padding:5px 4px;
+        font-size:10pt;
+    }
+    .main-table tr:nth-child(even){
+        background-color:#fafafa;
+    }
+    .center{
+        text-align:center;
+    }
+    .right{
+        text-align:right;
+    }
+
+    /* Total */
+    .total-row td{
+        border:none;
+        padding:8px 4px;
+    }
+    .total-label{
+        font-size:11pt;
+        font-weight:bold;
+        text-align:right;
+    }
+    .total-amount{
+        font-size:12pt;
+        font-weight:bold;
+        color:#1a5490;
+        text-align:right;
+    }
+
+    /* Montant en lettres */
+    .letters{
+        font-size:10pt;
+        font-style:italic;
+        margin:10px 0;
+        padding:8px;
+        background-color:#f9fafb;
+        border-left:3px solid #1a5490;
+    }
+
+    /* Signature */
+    .signature-block{
+        margin-top:40px;
+        text-align:right;
+    }
+    .signature-line{
+        margin-top:30px;
+        padding-top:10px;
+        border-top:1px solid #000;
+        display:inline-block;
+        min-width:200px;
+    }
+
+    /* Pied de page */
+    .footer{
+        margin-top:30px;
+        font-size:9pt;
+        color:#6b7280;
+        text-align:center;
+        border-top:1px solid #e5e7eb;
+        padding-top:15px;
+        position:absolute;
+        bottom:10mm;
+        left:10mm;
+        right:10mm;
+    }
+
+    @media print{
         body{
-            background:#ffffff;
-            font-family:Arial, Helvetica, sans-serif;
-            color:#000;
+            margin:0;
         }
-
         .page{
-            width:210mm;
-            min-height:297mm;
-            margin:auto;
-            padding:18mm 15mm;
-        }
-
-        .header{
-            text-align:center;
-            margin-bottom:25px;
-        }
-
-        .company-name{
-            font-size:24px;
-            font-weight:bold;
-            text-transform:uppercase;
-            margin-bottom:2px;
-        }
-
-        .company-slogan{
-            font-size:13px;
-            font-style:italic;
-            font-weight:bold;
-        }
-
-        .company-address{
-            font-size:12px;
-        }
-
-        .company-contact{
-            font-size:12px;
-        }
-
-        .client-section{
+            margin:0;
             width:100%;
-            margin-top:20px;
-            margin-bottom:25px;
-            font-size:13px;
-            line-height:1.35;
         }
+    }
+</style>
+</head>
 
-        .client-section b{
-            display:inline-block;
-            width:160px;
-        }
+<body>
 
-        .invoice-title{
-            text-align:center;
-            font-size:38px;
-            font-weight:bold;
-            margin:35px 0 25px;
-        }
+<div class="page">
 
-        .comments{
-            font-size:14px;
-            font-weight:bold;
-            margin-bottom:12px;
-        }
+    <!-- En-tête : nom de l'entreprise uniquement -->
+    <table class="header-table">
+        <tr>
+            <td width="50%">
+                <div class="company-name">COMTECH BF</div>
+            </td>
+            <td width="50%" style="text-align:right;">
+                <div class="date">Ouagadougou, le 26/08/2026</div>
+                <br>
+                <div class="title">FACTURE PRO FORMA</div>
+                <div class="invoice-number">N° S202608260008</div>
+            </td>
+        </tr>
+    </table>
 
-        table{
-            width:100%;
-            border-collapse:collapse;
-        }
-
-        .blue-header th{
-            background:#0047ab;
-            color:#fff;
-            border:2px solid #1c1c1c;
-            padding:8px 5px;
-            font-size:13px;
-            text-align:center;
-        }
-
-        .top-table td{
-            border:1px solid #7d7d7d;
-            height:50px;
-            padding:8px;
-            font-size:13px;
-            vertical-align:top;
-        }
-
-        .items-table{
-            margin-top:18px;
-            border:2px solid #1c1c1c;
-        }
-
-        .items-table th{
-            background:#0047ab;
-            color:white;
-            border:1px solid #1c1c1c;
-            padding:6px;
-            font-size:13px;
-            text-align:center;
-        }
-
-        .items-table td{
-            border:1px solid #9d9d9d;
-            height:24px;
-            padding:4px 6px;
-            font-size:13px;
-        }
-
-        .qty{
-            width:16%;
-            text-align:center;
-        }
-
-        .desc{
-            width:48%;
-        }
-
-        .price{
-            width:18%;
-            text-align:right;
-        }
-
-        .total{
-            width:18%;
-            text-align:right;
-        }
-
-        .summary-label{
-            text-align:right;
-            font-weight:normal;
-            padding-right:10px !important;
-        }
-
-        .summary-value{
-            text-align:right;
-            padding-right:10px !important;
-        }
-
-        .grand-total-label{
-            background:#0047ab;
-            color:white;
-            font-weight:bold;
-        }
-
-        .grand-total-value{
-            background:#0047ab;
-            color:white;
-            font-weight:bold;
-        }
-
-        .notes{
-            margin-top:18px;
-            font-size:13px;
-        }
-
-        .signature{
-            width:320px;
-            margin-top:45px;
-            margin-left:auto;
-            text-align:center;
-            font-size:14px;
-        }
-
-        .signature-line{
-            margin-top:8px;
-            border-top:1px solid #000;
-            height:1px;
-        }
-
-        @media print{
-            body{
-                margin:0;
-            }
-
-            .page{
-                margin:0;
-                width:100%;
-            }
-        }
-    </style>
-    </head>
-
-    <body>
-
-    <div class="page">
-
-        <!-- HEADER -->
-        <div class="header">
-            <div class="company-name">COMPAORE EQUIPEMENTS</div>
-        </div>
-
-        <!-- CLIENT -->
-        <div class="client-section">
-
-            <div><b>DATE :</b> 13/12/2025</div>
-
-            <div><b>Numéro Facture N° :</b> SALE00001</div>
-
-            <div><b>Code client :</b> </div>
-
-            <div><b>Nom :</b> Client général</div>
-
-            <div><b>Livré à :</b> </div>
-
-            <div><b>Entreprise :</b> </div>
-
-            <div><b>Adresse :</b> </div>
-
-            <div><b>Ville :</b> </div>
-
-            <div><b>État/Province :</b> </div>
-
-            <div><b>Code Postal :</b> </div>
-
-            <div><b>Téléphone :</b> </div>
-
-        </div>
-
-        <!-- TITLE -->
-        <div class="invoice-title">
-            Facture
-        </div>
-
-        <!-- COMMENTS -->
-        <div class="comments">
-            Commentaires ou Indications particulières :
-        </div>
-
-        <!-- TOP TABLE -->
-        <table class="top-table">
-
-            <thead class="blue-header">
-                <tr>
-                    <th>VENDEUR</th>
-                    <th>NUMÉRO B.C.</th>
-                    <th>DATE EXP.</th>
-                    <th>PORT DE TRANSIT</th>
-                    <th>POINT F.O.B.</th>
-                    <th>MODALITÉS</th>
-                </tr>
-            </thead>
-
-            <tbody>
-                <tr>
-                    <td>user015</td>
-                    <td>&nbsp;</td>
-                    <td>&nbsp;</td>
-                    <td>&nbsp;</td>
-                    <td>&nbsp;</td>
-                    <td style="text-align:center;">
-                        Paiement à la livraison.
-                    </td>
-                </tr>
-            </tbody>
-
-        </table>
-
-        <!-- ITEMS TABLE -->
-        <table class="items-table">
-
-            <thead>
-                <tr>
-                    <th class="qty">QUANTITÉ</th>
-                    <th class="desc">DESCRIPTION</th>
-                    <th class="price">PRIX UNITAIRE</th>
-                    <th class="total">TOTAL</th>
-                </tr>
-            </thead>
-
-            <tbody>
-
-                <!-- EMPTY LINES -->
-    
-                <tr>
-                    <td class="qty">4.00</td>
-                    <td class="desc">Produit Alimentation Premium 33</td>
-                    <td class="price">5,888</td>
-                    <td class="total">21,679</td>
-                </tr>
-            
-                <tr>
-                    <td class="qty">&nbsp;</td>
-                    <td class="desc">&nbsp;</td>
-                    <td class="price">&nbsp;</td>
-                    <td class="total">&nbsp;</td>
-                </tr>
-            
-                <tr>
-                    <td class="qty">&nbsp;</td>
-                    <td class="desc">&nbsp;</td>
-                    <td class="price">&nbsp;</td>
-                    <td class="total">&nbsp;</td>
-                </tr>
-            
-                <tr>
-                    <td class="qty">&nbsp;</td>
-                    <td class="desc">&nbsp;</td>
-                    <td class="price">&nbsp;</td>
-                    <td class="total">&nbsp;</td>
-                </tr>
-            
-                <tr>
-                    <td class="qty">&nbsp;</td>
-                    <td class="desc">&nbsp;</td>
-                    <td class="price">&nbsp;</td>
-                    <td class="total">&nbsp;</td>
-                </tr>
-            
-                <tr>
-                    <td class="qty">&nbsp;</td>
-                    <td class="desc">&nbsp;</td>
-                    <td class="price">&nbsp;</td>
-                    <td class="total">&nbsp;</td>
-                </tr>
-            
-                <tr>
-                    <td class="qty">&nbsp;</td>
-                    <td class="desc">&nbsp;</td>
-                    <td class="price">&nbsp;</td>
-                    <td class="total">&nbsp;</td>
-                </tr>
-            
-                <tr>
-                    <td class="qty">&nbsp;</td>
-                    <td class="desc">&nbsp;</td>
-                    <td class="price">&nbsp;</td>
-                    <td class="total">&nbsp;</td>
-                </tr>
-            
-                <!-- TOTALS -->
-                <tr>
-                    <td colspan="2"></td>
-                    <td class="summary-label grand-total-label">
-                        TOTAL
-                    </td>
-
-                    <td class="summary-value grand-total-value">
-                        25,811
-                    </td>
-                </tr>
-
-            </tbody>
-
-        </table>
-
-        <!-- NOTES -->
-        <div class="notes">
-
-            Arrêté la présente facture à la somme de 25,811
-            <br>
-
-            Émettre tous les chèques à l'ordre de COMPAORE EQUIPEMENTS
-            <br>
-
-            Si vous avez des questions concernant la présente facture,
-            n'hésitez pas à nous contacter au
-            71194209, hadi@gmail.com
-
-        </div>
-
-        <!-- SIGNATURE -->
-        <div class="signature">
-
-            Signature
-
-            <div class="signature-line"></div>
-
-        </div>
-
+    <!-- Informations client - tout à gauche -->
+    <div class="info-block">
+        <b><u>DOIT :</u></b><br>
+        <span class="customer-name">Client</span><br>
+        <span class="customer-address"></span><br>
+        
+        
     </div>
 
-    </body>
-    </html>
+    <!-- Objet -->
+    <div class="info-block">
+        <span class="object-title"><u>Objet :</u></span> <span style="font-size:10pt;">Achat et réparation</span>
+    </div>
+
+    <!-- Tableau des articles -->
+    <table class="main-table">
+        <thead>
+            <tr>
+                <th style="width:8%;">N°</th>
+                <th style="width:52%;">DÉSIGNATION</th>
+                <th style="width:10%;">QTÉ</th>
+                <th style="width:15%;">PRIX UNIT.</th>
+                <th style="width:15%;">TOTAL</th>
+            </tr>
+        </thead>
+        <tbody>
+            
+            <tr>
+                <td class="center">1</td>
+                <td>SAC ENFANT 2500</td>
+                <td class="center">1</td>
+                <td class="right">2,500</td>
+                <td class="right">2,500</td>
+            </tr>
+            
+        </tbody>
+        <tfoot>
+            <tr>
+                <td colspan="3" style="border:none;padding:10px 4px;"></td>
+                <td class="total-label" style="border:none;padding:10px 4px;">Total net :</td>
+                <td class="total-amount" style="border:none;padding:10px 4px;">2,500 FCFA</td>
+            </tr>
+        </tfoot>
+    </table>
+
+    <!-- Montant en lettres -->
+    <div class="letters">
+        <b>Arrêté à la somme de :</b> deux mille cinq cents FCFA (2,500) francs CFA
+    </div>
+
+    <!-- Signature -->
+    <div class="signature-block">
+        <div style="font-size:10pt;font-weight:bold;">Le Gérant</div>
+        <div class="signature-line">
+            <span style="font-size:10pt;">TIENDREBEOGO François</span>
+        </div>
+    </div>
+
+    <!-- Pied de page -->
+    <div class="footer">
+        Merci de votre confiance !<br>
+        SAABA | Tél: +226 64651801 | Email: CHECMOTECH@GMAIL.COM<br>
+        BP: BP1234 | IFU: N°654656646465+ | RCCM: RCCM3269811
+    </div>
+
+</div>
+
+</body>
+</html>

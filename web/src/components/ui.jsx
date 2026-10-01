@@ -8,7 +8,7 @@ export function Badge({ status }) {
   const s = String(status || '').toUpperCase();
   const success = ['ACTIF', 'PAID', 'PAYEE', 'COMPLETED', 'EMISE', 'ACCEPTEE', 'ACTIVE', 'EN_STOCK', 'RESOLU'];
   const danger = ['INACTIF', 'EXPIRED', 'REFUSEE', 'ANNULEE', 'RUPTURE', 'DESACTIVE', 'OUT_OF_STOCK', 'EN_RETARD', 'NON_PAYEE'];
-  const warning = ['EN_ATTENTE', 'BROUILLON', 'PENDING', 'PARTIELLEMENT', 'ENVOYEE', 'LOW_STOCK', 'LOW'];
+  const warning = ['EN_ATTENTE', 'BROUILLON', 'PENDING', 'PARTIAL', 'PARTIELLEMENT', 'PARTIELLEMENT_PAYEE', 'ENVOYEE', 'LOW_STOCK', 'LOW'];
   const info = ['CONVERTIE', 'EN_ATTENTE_RECU'];
   let cls = 'badge-gray';
   if (success.includes(s)) cls = 'badge-success';
