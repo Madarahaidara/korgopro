@@ -1,0 +1,5 @@
+Diagnostic initial : ERR_CONNECTION_REFUSED = aucun serveur web en ecoute.
+RESOLU le 01/10/2026 : Node.js v22.17.0 installe dans C:\tools\nodejs,
+npm install OK, serveur Vite demarre sur http://localhost:5173.
+
+

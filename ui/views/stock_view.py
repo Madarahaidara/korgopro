@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (
     QSpinBox, QCheckBox, QDialog, QDialogButtonBox, QStyle, QProgressDialog, QScrollArea,
     QFileDialog, QMenu
 )
-from PySide6.QtCore import Qt, Signal, QDate, QTimer
+from PySide6.QtCore import Qt, Signal, QDate, QTimer, QThread
 from PySide6.QtGui import QFont, QColor, QIcon, QPixmap, QAction
 from PySide6 import QtGui
 from datetime import datetime, timedelta
@@ -40,6 +40,98 @@ from utils.settings_manager import SettingsManager
 
 # Source unique des rôles et permissions (partagée avec le frontend web).
 from core.permissions import can
+
+
+class StockStatCard(QFrame):
+    """Carte statique de résumé pour le stock."""
+
+    def __init__(self, title, value, subtitle, accent="blue"):
+        super().__init__()
+        self.setObjectName("stockStatCard")
+        self.setProperty("accent", accent)
+        self.setMinimumHeight(110)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setSpacing(6)
+
+        title_label = QLabel(title)
+        title_label.setObjectName("stockStatTitle")
+
+        value_label = QLabel(value)
+        value_label.setObjectName("stockStatValue")
+
+        subtitle_label = QLabel(subtitle)
+        subtitle_label.setObjectName("stockStatSubtitle")
+
+        layout.addWidget(title_label)
+        layout.addWidget(value_label)
+        layout.addWidget(subtitle_label)
+
+        self.setStyleSheet("""
+            #stockStatCard {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #ffffff, stop:1 #f8fafc);
+                border: 1px solid #dfe7f1;
+                border-radius: 14px;
+                box-shadow: 0 4px 14px rgba(15, 23, 42, 0.04);
+            }
+            #stockStatCard[accent="blue"] {
+                border-top: 4px solid #2563eb;
+            }
+            #stockStatCard[accent="green"] {
+                border-top: 4px solid #16a34a;
+            }
+            #stockStatCard[accent="orange"] {
+                border-top: 4px solid #f59e0b;
+            }
+            #stockStatCard[accent="red"] {
+                border-top: 4px solid #ef4444;
+            }
+            #stockStatTitle {
+                color: #64748b;
+                font-size: 11px;
+                font-weight: 700;
+                text-transform: uppercase;
+                letter-spacing: 0.8px;
+            }
+            #stockStatValue {
+                color: #0f172a;
+                font-size: 30px;
+                font-weight: 800;
+                margin-top: 2px;
+            }
+            #stockStatSubtitle {
+                color: #475569;
+                font-size: 12px;
+                font-weight: 600;
+            }
+        """)
+
+
+class StockDataLoader(QThread):
+    """Charge les produits du stock hors du thread UI pour éviter les gels."""
+
+    data_ready = Signal(object)
+    failed = Signal(str)
+
+    def __init__(self, store_id=None):
+        super().__init__()
+        self.store_id = store_id
+
+    def run(self):
+        db = SessionLocal()
+        try:
+            query = db.query(Product).options(joinedload(Product.supplier))
+            if self.store_id:
+                query = query.filter(Product.store_id == self.store_id)
+            products = query.order_by(Product.name).all()
+            self.data_ready.emit(products)
+        except Exception as exc:  # pragma: no cover - signalé dans l'interface
+            self.failed.emit(str(exc))
+        finally:
+            db.close()
+
 
 class StockView(QWidget):
     """Vue complète de gestion des stocks avec toutes les fonctionnalités"""
@@ -92,11 +184,13 @@ class StockView(QWidget):
         # Initialiser les widgets qui seront créés plus tard
         self._init_widget_references()
         
-        # Charger les données initiales
-        self.load_data()
-        
+        # Charger les données initiales hors du thread UI pour éviter les gels.
+        self._data_loader = None
+        self._loading_stock = False
+
         self.init_ui()
         self.apply_light_theme()
+        self.load_data_async()
     
     def get_setting(self, key, default=None):
         """Récupère un paramètre spécifique"""
@@ -192,12 +286,34 @@ class StockView(QWidget):
 
     def reload_for_active_store(self):
         """Recharger produits / mouvements / ventes / statistiques du magasin."""
-        self.load_data()
-        self.rebuild_category_filter()
-        self.filter_products()          # inclut load_products_table + update_stats
+        self.load_data_async()
         self.load_movements_table()
         self.load_sales_table()
         self.update_store_info()
+
+    def load_data_async(self):
+        """Charge les produits en arrière-plan pour éviter les gels UI."""
+        if self._loading_stock and self._data_loader and self._data_loader.isRunning():
+            return
+        self._loading_stock = True
+        self._data_loader = StockDataLoader(self.active_store_id)
+        self._data_loader.data_ready.connect(self._on_data_loaded)
+        self._data_loader.failed.connect(self._on_data_load_failed)
+        self._data_loader.start()
+
+    def _on_data_loaded(self, products):
+        """Met à jour les données produit après un chargement hors thread."""
+        self._loading_stock = False
+        self.products = list(products or [])
+        self.filtered_products = self.products.copy()
+        self.rebuild_category_filter()
+        self.filter_products()
+        self.update_store_info()
+
+    def _on_data_load_failed(self, message):
+        """Affiche l'échec de chargement sans bloquer l'interface."""
+        self._loading_stock = False
+        print(f"[STOCK] Chargement impossible: {message}")
 
     def rebuild_category_filter(self):
         """Reconstruire la liste des catégories du magasin actif."""
@@ -229,7 +345,7 @@ class StockView(QWidget):
 
         # La liste ou le magasin actif a pu changer : tout recharger.
         self.active_store_id = get_active_store_id(self.db_session)
-        self.load_data()
+        self.load_data_async()
         self.load_stores_combo()
         self.rebuild_category_filter()
         self.filter_products()
@@ -835,11 +951,12 @@ Pour {quantity} unités:
         
         # Barre d'outils ventes
         toolbar = QFrame()
-        toolbar.setObjectName("toolbarFrame")
+        toolbar.setObjectName("salesToolbar")
         toolbar_layout = QHBoxLayout(toolbar)
         
         # Filtres
         filter_group = QGroupBox("Filtres")
+        filter_group.setObjectName("salesFilterGroup")
         filter_layout = QHBoxLayout(filter_group)
         
         # Filtre par date
@@ -885,6 +1002,7 @@ Pour {quantity} unités:
         
         # Statistiques rapides
         stats_group = QGroupBox("Statistiques")
+        stats_group.setObjectName("salesStatsGroup")
         stats_layout = QHBoxLayout(stats_group)
         
         self.sales_count_label = QLabel("Ventes: 0")
@@ -904,6 +1022,7 @@ Pour {quantity} unités:
         
         # Barre d'actions (avec impression et suppression)
         actions_toolbar = QFrame()
+        actions_toolbar.setObjectName("salesActions")
         actions_layout = QHBoxLayout(actions_toolbar)
         
         # Bouton d'impression
@@ -992,6 +1111,91 @@ Pour {quantity} unités:
         
         layout.addWidget(self.sales_table, 1)
         
+        tab.setStyleSheet("""
+            QWidget {
+                font-family: "Segoe UI", Arial, sans-serif;
+                color: #0f172a;
+            }
+            #salesToolbar, #salesActions {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #f8fbff, stop:1 #eef4ff);
+                border: 1px solid #dfe7f1;
+                border-radius: 16px;
+            }
+            #salesFilterGroup, #salesStatsGroup {
+                background: #ffffff;
+                border: 1px solid #e2e8f0;
+                border-radius: 14px;
+                color: #0f172a;
+            }
+            QGroupBox {
+                font-weight: 700;
+                color: #0f172a;
+            }
+            QDateEdit, QComboBox, QLineEdit {
+                background: #f8fafc;
+                border: 1px solid #ccd6e3;
+                border-radius: 10px;
+                padding: 8px 10px;
+                color: #0f172a;
+            }
+            QDateEdit:hover, QComboBox:hover {
+                border-color: #9bb8eb;
+            }
+            QPushButton {
+                padding: 9px 14px;
+                border-radius: 10px;
+                font-weight: 600;
+                border: 1px solid #dfe7f1;
+                background: #f1f5f9;
+                color: #0f172a;
+            }
+            QPushButton:hover {
+                background: #e2e8f0;
+            }
+            #printButton {
+                background: #2563eb;
+                color: white;
+                border: none;
+            }
+            #printButton:hover { background: #1d4ed8; }
+            #deleteSaleButton {
+                background: #fff1f2;
+                color: #b91c1c;
+                border: 1px solid #fecdd3;
+            }
+            #deleteSaleButton:hover { background: #ffe4e6; }
+            #convertCashButton {
+                background: #ecfdf5;
+                color: #166534;
+                border: 1px solid #bbf7d0;
+            }
+            #convertCashButton:hover { background: #d1fae5; }
+            #salesTable {
+                background: #ffffff;
+                border: 1px solid #dfe7f1;
+                border-radius: 12px;
+                alternate-background-color: #f8fafc;
+                selection-background-color: #dbeafe;
+                selection-color: #0f172a;
+                gridline-color: #e2e8f0;
+            }
+            QHeaderView::section {
+                background: #f8fafc;
+                color: #334155;
+                font-weight: 700;
+                padding: 10px 8px;
+                border: none;
+                border-right: 1px solid #e2e8f0;
+                border-bottom: 1px solid #e2e8f0;
+            }
+            #salesStatsLabel {
+                color: #0f172a;
+                font-size: 13px;
+                font-weight: 700;
+            }
+        """)
+
         # Charger les données initiales
         self.load_sales_table()
         
@@ -1705,155 +1909,286 @@ Pour {quantity} unités:
         self.load_sales_table()
     
     def create_products_tab(self):
-        """Créer l'onglet de gestion des produits avec désactivation"""
+        """Créer l'onglet de gestion des produits avec un design plus lisible."""
         tab = QWidget()
-        layout = QVBoxLayout(tab)
-        
-        # Barre d'outils produits
-        toolbar = QFrame()
-        toolbar.setObjectName("toolbarFrame")
-        toolbar_layout = QHBoxLayout(toolbar)
-        
-        # Recherche
-        search_group = QGroupBox("Recherche")
-        search_layout = QHBoxLayout(search_group)
-        
-        self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("Nom, catégorie, code, fournisseur...")
-        self.search_input.setObjectName("searchInput")
-        self.search_input.textChanged.connect(self.filter_products)
-        
-        self.category_filter = QComboBox()
-        self.category_filter.addItem("Toutes catégories")
-        
-        # Récupérer les catégories depuis la base de données (magasin actif)
-        categories = self._scoped_column_query(Product.category).distinct().all()
-        for category in categories:
-            if category[0]:
-                self.category_filter.addItem(category[0])
-        
-        self.category_filter.currentTextChanged.connect(self.filter_products)
-        
-        # NOUVEAU: Filtre pour afficher les produits inactifs
-        self.show_inactive_checkbox = QCheckBox("Afficher les produits inactifs")
-        self.show_inactive_checkbox.stateChanged.connect(self.filter_products)
-        
-        search_layout.addWidget(QLabel("Recherche:"))
-        search_layout.addWidget(self.search_input)
-        search_layout.addWidget(QLabel("Catégorie:"))
-        search_layout.addWidget(self.category_filter)
-        search_layout.addWidget(self.show_inactive_checkbox)
-        
-        # Boutons d'actions
-        actions_group = QGroupBox("Actions")
-        actions_layout = QHBoxLayout(actions_group)
-        
-        self.add_product_btn = QPushButton("Nouveau Produit")
-        self.add_product_btn.setObjectName("addButton")
-        self.add_product_btn.setIcon(self.style().standardIcon(QStyle.SP_FileIcon))
-        self.add_product_btn.clicked.connect(self.show_add_product_dialog)
-        
-        self.edit_product_btn = QPushButton("Modifier")
-        self.edit_product_btn.setObjectName("editButton")
-        self.edit_product_btn.setIcon(self.style().standardIcon(QStyle.SP_FileDialogDetailedView))
-        self.edit_product_btn.clicked.connect(self.edit_selected_product)
-        
-        self.delete_product_btn = QPushButton("Désactiver")
-        self.delete_product_btn.setObjectName("deleteButton")
-        self.delete_product_btn.setIcon(self.style().standardIcon(QStyle.SP_TrashIcon))
-        self.delete_product_btn.setToolTip("Désactiver le produit (suppression logique)")
-        self.delete_product_btn.clicked.connect(self.deactivate_selected_product)
-        
-        # NOUVEAU: Bouton Réactiver
-        self.reactivate_product_btn = QPushButton("🔄 Réactiver")
-        self.reactivate_product_btn.setObjectName("reactivateButton")
-        self.reactivate_product_btn.setIcon(self.style().standardIcon(QStyle.SP_BrowserReload))
-        self.reactivate_product_btn.setToolTip("Réactiver un produit désactivé")
-        self.reactivate_product_btn.clicked.connect(self.reactivate_selected_product)
-        self.reactivate_product_btn.setEnabled(False)
-        
-        self.inventory_btn = QPushButton("Inventaire")
-        self.inventory_btn.setObjectName("inventoryButton")
-        self.inventory_btn.setIcon(self.style().standardIcon(QStyle.SP_ComputerIcon))
-        self.inventory_btn.clicked.connect(self.show_inventory_dialog)
-        
-        self.refresh_btn = QPushButton("Actualiser")
-        self.refresh_btn.setObjectName("refreshButton")
-        self.refresh_btn.setIcon(self.style().standardIcon(QStyle.SP_BrowserReload))
-        self.refresh_btn.clicked.connect(self.refresh_data)
-        
-        actions_layout.addWidget(self.add_product_btn)
-        actions_layout.addWidget(self.edit_product_btn)
-        actions_layout.addWidget(self.delete_product_btn)
-        actions_layout.addWidget(self.reactivate_product_btn)
-        actions_layout.addWidget(self.inventory_btn)
-        actions_layout.addWidget(self.refresh_btn)
-        
-        toolbar_layout.addWidget(search_group, 70)
-        toolbar_layout.addWidget(actions_group, 30)
-        
-        # Sélecteur de magasin (multi-magasins) : détermine le stock affiché
-        store_group = QGroupBox("Magasin")
-        store_layout = QHBoxLayout(store_group)
+        tab_layout = QVBoxLayout(tab)
+        tab_layout.setContentsMargins(20, 20, 20, 20)
+        tab_layout.setSpacing(16)
+
+        # ===== HEADER =====
+        header = QFrame()
+        header.setObjectName("stockHeader")
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(16, 12, 16, 12)
+
+        title = QLabel("Gestion du stock")
+        title.setObjectName("stockTitle")
+        header_layout.addWidget(title)
+        header_layout.addStretch()
 
         self.store_combo = QComboBox()
+        self.store_combo.setFixedWidth(220)
         self.store_combo.setToolTip("Magasin dont le stock est affiché et modifié")
         self.store_combo.currentIndexChanged.connect(self.on_store_changed)
 
-        self.manage_stores_btn = QPushButton("🏬 Gérer les magasins")
-        self.manage_stores_btn.setObjectName("storeButton")
-        self.manage_stores_btn.setToolTip("Créer, modifier, activer ou supprimer un magasin")
-        self.manage_stores_btn.clicked.connect(self.show_stores_dialog)
+        self.manage_stores_btn = QPushButton("Gérer les magasins")
+        self.manage_stores_btn.setObjectName("secondaryButton")
         self.manage_stores_btn.setVisible(self.can_manage_stores)
+        self.manage_stores_btn.clicked.connect(self.show_stores_dialog)
 
         self.store_info_label = QLabel("")
         self.store_info_label.setObjectName("storeInfoLabel")
 
-        store_layout.addWidget(QLabel("Magasin actif:"))
-        store_layout.addWidget(self.store_combo, 1)
-        store_layout.addWidget(self.store_info_label, 1)
-        store_layout.addWidget(self.manage_stores_btn)
+        header_layout.addWidget(self.store_info_label)
+        header_layout.addWidget(self.store_combo)
+        header_layout.addWidget(self.manage_stores_btn)
 
-        layout.addWidget(store_group)
-        layout.addWidget(toolbar)
+        tab_layout.addWidget(header)
 
-        # Remplir le sélecteur de magasin (magasin actif présélectionné)
+        # ===== CARTES KPI =====
+        stats_widget = QWidget()
+        stats_layout = QGridLayout(stats_widget)
+        stats_layout.setContentsMargins(0, 0, 0, 0)
+        stats_layout.setSpacing(12)
+
+        total_products = len(self.products) if self.products else 0
+        low_stock = sum(1 for p in self.products if getattr(p, "is_low_stock", False))
+        out_of_stock = sum(1 for p in self.products if getattr(p, "is_out_of_stock", False))
+        total_value = sum(getattr(p, "stock_value", 0) for p in self.products)
+
+        stats_layout.addWidget(
+            StockStatCard("Produits", str(total_products), "Total enregistré", "blue"),
+            0, 0
+        )
+        stats_layout.addWidget(
+            StockStatCard("Valeur stock", f"{total_value:,.0f} {self.currency}", "Valeur estimée", "green"),
+            0, 1
+        )
+        stats_layout.addWidget(
+            StockStatCard("Seuil critique", str(low_stock), "Produits bas", "orange"),
+            0, 2
+        )
+        stats_layout.addWidget(
+            StockStatCard("Rupture", str(out_of_stock), "À réapprovisionner", "red"),
+            0, 3
+        )
+
+        tab_layout.addWidget(stats_widget)
+
+        # ===== FILTRES =====
+        filters = QFrame()
+        filters.setObjectName("stockFilters")
+        filters_layout = QHBoxLayout(filters)
+        filters_layout.setContentsMargins(14, 12, 14, 12)
+        filters_layout.setSpacing(12)
+
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("Recherche produit, code, catégorie, fournisseur...")
+        self.search_input.setObjectName("stockSearchInput")
+        self.search_input.textChanged.connect(self.filter_products)
+
+        self.category_filter = QComboBox()
+        self.category_filter.addItem("Toutes catégories")
+        categories = self._scoped_column_query(Product.category).distinct().all()
+        for category in categories:
+            if category[0]:
+                self.category_filter.addItem(category[0])
+        self.category_filter.currentTextChanged.connect(self.filter_products)
+
+        self.status_filter = QComboBox()
+        self.status_filter.addItem("Tous les statuts")
+        self.status_filter.addItem("Actif")
+        self.status_filter.addItem("Seuil critique")
+        self.status_filter.addItem("Rupture")
+        self.status_filter.addItem("Inactif")
+        self.status_filter.currentTextChanged.connect(self.filter_products)
+
+        self.show_inactive_checkbox = QCheckBox("Afficher inactifs")
+        self.show_inactive_checkbox.stateChanged.connect(self.filter_products)
+
+        filters_layout.addWidget(QLabel("Recherche"))
+        filters_layout.addWidget(self.search_input, 2)
+        filters_layout.addWidget(QLabel("Catégorie"))
+        filters_layout.addWidget(self.category_filter, 1)
+        filters_layout.addWidget(QLabel("Statut"))
+        filters_layout.addWidget(self.status_filter, 1)
+        filters_layout.addWidget(self.show_inactive_checkbox)
+        filters_layout.addStretch()
+
+        tab_layout.addWidget(filters)
+
+        # ===== ACTIONS =====
+        actions = QFrame()
+        actions.setObjectName("stockActions")
+        actions_layout = QHBoxLayout(actions)
+        actions_layout.setContentsMargins(14, 12, 14, 12)
+        actions_layout.setSpacing(10)
+
+        self.add_product_btn = QPushButton("Nouveau produit")
+        self.add_product_btn.setObjectName("primaryButton")
+        self.add_product_btn.clicked.connect(self.show_add_product_dialog)
+
+        self.inventory_btn = QPushButton("Inventaire")
+        self.inventory_btn.setObjectName("secondaryButton")
+        self.inventory_btn.clicked.connect(self.show_inventory_dialog)
+
+        self.refresh_btn = QPushButton("Actualiser")
+        self.refresh_btn.setObjectName("secondaryButton")
+        self.refresh_btn.clicked.connect(self.refresh_data)
+
+        self.edit_product_btn = QPushButton("Modifier")
+        self.edit_product_btn.setObjectName("secondaryButton")
+        self.edit_product_btn.clicked.connect(self.edit_selected_product)
+
+        self.delete_product_btn = QPushButton("Désactiver")
+        self.delete_product_btn.setObjectName("dangerButton")
+        self.delete_product_btn.clicked.connect(self.deactivate_selected_product)
+
+        self.reactivate_product_btn = QPushButton("Réactiver")
+        self.reactivate_product_btn.setObjectName("secondaryButton")
+        self.reactivate_product_btn.clicked.connect(self.reactivate_selected_product)
+        self.reactivate_product_btn.setEnabled(False)
+
+        actions_layout.addWidget(self.add_product_btn)
+        actions_layout.addWidget(self.inventory_btn)
+        actions_layout.addWidget(self.refresh_btn)
+        actions_layout.addWidget(self.edit_product_btn)
+        actions_layout.addWidget(self.delete_product_btn)
+        actions_layout.addWidget(self.reactivate_product_btn)
+        actions_layout.addStretch()
+
+        tab_layout.addWidget(actions)
+
         self.load_stores_combo()
-        
-        # Tableau des produits
+
         self.products_table = QTableWidget()
-        self.products_table.setObjectName("productsTable")
-        
-        # Configurer le tableau
+        self.products_table.setObjectName("stockTable")
         self.setup_products_table_structure()
-        
-        layout.addWidget(self.products_table, 1)
-        
+        tab_layout.addWidget(self.products_table, 1)
+
+        tab.setStyleSheet("""
+            QWidget {
+                font-family: "Segoe UI", Arial, sans-serif;
+                color: #0f172a;
+            }
+            #stockHeader {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #f8fbff, stop:1 #eef4ff);
+                border: 1px solid #dfe7f1;
+                border-radius: 16px;
+            }
+            #stockTitle {
+                color: #0f172a;
+                font-size: 27px;
+                font-weight: 800;
+                letter-spacing: -0.4px;
+            }
+            #stockFilters, #stockActions {
+                background: #ffffff;
+                border: 1px solid #e2e8f0;
+                border-radius: 14px;
+            }
+            #stockSearchInput, QComboBox, QLineEdit {
+                background: #f8fafc;
+                border: 1px solid #ccd6e3;
+                border-radius: 10px;
+                padding: 9px 12px;
+                color: #0f172a;
+                selection-background-color: #bfdbfe;
+            }
+            QComboBox:hover, QLineEdit:hover {
+                border-color: #9bb8eb;
+            }
+            QComboBox:focus, QLineEdit:focus {
+                border-color: #5b8def;
+                background: white;
+            }
+            #primaryButton {
+                background: #2563eb;
+                color: #ffffff;
+                border: none;
+                border-radius: 10px;
+                padding: 10px 18px;
+                font-weight: 700;
+            }
+            #primaryButton:hover { background: #1d4ed8; }
+            #secondaryButton {
+                background: #f1f5f9;
+                color: #0f172a;
+                border: 1px solid #dfe7f1;
+                border-radius: 10px;
+                padding: 9px 14px;
+                font-weight: 600;
+            }
+            #secondaryButton:hover { background: #e2e8f0; }
+            #dangerButton {
+                background: #fff1f2;
+                color: #b91c1c;
+                border: 1px solid #fecdd3;
+                border-radius: 10px;
+                padding: 9px 14px;
+                font-weight: 700;
+            }
+            #dangerButton:hover { background: #ffe4e6; }
+            #stockTable {
+                background: #ffffff;
+                border: 1px solid #dfe7f1;
+                border-radius: 14px;
+                alternate-background-color: #f8fafc;
+                selection-background-color: #dbeafe;
+                selection-color: #0f172a;
+                gridline-color: #e2e8f0;
+            }
+            QHeaderView::section {
+                background: #f8fafc;
+                color: #334155;
+                font-weight: 700;
+                padding: 11px 8px;
+                border: none;
+                border-right: 1px solid #e2e8f0;
+                border-bottom: 1px solid #e2e8f0;
+            }
+            QTableWidget::item {
+                padding: 9px 7px;
+                color: #0f172a;
+            }
+            QLabel {
+                color: #334155;
+            }
+            QCheckBox {
+                color: #334155;
+                font-weight: 600;
+            }
+            #storeInfoLabel {
+                color: #475569;
+                font-size: 12px;
+                font-weight: 600;
+            }
+        """)
+
         return tab
     
     def setup_products_table_structure(self):
-        """Configurer uniquement la structure du tableau des produits"""
+        """Configurer la structure du tableau principal du stock."""
         headers = [
-            "ID", "Code", "Nom", "Catégorie", "Quantité", "Prix Achat", 
+            "ID", "Code", "Nom", "Catégorie", "Quantité", "Prix Achat",
             "Prix Vente", "Marge %", "Valeur Stock", "Fournisseur", "Statut", "Actions"
         ]
-        
+
         self.products_table.setColumnCount(len(headers))
         self.products_table.setHorizontalHeaderLabels(headers)
-        
-        header = self.products_table.horizontalHeader()
-        header.setSectionResizeMode(2, QHeaderView.Stretch)  # Nom
-        header.setSectionResizeMode(9, QHeaderView.Stretch)  # Fournisseur
-        header.setSectionResizeMode(11, QHeaderView.ResizeToContents)  # Actions
-        
         self.products_table.setAlternatingRowColors(True)
         self.products_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.products_table.setSelectionMode(QTableWidget.SingleSelection)
-        
-        # Connecter la sélection
+        self.products_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.products_table.setSortingEnabled(True)
+
+        header = self.products_table.horizontalHeader()
+        header.setSectionResizeMode(2, QHeaderView.Stretch)
+        header.setSectionResizeMode(9, QHeaderView.Stretch)
+        header.setSectionResizeMode(11, QHeaderView.ResizeToContents)
+
         self.products_table.itemSelectionChanged.connect(self.on_product_selection_changed)
-        
-        # Charger les produits
         self.load_products_table()
     
     def on_product_selection_changed(self):
@@ -2012,31 +2347,43 @@ Pour {quantity} unités:
             self.products_table.setCellWidget(row, 11, actions_widget)
     
     def filter_products(self):
-        """Filtrer les produits (incluant option d'affichage des inactifs)"""
+        """Filtrer les produits (incluant option d'affichage des inactifs)."""
         search_text = self.search_input.text().lower() if self.search_input else ""
         category_filter = self.category_filter.currentText() if self.category_filter else "Toutes catégories"
+        status_filter = self.status_filter.currentText() if hasattr(self, 'status_filter') and self.status_filter else "Tous les statuts"
         show_inactive = self.show_inactive_checkbox.isChecked() if hasattr(self, 'show_inactive_checkbox') else False
-        
+
         self.filtered_products = []
-        
+
         for product in self.products:
-            # Filtrer les produits inactifs si nécessaire
             if not show_inactive and not product.active:
                 continue
-                
+
             supplier_name = product.supplier.name.lower() if product.supplier else ""
-            
-            matches_search = (search_text in product.name.lower() or 
-                            search_text in product.category.lower() or
-                            search_text in supplier_name or
-                            (product.code and search_text in product.code.lower()))
-            
-            matches_category = (category_filter == "Toutes catégories" or 
-                              product.category == category_filter)
-            
-            if matches_search and matches_category:
+            matches_search = (
+                search_text in product.name.lower() or
+                search_text in product.category.lower() or
+                search_text in supplier_name or
+                (product.code and search_text in product.code.lower())
+            )
+
+            matches_category = (
+                category_filter == "Toutes catégories" or product.category == category_filter
+            )
+
+            matches_status = True
+            if status_filter == "Actif":
+                matches_status = product.active and not product.is_low_stock and not product.is_out_of_stock
+            elif status_filter == "Seuil critique":
+                matches_status = bool(product.is_low_stock)
+            elif status_filter == "Rupture":
+                matches_status = bool(product.is_out_of_stock)
+            elif status_filter == "Inactif":
+                matches_status = not product.active
+
+            if matches_search and matches_category and matches_status:
                 self.filtered_products.append(product)
-        
+
         self.load_products_table()
         self.update_stats()
     
@@ -4023,17 +4370,14 @@ Pour {quantity} unités:
         QMessageBox.information(self, "Succès", f"Données exportées en JSON vers:\n{filename}")
     
     def refresh_data(self):
-        """Actualiser les données"""
+        """Actualiser les données sans figer l'interface."""
         try:
-            self.load_data()
+            self.load_data_async()
             self.filter_products()
             self.load_movements_table()
             self.load_expenses_table()
             self.load_sales_table()
             self.update_stats()
-            
-            QMessageBox.information(self, "Actualisation", "Données actualisées avec succès!")
-            
         except Exception as e:
             QMessageBox.critical(self, "Erreur", f"Erreur lors de l'actualisation: {str(e)}")
     

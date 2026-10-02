@@ -1,10 +1,12 @@
 venv/
+.venv/
 .env
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 build/
+*.egg-info/
 
 # --- Données locales, secrets et journaux (non versionnés) ---
 company_settings.json
