@@ -4,9 +4,56 @@ from PySide6.QtWidgets import (
     QSpacerItem, QApplication, QCheckBox
 )
 from PySide6.QtCore import Signal, Qt, QTimer, QPropertyAnimation, QEasingCurve, QSize, QThread, QRect, QPoint
-from PySide6.QtGui import QMovie, QPainter, QColor, QPen, QPixmap, QFont, QIcon, QLinearGradient, QBrush, QScreen, QFontDatabase
+from PySide6.QtGui import (
+    QMovie, QPainter, QColor, QPen, QPixmap, QFont, QIcon,
+    QLinearGradient, QBrush, QScreen, QFontDatabase, QImage, QImageReader,
+)
 import time
 import os
+
+
+def charger_pixmap_net(chemin, cote):
+    """Retourne un pixmap net à la taille voulue, ou None si illisible.
+
+    ``QPixmap(chemin)`` sur un fichier ``.ico`` multi-tailles ne lit que la
+    PREMIÈRE frame (16x16 pour ``ui/icons/logo.ico``) : l'image est ensuite
+    agrandie ~9 fois et paraît floue, même avec SmoothTransformation. On
+    parcourt donc toutes les frames, on garde la plus haute résolution
+    (256x256) et on la RÉDUIT vers la taille demandée : une réduction reste
+    nette, une agrandissement ne le sera jamais.
+
+    Le calcul se fait en pixels physiques (devicePixelRatio de l'écran) pour
+    que le logo reste net sur les écrans densifiés (125 %, 150 %...), le
+    ratio étant ensuite renseigné sur le pixmap pour que Qt l'affiche à la
+    bonne taille logique.
+    """
+    if not chemin or not os.path.exists(chemin):
+        return None
+
+    # Frame la plus grande : QImageReader.imageCount() / jumpToImage().
+    lecteur = QImageReader(chemin)
+    image = QImage()
+    for index in range(max(lecteur.imageCount(), 1)):
+        lecteur.jumpToImage(index)
+        candidate = lecteur.read()
+        if candidate.isNull():
+            continue
+        if image.isNull() or candidate.width() > image.width():
+            image = candidate
+    if image.isNull():
+        return None
+
+    ecran = QApplication.primaryScreen()
+    ratio = ecran.devicePixelRatio() if ecran else 1.0
+    cible = max(1, int(round(cote * ratio)))
+
+    pixmap = QPixmap.fromImage(image)
+    # Jamais d'agrandissement : en dessous de la cible on garde la source
+    # native (nette), le label se centre autour grâce à son alignement.
+    if pixmap.width() > cible:
+        pixmap = pixmap.scaled(cible, cible, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+    pixmap.setDevicePixelRatio(ratio)
+    return pixmap
 
 
 class LoadingWidget(QWidget):
@@ -153,9 +200,10 @@ class LeftPanel(QWidget):
         # Charger le logo depuis le fichier
         logo_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "icons", "logo.ico")
         if os.path.exists(logo_path):
-            pixmap = QPixmap(logo_path)
-            if not pixmap.isNull():
-                self.logo_label.setPixmap(pixmap.scaled(140, 140, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            # Frame haute résolution + réduction nette (cf. charger_pixmap_net)
+            pixmap = charger_pixmap_net(logo_path, 140)
+            if pixmap is not None:
+                self.logo_label.setPixmap(pixmap)
             else:
                 self.logo_label.setText("K")
                 self.logo_label.setStyleSheet("color: white; font-size: 120px; font-weight: bold;")
