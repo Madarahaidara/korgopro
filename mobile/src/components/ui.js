@@ -5,8 +5,11 @@ import React, { useRef } from 'react';
 import {
   ActivityIndicator,
   Animated,
+  KeyboardAvoidingView,
   Modal as RNModal,
+  Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -54,17 +57,17 @@ export function Field({ label, hint, children }) {
 }
 
 /** Champ texte (clavier configurable). */
-export function Input({ value, onChangeText, style, ...rest }) {
-  return (
-    <TextInput
-      value={value}
-      onChangeText={onChangeText}
-      placeholderTextColor={colors.textLight}
-      style={[styles.input, style]}
-      {...rest}
-    />
-  );
-}
+export const Input = React.forwardRef(({ value, onChangeText, style, ...rest }, ref) => (
+  <TextInput
+    ref={ref}
+    value={value}
+    onChangeText={onChangeText}
+    placeholderTextColor={colors.textLight}
+    style={[styles.input, style]}
+    {...rest}
+  />
+));
+Input.displayName = 'Input';
 
 const BUTTON_VARIANTS = {
   primary: { bg: colors.primary, text: '#ffffff', border: colors.primary },
@@ -229,7 +232,10 @@ export function KeyValue({ label, value, strong }) {
 export function Modal({ visible, title, onClose, children }) {
   return (
     <RNModal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.modalOverlay}>
+      <KeyboardAvoidingView
+        style={styles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
         <View style={styles.modalContent}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>{title}</Text>
@@ -237,9 +243,16 @@ export function Modal({ visible, title, onClose, children }) {
               <Icon name="cancel" size={16} color={colors.textMuted} />
             </Pressable>
           </View>
-          <View style={styles.modalBody}>{children}</View>
+          <ScrollView
+            style={styles.modalBodyScroll}
+            contentContainerStyle={styles.modalBody}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            {children}
+          </ScrollView>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </RNModal>
   );
 }
@@ -457,6 +470,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  modalBodyScroll: { flexShrink: 1 },
   modalBody: { padding: 20 },
   listItem: {
     flexDirection: 'row',

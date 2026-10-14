@@ -24,7 +24,7 @@ export const COLLECTIONS = [
   { name: 'treasuryAccounts', table: 'treasury_accounts', order: 'id' },
   { name: 'treasuryMovements', table: 'treasury_movements', order: 'id' },
   { name: 'monthlyClosures', table: 'monthly_closures', order: 'id' },
-  { name: 'expenses', table: 'expenses', order: 'id' },
+
   {
     name: 'activityLogs', table: 'activity_logs',
     rename: { user: 'username', timestamp: 'created_at' }, order: 'id',

@@ -3,7 +3,7 @@
 // Liste filtrable + détail (lignes, totaux). Création via l'onglet Caisse.
 // ============================================================================
 import { useCallback, useEffect, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { listSales } from '../api/salesApi';
 import { useStores } from '../context/StoreContext';
 import { formatDate, formatMoney } from '../lib/format';
@@ -74,9 +74,15 @@ export default function SalesScreen() {
   });
 
   return (
+    <KeyboardAvoidingView
+      style={styles.screen}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
     <ScrollView
       style={styles.screen}
       contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />}
     >
       <Card>
@@ -145,6 +151,7 @@ export default function SalesScreen() {
         onClose={() => setValidation(null)}
       />
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 

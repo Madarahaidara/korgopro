@@ -159,9 +159,9 @@ export default function NewSaleModal({ user, onSave, onClose }) {
 
   return (
     <Modal title="Nouvelle vente" onClose={onClose} width={1020}>
-      <div style={{ display: 'flex', gap: 16, alignItems: 'stretch' }}>
+      <div className="sale-layout">
         {/* ===== Colonne gauche : sélection des produits ===== */}
-        <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="sale-products">
           <div className="flex justify-between mb-12">
             <b>Produits</b>
             <span className="text-muted" style={{ fontSize: 12 }}>
@@ -177,10 +177,7 @@ export default function NewSaleModal({ user, onSave, onClose }) {
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={onSearchKeyDown}
           />
-          <div style={{
-            display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8,
-            maxHeight: 340, overflowY: 'auto', paddingRight: 4,
-          }}>
+          <div className="sale-product-grid">
             {filtered.map((p) => (
               <button
                 key={p.id}
@@ -212,7 +209,7 @@ export default function NewSaleModal({ user, onSave, onClose }) {
         </div>
 
         {/* ===== Colonne droite : panier + encaissement ===== */}
-        <div style={{ width: 380, display: 'flex', flexDirection: 'column' }}>
+        <div className="sale-checkout">
           <div className="form-grid mb-12">
             <div className="field">
               <label>Client</label>
@@ -233,31 +230,44 @@ export default function NewSaleModal({ user, onSave, onClose }) {
             </div>
           </div>
 
-          <div className="card mb-12" style={{ background: '#fafbfc', flex: 1, overflowY: 'auto', maxHeight: 220 }}>
+          <div className="card sale-cart mb-12">
             {lines.map((l) => (
-              <div className="line-row" key={l.key}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 600, fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{l.name}</div>
-                  <div className="flex align-end" style={{ gap: 4 }}>
-                    <button className="btn btn-sm" style={{ padding: '0 8px' }} onClick={() => updateLine(l.key, { quantity: Number(l.quantity) - 1 })}></button>
+              <div className="sale-line-row" key={l.key}>
+                <div className="sale-line-main">
+                  <div className="sale-line-name" title={l.name}>{l.name}</div>
+                  <div className="sale-line-controls">
+                    <button
+                      className="btn btn-sm"
+                      aria-label={`Diminuer la quantité de ${l.name}`}
+                      onClick={() => updateLine(l.key, { quantity: Number(l.quantity) - 1 })}
+                    >−</button>
                     <input
-                      className="input" type="number" min="1" style={{ width: 56, textAlign: 'center', padding: '2px 4px' }}
+                      className="input sale-quantity-input" type="number" min="1" aria-label={`Quantité de ${l.name}`}
                       value={l.quantity}
                       onChange={(e) => updateLine(l.key, { quantity: e.target.value })}
                     />
-                    <button className="btn btn-sm" style={{ padding: '0 8px' }} onClick={() => updateLine(l.key, { quantity: Number(l.quantity) + 1 })}>+</button>
+                    <button
+                      className="btn btn-sm"
+                      aria-label={`Augmenter la quantité de ${l.name}`}
+                      onClick={() => updateLine(l.key, { quantity: Number(l.quantity) + 1 })}
+                    >+</button>
                     <input
-                      className="input" type="number" min="0" step="any" style={{ width: 90, padding: '2px 6px' }}
+                      className="input sale-price-input" type="number" min="0" step="any"
                       title="Prix unitaire"
+                      aria-label={`Prix unitaire de ${l.name}`}
                       value={l.unit_price}
                       onChange={(e) => updateLine(l.key, { unit_price: e.target.value })}
                     />
                   </div>
                 </div>
-                <span style={{ alignSelf: 'center', minWidth: 90, textAlign: 'right' }}>
+                <span className="sale-line-total">
                   <b>{formatMoney(l.line_total, settings.currency)}</b>
                 </span>
-                <button className="btn btn-sm btn-danger" onClick={() => removeLine(l.key)}><Icon name="cancel" size={14} /></button>
+                <button
+                  className="btn btn-sm btn-danger sale-remove-line"
+                  aria-label={`Retirer ${l.name} du panier`}
+                  onClick={() => removeLine(l.key)}
+                ><Icon name="cancel" size={14} /></button>
               </div>
             ))}
             {lines.length === 0 && (
@@ -272,7 +282,7 @@ export default function NewSaleModal({ user, onSave, onClose }) {
             <input className="input" value={note} onChange={(e) => setNote(e.target.value)} />
           </div>
 
-          <div className="flex justify-between align-end mt-8">
+          <div className="flex justify-between align-end mt-8 sale-summary-row">
             <div className="field" style={{ width: 130 }}>
               <label>Remise</label>
               <input className="input" type="number" min="0" step="any" value={discount}
@@ -306,7 +316,7 @@ export default function NewSaleModal({ user, onSave, onClose }) {
             </div>
           </div>
 
-          <div className="form-actions">
+          <div className="form-actions sale-actions">
             <button className="btn" onClick={onClose}>Annuler</button>
             <button className={`btn btn-lg ${credit ? 'btn-primary' : 'btn-success'}`} onClick={save} disabled={lines.length === 0}>
               <Icon name={credit ? 'user' : 'cash'} size={16} style={{ verticalAlign: '-2px' }} /> {credit ? 'Vendre à crédit' : 'Encaisser'} {lines.length > 0 ? formatMoney(total, settings.currency) : ''}

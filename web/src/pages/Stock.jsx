@@ -72,7 +72,7 @@ export default function Stock() {
                 <td><Badge status={p.category} /></td>
                 <td>
                   <div className="flex">
-                    <b>{p.quantity}</b>
+                    <b style={p.isOutOfStock || p.isLowStock ? { color: 'var(--danger)' } : undefined}>{p.quantity}</b>
                     <StockBar quantity={p.quantity} min={p.min_stock} />
                   </div>
                 </td>

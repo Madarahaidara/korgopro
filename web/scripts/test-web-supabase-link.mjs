@@ -55,7 +55,6 @@ const DB = {
   inventory_movements: [],
   treasury_accounts: [],
   treasury_movements: [],
-  expenses: [],
   activity_logs: [],
 };
 

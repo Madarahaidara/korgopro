@@ -200,6 +200,14 @@ class SaleView(QWidget):
         
         # Ajuster les proportions
         main_splitter.setSizes([450, 550])
+        # La croissance suit le ratio voulu (45/55) : le panier garde la part
+        # la plus large au lieu de la voir confisquer par le volet produits.
+        main_splitter.setStretchFactor(0, 45)
+        main_splitter.setStretchFactor(1, 55)
+        # Pas d'effondrement complet d'un volet au drag : les minimums
+        # explicites (320 / 360) font foi.
+        main_splitter.setChildrenCollapsible(False)
+        self.main_splitter = main_splitter
         main_layout.addWidget(main_splitter, 1)
         
         # Barre de raccourcis
@@ -208,6 +216,10 @@ class SaleView(QWidget):
         
         # Enregistrer la largeur initiale
         self.current_width = self.width()
+        # Plancher réaliste (~760 px) : au-dessous, les libellés secondaires
+        # sont masqués (voir _adapt_to_size) au lieu d'imposer les ~1242 px de
+        # la somme des minimums naturels (barre de raccourcis, filtres, en-tête).
+        self.setMinimumWidth(760)
     
     def create_header(self) -> QHBoxLayout:
         header_layout = QHBoxLayout()
@@ -233,13 +245,26 @@ class SaleView(QWidget):
         
         info_layout.addWidget(QLabel("N°:"))
         info_layout.addWidget(self.sale_number_label)
-        info_layout.addWidget(QLabel("|"))
+        sep1 = QLabel("|")
+        info_layout.addWidget(sep1)
         info_layout.addWidget(self.date_label)
-        info_layout.addWidget(QLabel("|"))
+        sep2 = QLabel("|")
+        info_layout.addWidget(sep2)
         info_layout.addWidget(self.time_label)
-        info_layout.addWidget(QLabel("|"))
+        sep3 = QLabel("|")
+        info_layout.addWidget(sep3)
         info_layout.addWidget(self.client_label)
         info_layout.addStretch()
+
+        # Enveloppe sans plancher : la ligne d'infos demande naturellement
+        # ~986 px ; sans ce conteneur, toute la vue serait bloquée à cette
+        # largeur minimum. Les éléments masqués sont pilotés dans
+        # _adapt_to_size() selon la largeur réelle.
+        info_container = QWidget()
+        info_container.setLayout(info_layout)
+        info_container.setMinimumWidth(0)
+        self._header_info_items = [self.date_label, self.time_label, self.client_label]
+        self._header_separators = [sep1, sep2, sep3]
         
         self.compact_mode_btn = QPushButton("Mode Compact")
         self.compact_mode_btn.setIcon(get_icon("settings", "#6b7280", 16))
@@ -267,13 +292,17 @@ class SaleView(QWidget):
         
         header_layout.addWidget(title_label)
         header_layout.addStretch()
-        header_layout.addLayout(info_layout)
+        header_layout.addWidget(info_container)
         header_layout.addWidget(self.compact_mode_btn)
         
         return header_layout
     
     def create_products_panel(self) -> QWidget:
         panel = QWidget()
+        # Plancher explicite : le contenu naturel (~754 px) ne doit pas
+        # bloquer toute la vue ; les éléments secondaires sont masqués dans
+        # _adapt_to_size() selon la largeur réelle du volet.
+        panel.setMinimumWidth(340)
         layout = QVBoxLayout(panel)
         layout.setSpacing(8)
         
@@ -326,12 +355,18 @@ class SaleView(QWidget):
         self.supplier_combo.addItem("Tous fournisseurs")
         self.supplier_combo.currentTextChanged.connect(self.on_filter_changed)
         
-        filter_row.addWidget(QLabel("Catégorie:"))
-        filter_row.addWidget(self.category_combo)
-        filter_row.addWidget(QLabel("Fournisseur:"))
+        self.category_filter_label = QLabel("Catégorie:")
+        filter_row.addWidget(self.category_filter_label)
+        self.supplier_filter_label = QLabel("Fournisseur:")
+        filter_row.addWidget(self.supplier_filter_label)
         filter_row.addWidget(self.supplier_combo)
         filter_row.addStretch()
         layout.addLayout(filter_row)
+        # Les libellés de filtre sont masqués sous ~560 px de volet (voir
+        # _adapt_to_size) ; les combobox restent car elles sont essentielles.
+        self._filter_labels = [self.category_filter_label, self.supplier_filter_label]
+        self.category_combo.setMinimumWidth(140)
+        self.supplier_combo.setMinimumWidth(140)
         
         # Boutons rapides
         quick_actions = QHBoxLayout()
@@ -431,6 +466,9 @@ class SaleView(QWidget):
         
         container = QWidget()
         container.setObjectName("cartContainer")
+        # Plancher du panneau panier : les colonnes du tableau (Qté/Remise
+        # fixes + Total) ont besoin de ~400 px pour rester lisibles.
+        container.setMinimumWidth(400)
         
         main_layout = QVBoxLayout(container)
         main_layout.setContentsMargins(0, 0, 0, 0)
@@ -835,6 +873,7 @@ class SaleView(QWidget):
             ("Entrée", "Ajouter"),
         ]
         
+        self._shortcut_labels = []
         for key, desc in shortcuts:
             key_label = QLabel(f"<b>{key}</b> {desc}")
             key_label.setStyleSheet("""
@@ -848,6 +887,7 @@ class SaleView(QWidget):
                     margin: 0 2px;
                 }
             """)
+            self._shortcut_labels.append(key_label)
             layout.addWidget(key_label)
         
         layout.addStretch()
@@ -1334,41 +1374,74 @@ class SaleView(QWidget):
                 self._resize_timer.stop()
             self._resize_timer.start()
     
+    def minimumSizeHint(self) -> QSize:
+        # Ne pas se fier à la somme des minimums d'enfants (~1242 px qui fige
+        # la fenêtre). La largeur minimale est dynamique selon le mode compact.
+        if self.is_compact_layout:
+            return QSize(560, self.heightHint())
+        return QSize(760, self.heightHint())
+
+    def sizeHint(self) -> QSize:
+        return self.minimumSizeHint()
+
+    def heightHint(self) -> int:
+        # Hauteur cohérente avec le mode compact (en-tête compactée, moins de
+        # raccourcis, etc.) sinon la fenêtre aurait une hauteur trop grande.
+        return 520 if self.is_compact_layout else 760
+
     def _adapt_to_size(self):
         width = self.width()
-        
-        # Seuils de responsivité progressive
-        if width < 800:
-            if not self.is_compact_layout:
-                self._enable_compact_layout()
-            # Mode très compact : cacher la colonne code-barres et prix unitaire
-            self.cart_table.setColumnHidden(1, True)   # Code
-            self.cart_table.setColumnHidden(3, True)   # Prix unitaire
-            self.cart_table.setColumnHidden(0, True)   # Image
-        elif width < 1050:
-            if not self.is_compact_layout:
-                self._enable_compact_layout()
-            self.cart_table.setColumnHidden(1, False)  # Code
-            self.cart_table.setColumnHidden(3, False)  # Prix unitaire
-            self.cart_table.setColumnHidden(0, True)   # Image
-        elif width < 1200:
-            if not self.is_compact_layout:
-                self._enable_compact_layout()
-            self.cart_table.setColumnHidden(1, False)
-            self.cart_table.setColumnHidden(3, False)
-            self.cart_table.setColumnHidden(0, False)
+        compact = self.is_compact_layout
+
+        # --- En-tête : masquer les éléments secondaires sous ~760 px ---
+        hide_header = width < 760
+        if hide_header and not compact:
+            self._enable_compact_layout()
+        for item in self._header_info_items:
+            item.setVisible(not hide_header)
+        for sep in self._header_separators:
+            sep.setVisible(not hide_header)
+
+        # --- Barre de raccourcis : réduire le nombre de raccourcis ---
+        if width < 600:
+            self._hide_shortcuts(2)       # Aide, Valider
+        elif width < 900:
+            self._hide_shortcuts(5)       # Aide, Quantité, Recherche, Valider, Ctrl+N
         else:
-            if self.is_compact_layout:
-                self._disable_compact_layout()
-            self.cart_table.setColumnHidden(1, False)
+            self._show_all_shortcuts()
+
+        # --- Filtres : masquer les libellés sous ~560 px ---
+        hide_filter_labels = width < 560
+        for label in self._filter_labels:
+            label.setVisible(not hide_filter_labels)
+
+        # --- Colonnes du tableau panier : basées sur la largeur du volet ---
+        sizes = self.main_splitter.sizes()
+        cart_width = sizes[1] if len(sizes) > 1 else 0
+        self._cart_panel_width = cart_width
+        if cart_width < 340:
+            # Très rétréci : ne garder que # / Produit / Qté / Total
+            self.cart_table.setColumnHidden(6, True)   # colonne image/vide
+            self.cart_table.setColumnHidden(3, True)   # Prix unitaire
+            self.cart_table.setColumnHidden(4, True)   # Remise %
+        elif cart_width < 420:
+            # Rétréci : ne garder que # / Produit / Qté / P.U. / Total
+            self.cart_table.setColumnHidden(6, True)   # colonne image/vide
+            self.cart_table.setColumnHidden(4, True)   # Remise %
+        else:
+            self.cart_table.setColumnHidden(6, False)
             self.cart_table.setColumnHidden(3, False)
-            self.cart_table.setColumnHidden(0, False)
-        
+            self.cart_table.setColumnHidden(4, False)
+
         self._adjust_cart_table_height()
         self.update_cart_display()
     
     def _enable_compact_layout(self):
         self.is_compact_layout = True
+        
+        self._hide_header_items()
+        self._hide_shortcuts(2)
+        self._hide_filter_labels()
         
         self.cart_scroll_area.widget().layout().setContentsMargins(0, 0, 0, 0)
         
@@ -1377,11 +1450,51 @@ class SaleView(QWidget):
         
         self.cart_table.setColumnWidth(2, 70)
         self.cart_table.setColumnWidth(4, 70)
-    
+
+    def _show_all_shortcuts(self):
+        for label in self._shortcut_labels:
+            label.setVisible(True)
+
+    def _hide_shortcuts(self, keep: int):
+        for label in self._shortcut_labels:
+            label.setVisible(False)
+        for label in self._shortcut_labels[:keep]:
+            label.setVisible(True)
+
+    def _show_header_items(self):
+        for item in self._header_info_items:
+            item.setVisible(True)
+        for sep in self._header_separators:
+            sep.setVisible(True)
+
+    def _hide_header_items(self):
+        for item in self._header_info_items:
+            item.setVisible(False)
+        for sep in self._header_separators:
+            sep.setVisible(False)
+
+    def _show_filter_labels(self):
+        for label in self._filter_labels:
+            label.setVisible(True)
+
+    def _hide_filter_labels(self):
+        for label in self._filter_labels:
+            label.setVisible(False)
+
+    def on_payment_method_changed(self, method: str):
+        if method == "CRÉDIT":
+            self.amount_paid_edit.setEnabled(False)
+            self.amount_paid_edit.setText("0")
+            self.change_label.setText(f"0 {self.CURRENCY}")
+        else:
+            self.amount_paid_edit.setEnabled(True)
+            self.amount_paid_edit.setFocus()
+
     def _disable_compact_layout(self):
         self.is_compact_layout = False
-        self.cart_table.setColumnWidth(2, 120)
-        self.cart_table.setColumnWidth(4, 120)
+        self._show_header_items()
+        self._show_all_shortcuts()
+        self._show_filter_labels()
         
         self.cart_scroll_area.widget().layout().setContentsMargins(0, 0, 0, 0)
         
@@ -1390,8 +1503,8 @@ class SaleView(QWidget):
         
         self.cart_table.setColumnWidth(2, 90)
         self.cart_table.setColumnWidth(4, 90)
-        self.cart_table.setColumnHidden(0, False)
-    
+        self.cart_table.setColumnHidden(6, False)
+
     def _adjust_cart_table_height(self):
         row_count = self.cart_table.rowCount()
         if row_count > 0:

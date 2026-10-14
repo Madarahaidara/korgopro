@@ -1,9 +1,16 @@
 // ============================================================================
-// Trésorerie : lecture Supabase (+ résumés calculés comme le web).
-// Miroir de web/src/api/treasuryApi.js. Écritures : RPC (ventes/encaissements)
-// ou admin — pas d'insert direct (RLS 42501).
+// Trésorerie (mobile) — lecture Supabase + écritures par RPC.
+// Miroir de web/src/api/treasuryApi.js. Écritures : RPC app_treasury_*
+// (supabase_mobile_rpc.sql) — pas d'insert direct (RLS 42501).
 // ============================================================================
 import { listAccounts as listAccountsRaw } from './dataApi';
+import {
+  closeTreasuryMonth,
+  createTreasuryMovement,
+  saveTreasuryAccount,
+  transferTreasury,
+  treasuryMonthPreview,
+} from './rpc';
 import { requireClient, run } from './supabase';
 
 export const ACCOUNT_TYPES = ['CASH', 'BANK', 'MOBILE_MONEY'];
@@ -67,24 +74,71 @@ export function periodLabel(period) {
   return `${MONTH_NAMES[m - 1] || '?'} ${y}`;
 }
 
-function writeBlocked(label) {
-  throw new Error(
-    `${label} : écriture directe refusée par RLS (admin/RPC uniquement).`
-  );
+/**
+ * Crée ou met à jour un compte (mirroir web saveAccount). Le solde courant
+ * n'est modifiable que par les mouvements : la RPC ne touche jamais
+ * `current_balance` sur une modification.
+ */
+export async function saveAccount(account) {
+  await saveTreasuryAccount({
+    id: account.id ? Number(account.id) : null,
+    name: account.name,
+    accountType: account.account_type || 'CASH',
+    currency: account.currency || null,
+    initialBalance: Number(account.initial_balance) || 0,
+    bankName: account.bank_name || '',
+    accountNumber: account.account_number || '',
+    phoneNumber: account.phone_number || '',
+    isActive: account.is_active !== false,
+    isDefault: !!account.is_default,
+    notes: account.notes || '',
+  });
+  return listAccounts();
 }
 
-export async function saveAccount() {
-  writeBlocked('saveAccount');
+/**
+ * Crée un mouvement manuel IN/OUT et ajuste le solde du compte — transaction
+ * unique côté serveur (RPC app_treasury_move).
+ */
+export async function createMovement(movement) {
+  return createTreasuryMovement({
+    accountId: Number(movement.account_id),
+    movementType: movement.movement_type,
+    amount: Number(movement.amount),
+    reference: movement.reference || '',
+    description: movement.description || '',
+    category: movement.category || '',
+    date: movement.date || null,
+  });
 }
 
-export async function createMovement() {
-  writeBlocked('createMovement (passer par app_create_sale / app_register_payment)');
+/** Transfert entre deux comptes (OUT source + IN destination). */
+export async function transfer({ fromAccountId, toAccountId, amount, description = '' }) {
+  return transferTreasury({
+    fromAccountId: Number(fromAccountId),
+    toAccountId: Number(toAccountId),
+    amount: Number(amount),
+    description,
+  });
 }
 
-export async function closeMonth() {
-  writeBlocked('closeMonth (réservé admin)');
+/**
+ * Clôture mensuelle : les totaux sont recalculés par le serveur puis figés.
+ * Refus si le mois est déjà clôturé ou si le rôle n'est pas ADMIN.
+ */
+export async function closeMonth(period, _user = null, notes = '') {
+  return closeTreasuryMonth(period, notes);
 }
 
-export function computeMonthlyPreview() {
-  throw new Error('computeMonthlyPreview : aperçu serveur non exposé en RPC (lecture closures uniquement).');
+/**
+ * Aperçu des totaux du mois (mirroir web computeMonthlyPreview) : ventes hors
+ * annulations/avoirs, encaissé, crédit, dépenses, net + statut de clôture.
+ * Lecture seule, calculée par le serveur (RPC app_treasury_month_preview).
+ */
+export async function computeMonthlyPreview(period) {
+  const data = await treasuryMonthPreview(period);
+  if (data && data.ok === false) {
+    throw new Error(data.message || 'Aperçu de période impossible.');
+  }
+  return data;
 }

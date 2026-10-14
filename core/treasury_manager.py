@@ -302,7 +302,7 @@ class TreasuryManager:
     # ------------------------------------------------------------------
 
     def compute_month_summary(self, year, month):
-        """Totaux du mois 'YYYY-MM' : ventes, encaissé, crédit, dépenses, net."""
+        """Totaux du mois 'YYYY-MM' : ventes, encaissé, crédit, net."""
         from core.models.sale_models import Sale
         db = self._get_db()
         try:

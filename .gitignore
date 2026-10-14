@@ -19,3 +19,6 @@ base_export_*.json
 dist/
 *.spec
 logs/
+
+# --- Build artifacts mobile ---
+mobile/apk/

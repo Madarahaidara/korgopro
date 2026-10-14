@@ -398,6 +398,15 @@ class LockScreen(QDialog):
 
         self.error_label.hide()
 
+        # Validation rapide (comme LoginView._start_login) : un mot de passe
+        # vide est refusé côte Supabase Auth par « Email ou mot de passe
+        # manquant » — inutile de lancer un worker pour ça.
+        if not self.password.text():
+            self.error_label.setText("❌ Veuillez saisir votre mot de passe")
+            self.error_label.show()
+            self.password.setFocus()
+            return
+
         self.set_loading_state(True)
 
         from controllers.auth_controller import (

@@ -20,7 +20,7 @@ import traceback
 import openpyxl 
 # Import des modèles SQLAlchemy
 from core.database import SessionLocal
-from core.models.stock_models import Product, Supplier, InventoryMovement, Expense, ExpenseCategory, PurchaseOrder, StockAlert
+from core.models.stock_models import Product, Supplier, InventoryMovement, PurchaseOrder, StockAlert
 from core.models.user import User
 from core.models.sale_models import Sale, SaleItem, Customer, Payment  # Ajout des modèles de vente
 from core.sale_log_manager import SaleLogManager
@@ -45,7 +45,7 @@ from core.permissions import can
 class StockStatCard(QFrame):
     """Carte statique de résumé pour le stock."""
 
-    def __init__(self, title, value, subtitle, accent="blue"):
+    def __init__(self, title, value, subtitle, accent="blue", value_color="#0f172a"):
         super().__init__()
         self.setObjectName("stockStatCard")
         self.setProperty("accent", accent)
@@ -74,7 +74,6 @@ class StockStatCard(QFrame):
                     stop:0 #ffffff, stop:1 #f8fafc);
                 border: 1px solid #dfe7f1;
                 border-radius: 14px;
-                box-shadow: 0 4px 14px rgba(15, 23, 42, 0.04);
             }
             #stockStatCard[accent="blue"] {
                 border-top: 4px solid #2563eb;
@@ -96,7 +95,7 @@ class StockStatCard(QFrame):
                 letter-spacing: 0.8px;
             }
             #stockStatValue {
-                color: #0f172a;
+                color: __VALUE_COLOR__;
                 font-size: 30px;
                 font-weight: 800;
                 margin-top: 2px;
@@ -106,7 +105,7 @@ class StockStatCard(QFrame):
                 font-size: 12px;
                 font-weight: 600;
             }
-        """)
+        """.replace("__VALUE_COLOR__", value_color))
 
 
 class StockDataLoader(QThread):
@@ -141,7 +140,6 @@ class StockView(QWidget):
     product_updated = Signal(dict)
     product_deleted = Signal(int)
     inventory_updated = Signal(dict)
-    expense_added = Signal(dict)
     settings_changed = Signal(dict)  # Nouveau signal pour les changements de paramètres
     
     def __init__(self, user, settings_manager=None):
@@ -495,14 +493,6 @@ class StockView(QWidget):
         self.movement_end_date = None
         self.movement_type_filter = None
         
-        # Widgets de l'onglet dépenses
-        self.expenses_table = None
-        self.expense_total = None
-        self.expense_this_month = None
-        self.expense_by_category = None
-        self.expense_start_date = None
-        self.expense_end_date = None
-        
         # Widgets de l'onglet ventes
         self.sales_table = None
         self.sales_total_label = None
@@ -532,8 +522,6 @@ class StockView(QWidget):
         self.report_total_products = None
         self.report_low_stock = None
         self.report_avg_margin = None
-        self.report_total_expenses = None
-        self.report_net_profit = None
         self.low_margin_table = None
         
         # Widgets d'impression
@@ -557,45 +545,11 @@ class StockView(QWidget):
             self.products = query.order_by(Product.name).all()
             self.filtered_products = self.products.copy()
             
-            # Vérifier et créer des catégories de dépenses par défaut si nécessaire
-            self.ensure_default_expense_categories()
-            
         except Exception as e:
             print(f"Erreur lors du chargement des données: {e}")
             self.products = []
             self.filtered_products = []
         
-    def ensure_default_expense_categories(self):
-        """Créer des catégories de dépenses par défaut si elles n'existent pas"""
-        default_categories = [
-            "Transport",
-            "Emballage", 
-            "Loyer",
-            "Salaires",
-            "Fournitures",
-            "Marketing",
-            "Maintenance",
-            "Services",
-            "Divers"
-        ]
-        
-        for category_name in default_categories:
-            existing = self.db_session.query(ExpenseCategory).filter(
-                ExpenseCategory.name == category_name
-            ).first()
-            
-            if not existing:
-                new_category = ExpenseCategory(
-                    name=category_name,
-                    description=f"Catégorie {category_name}"
-                )
-                self.db_session.add(new_category)
-        
-        try:
-            self.db_session.commit()
-        except:
-            self.db_session.rollback()
-    
     def init_ui(self):
         """Initialisation de l'interface utilisateur"""
         main_layout = QVBoxLayout(self)
@@ -612,19 +566,15 @@ class StockView(QWidget):
         inventory_tab = self.create_inventory_tab()
         self.tab_widget.addTab(inventory_tab, self.style().standardIcon(QStyle.SP_BrowserReload), "Mouvements")
         
-        # Onglet 3: Dépenses et frais
-        expenses_tab = self.create_expenses_tab()
-        self.tab_widget.addTab(expenses_tab, self.style().standardIcon(QStyle.SP_FileDialogDetailedView), "Dépenses")
-        
-        # Onglet 4: Ventes
+        # Onglet 3: Ventes
         sales_tab = self.create_sales_tab()
         self.tab_widget.addTab(sales_tab, self.style().standardIcon(QStyle.SP_FileDialogContentsView), "Ventes")
         
-        # Onglet 5: Calculs et bénéfices
+        # Onglet 4: Calculs et bénéfices
         calculations_tab = self.create_calculations_tab()
         self.tab_widget.addTab(calculations_tab, self.style().standardIcon(QStyle.SP_FileDialogDetailedView), "Calculs")
         
-        # Onglet 6: Rapports et bénéfices
+        # Onglet 5: Rapports et bénéfices
         reports_tab = self.create_reports_tab()
         self.tab_widget.addTab(reports_tab, self.style().standardIcon(QStyle.SP_FileDialogInfoView), "Rapports")
         
@@ -1965,7 +1915,8 @@ Pour {quantity} unités:
             0, 1
         )
         stats_layout.addWidget(
-            StockStatCard("Seuil critique", str(low_stock), "Produits bas", "orange"),
+            StockStatCard("Seuil critique", str(low_stock), "Produits bas", "orange",
+                          value_color="#ef4444"),
             0, 2
         )
         stats_layout.addWidget(
@@ -2969,7 +2920,9 @@ Pour {quantity} unités:
             QMessageBox.critical(self, "Erreur d'export", f"Erreur: {str(e)}")
     
     def create_expenses_tab(self):
-        """Créer l'onglet des dépenses"""
+        """Obsolète (onglet Dépenses supprimé) : ne fait rien."""
+        return
+    def _removed_create_expenses_tab_body(self):
         tab = QWidget()
         layout = QVBoxLayout(tab)
         
@@ -3073,7 +3026,9 @@ Pour {quantity} unités:
         return tab
     
     def load_expenses_table(self):
-        """Charger les dépenses dans le tableau"""
+        """Obsolète (onglet Dépenses supprimé) : ne fait rien."""
+        return
+    def _removed_load_expenses_table_body(self):
         try:
             # Construire la requête
             query = self.db_session.query(Expense).join(ExpenseCategory)
@@ -3160,24 +3115,17 @@ Pour {quantity} unités:
             self.expenses_table.setRowCount(0)
     
     def clear_expense_filters(self):
-        """Effacer les filtres de dépenses"""
-        if hasattr(self, 'expense_start_date') and self.expense_start_date:
-            self.expense_start_date.setDate(QDate.currentDate().addDays(-30))
-            self.expense_end_date.setDate(QDate.currentDate())
-            self.load_expenses_table()
+        """Obsolète (onglet Dépenses supprimé) : ne fait rien."""
+        return
     
     def show_new_expense_dialog(self):
-        """Afficher la boîte de dialogue de nouvelle dépense"""
-        dialog = ExpenseDialog(self, self.db_session, self.user)
-        if dialog.exec():
-            # Recharger les données
-            self.load_expenses_table()
-            self.update_stats()
-            
-            QMessageBox.information(self, "Succès", "Dépense enregistrée avec succès!")
+        """Obsolète (onglet Dépenses supprimé) : ne fait rien."""
+        return
     
     def show_expense_report(self):
-        """Afficher le rapport des dépenses"""
+        """Obsolète (onglet Dépenses supprimé) : ne fait rien."""
+        return
+    def _removed_show_expense_report_body(self):
         try:
             # Calculer les totaux par catégorie
             categories = {}
@@ -3244,8 +3192,10 @@ Pour {quantity} unités:
         except Exception as e:
             QMessageBox.critical(self, "Erreur", f"Erreur lors de la génération du rapport: {str(e)}")
     
-    def export_expense_report_excel(self, categories, total_all, month_total):
-        """Exporter le rapport des dépenses en Excel"""
+    def export_expense_report_excel(self, categories=None, total_all=0, month_total=0):
+        """Obsolète (onglet Dépenses supprimé) : ne fait rien."""
+        return
+    def _removed_export_expense_report_excel_body(self):
         try:
             import openpyxl
             from openpyxl.utils import get_column_letter
@@ -3348,7 +3298,9 @@ Pour {quantity} unités:
             traceback.print_exc()
     
     def export_expenses(self):
-        """Exporter les dépenses en Excel"""
+        """Obsolète (onglet Dépenses supprimé) : ne fait rien."""
+        return
+    def _removed_export_expenses_body(self):
         try:
             import openpyxl
             from openpyxl.utils import get_column_letter
@@ -3432,18 +3384,10 @@ Pour {quantity} unités:
         self.report_avg_margin = QLabel("Marge moyenne: 0%")
         self.report_avg_margin.setObjectName("reportLabel")
         
-        self.report_total_expenses = QLabel(f"Dépenses totales: 0.00 {self.currency}")
-        self.report_total_expenses.setObjectName("reportLabel")
-        
-        self.report_net_profit = QLabel(f"Bénéfice net estimé: 0.00 {self.currency}")
-        self.report_net_profit.setObjectName("reportLabel")
-        
         stats_layout.addWidget(self.report_total_value)
         stats_layout.addWidget(self.report_total_products)
         stats_layout.addWidget(self.report_low_stock)
         stats_layout.addWidget(self.report_avg_margin)
-        stats_layout.addWidget(self.report_total_expenses)
-        stats_layout.addWidget(self.report_net_profit)
         
         # Colonne droite: Actions
         actions_col = QGroupBox("Actions")
@@ -3516,22 +3460,12 @@ Pour {quantity} unités:
             margins = [p.profit_margin for p in active_products]
             avg_margin = sum(margins) / len(margins) if margins else 0
             
-            # Dépenses totales
-            all_expenses = self.db_session.query(Expense).all()
-            total_expenses = sum(e.amount for e in all_expenses)
-            
-            # Bénéfice net estimé (uniquement actifs)
-            estimated_profit = sum(p.total_potential_profit for p in active_products)
-            net_profit = estimated_profit - total_expenses
-            
             # Mettre à jour les labels de rapport
             if self.report_total_value:
                 self.report_total_value.setText(f"Valeur totale du stock: {total_value:,.2f} {self.currency}")
                 self.report_total_products.setText(f"Nombre de produits actifs: {total_products}")
                 self.report_low_stock.setText(f"Produits en rupture/faible: {out_of_stock}/{low_stock}")
                 self.report_avg_margin.setText(f"Marge moyenne: {avg_margin:.1f}%")
-                self.report_total_expenses.setText(f"Dépenses totales: {total_expenses:,.2f} {self.currency}")
-                self.report_net_profit.setText(f"Bénéfice net estimé: {net_profit:,.2f} {self.currency}")
             
             # Mettre à jour le tableau des faibles marges (uniquement actifs)
             if self.low_margin_table:
@@ -3580,11 +3514,7 @@ Pour {quantity} unités:
             total_investment = sum(p.stock_value for p in active_products)
             total_potential = sum(p.quantity * p.sale_price for p in active_products)
             total_profit = total_potential - total_investment
-            
-            # Dépenses
-            all_expenses = self.db_session.query(Expense).all()
-            total_expenses = sum(e.amount for e in all_expenses)
-            net_profit = total_profit - total_expenses
+            net_profit = total_profit
             
             # Catégories de marge
             high_margin = [p for p in active_products if p.profit_margin > 30]
@@ -3617,12 +3547,8 @@ Pour {quantity} unités:
                     <td style='padding: 12px; font-weight: bold; border: 1px solid #e2e8f0; color: #15803d;'>Profit brut potentiel:</td>
                     <td style='padding: 12px; text-align: right; border: 1px solid #e2e8f0; font-weight: bold; color: #15803d;'>{total_profit:,.2f} {self.currency}</td>
                 </tr>
-                <tr>
-                    <td style='padding: 12px; border: 1px solid #e2e8f0;'>Dépenses totales enregistrées:</td>
-                    <td style='padding: 12px; text-align: right; border: 1px solid #e2e8f0; color: #dc2626;'>{total_expenses:,.2f} {self.currency}</td>
-                </tr>
                 <tr style='background-color: #dbeafe; border-top: 3px solid #3b82f6;'>
-                    <td style='padding: 15px; font-weight: bold; font-size: 16px; border: 1px solid #e2e8f0;'>BÉNÉFICE NET ESTIMÉ:</td>
+                    <td style='padding: 15px; font-weight: bold; font-size: 16px; border: 1px solid #e2e8f0;'>BÉNÉFICE ESTIMÉ:</td>
                     <td style='padding: 15px; text-align: right; font-weight: bold; font-size: 16px; color: #1d4ed8; border: 1px solid #e2e8f0;'>
                         {net_profit:,.2f} {self.currency}
                     </td>
@@ -3651,8 +3577,8 @@ Pour {quantity} unités:
             export_btn = QPushButton("Exporter en Excel")
             export_btn.setIcon(self.style().standardIcon(QStyle.SP_DialogSaveButton))
             export_btn.clicked.connect(lambda: self.export_profit_report_excel(
-                total_investment, total_potential, total_profit, 
-                total_expenses, net_profit, high_margin, medium_margin, low_margin
+                total_investment, total_potential, total_profit,
+                net_profit, high_margin, medium_margin, low_margin
             ))
             
             close_btn = QPushButton("Fermer")
@@ -3669,8 +3595,8 @@ Pour {quantity} unités:
         except Exception as e:
             QMessageBox.critical(self, "Erreur", f"Erreur lors de la génération du rapport: {str(e)}")
     
-    def export_profit_report_excel(self, total_investment, total_potential, total_profit, 
-                                   total_expenses, net_profit, high_margin, medium_margin, low_margin):
+    def export_profit_report_excel(self, total_investment, total_potential, total_profit,
+                                   net_profit, high_margin, medium_margin, low_margin):
         """Exporter le rapport de bénéfices en Excel"""
         try:
             import openpyxl
@@ -3693,21 +3619,18 @@ Pour {quantity} unités:
                         'Investissement total en stock',
                         'Valeur potentielle de vente',
                         'Profit brut potentiel',
-                        'Dépenses totales',
-                        'BÉNÉFICE NET ESTIMÉ'
+                        'BÉNÉFICE ESTIMÉ'
                     ],
                     f'Montant ({self.currency})': [
                         total_investment,
                         total_potential,
                         total_profit,
-                        total_expenses,
                         net_profit
                     ],
                     'Pourcentage': [
                         '100.0%',
                         f'{(total_potential/total_investment*100) if total_investment > 0 else 0:.1f}%',
                         f'{(total_profit/total_investment*100) if total_investment > 0 else 0:.1f}%',
-                        f'{(total_expenses/total_investment*100) if total_investment > 0 else 0:.1f}%',
                         f'{(net_profit/total_investment*100) if total_investment > 0 else 0:.1f}%'
                     ]
                 }
@@ -4145,28 +4068,7 @@ Pour {quantity} unités:
                 df_movements = pd.DataFrame(movements_data)
                 df_movements.to_excel(writer, sheet_name='Mouvements', index=False)
                 
-                # Feuille 3: Dépenses
-                expenses = self.db_session.query(Expense).all()
-                expenses_data = []
-                
-                for expense in expenses:
-                    username = expense.user.username if expense.user else "Système"
-                    
-                    expenses_data.append({
-                        'ID': expense.id,
-                        'Date': expense.date.strftime("%Y-%m-%d"),
-                        'Catégorie': expense.category.name,
-                        f'Montant ({self.currency})': expense.amount,
-                        'Description': expense.description,
-                        'Moyen de paiement': expense.payment_method or "",
-                        'Référence': expense.reference or "",
-                        'Utilisateur': username
-                    })
-                
-                df_expenses = pd.DataFrame(expenses_data)
-                df_expenses.to_excel(writer, sheet_name='Dépenses', index=False)
-                
-                # Feuille 4: Ventes
+                # Feuille 3: Ventes
                 sales = self.db_session.query(Sale).all()
                 sales_data = []
                 
@@ -4195,9 +4097,8 @@ Pour {quantity} unités:
                 df_sales = pd.DataFrame(sales_data)
                 df_sales.to_excel(writer, sheet_name='Ventes', index=False)
                 
-                # Feuille 5: Résumé
+                # Feuille 4: Résumé
                 active_products = [p for p in self.products if p.active]
-                total_expenses = sum(e.amount for e in expenses)
                 total_sales = sum(s.total_amount for s in sales)
                 
                 summary_data = {
@@ -4210,9 +4111,7 @@ Pour {quantity} unités:
                         'Produits en rupture (actifs)',
                         'Produits en stock faible (actifs)',
                         'Marge moyenne (actifs)',
-                        f'Dépenses totales ({self.currency})',
-                        f'Ventes totales ({self.currency})',
-                        f'Bénéfice net estimé ({self.currency})'
+                        f'Ventes totales ({self.currency})'
                     ],
                     'Valeur': [
                         len(self.products),
@@ -4223,9 +4122,7 @@ Pour {quantity} unités:
                         len([p for p in active_products if p.is_out_of_stock]),
                         len([p for p in active_products if p.is_low_stock]),
                         f"{sum(p.profit_margin for p in active_products) / len(active_products) if active_products else 0:.1f}%",
-                        f"{total_expenses:,.2f}",
-                        f"{total_sales:,.2f}",
-                        f"{total_sales - total_expenses:,.2f}"
+                        f"{total_sales:,.2f}"
                     ]
                 }
                 
@@ -4261,9 +4158,6 @@ Pour {quantity} unités:
                         for cell in worksheet['G'][1:]:
                             cell.number_format = numbers.FORMAT_NUMBER_COMMA_SEPARATED1
                         for cell in worksheet['H'][1:]:
-                            cell.number_format = numbers.FORMAT_NUMBER_COMMA_SEPARATED1
-                    elif sheet_name == 'Dépenses':
-                        for cell in worksheet['D'][1:]:
                             cell.number_format = numbers.FORMAT_NUMBER_COMMA_SEPARATED1
                     elif sheet_name == 'Ventes':
                         for cell in worksheet['D'][1:]:
@@ -4331,17 +4225,6 @@ Pour {quantity} unités:
                     "user": m.user.username if m.user else None
                 } for m in self.db_session.query(InventoryMovement).all()
             ],
-            "expenses": [
-                {
-                    "id": e.id,
-                    "category": e.category.name,
-                    "amount": e.amount,
-                    "description": e.description,
-                    "payment_method": e.payment_method,
-                    "date": e.date.isoformat(),
-                    "user": e.user.username if e.user else None
-                } for e in self.db_session.query(Expense).all()
-            ],
             "sales": [
                 {
                     "id": s.id,
@@ -4375,7 +4258,6 @@ Pour {quantity} unités:
             self.load_data_async()
             self.filter_products()
             self.load_movements_table()
-            self.load_expenses_table()
             self.load_sales_table()
             self.update_stats()
         except Exception as e:
@@ -5420,8 +5302,15 @@ class NewMovementDialog(QDialog):
 
 
 class ExpenseDialog(QDialog):
-    """Boîte de dialogue pour nouvelle dépense"""
+    """Obsolète (onglet Dépenses supprimé) : dialogue désactivé."""
     def __init__(self, parent=None, db_session=None, user=None):
+        super().__init__(parent)
+        self.setWindowTitle("Supprimé")
+        QMessageBox.information(self, "Supprimé", "La gestion des dépenses a été retirée.")
+        self.reject()
+    def validate_and_save(self):
+        return
+    def _removed_old_init_body(self):
         super().__init__(parent)
         
         self.db_session = db_session
@@ -5507,7 +5396,7 @@ class ExpenseDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
     
-    def validate_and_save(self):
+    def _removed_validate_and_save_body(self):
         """Valider et sauvegarder la dépense"""
         if self.category_combo.currentText().strip() == "":
             QMessageBox.warning(self, "Validation", "Veuillez sélectionner ou entrer une catégorie!")
@@ -5577,11 +5466,7 @@ class ProfitCalculationDialog(QDialog):
         total_investment = sum(p.stock_value for p in products) if products else 0
         total_potential = sum(p.quantity * p.sale_price for p in products) if products else 0
         total_profit = total_potential - total_investment
-        
-        # Dépenses totales
-        all_expenses = db_session.query(Expense).all() if db_session else []
-        total_expenses = sum(e.amount for e in all_expenses)
-        net_profit = total_profit - total_expenses
+        net_profit = total_profit
         
         # Affichage des résultats
         currency = parent.currency if hasattr(parent, 'currency') else "FCFA"
@@ -5602,12 +5487,8 @@ class ProfitCalculationDialog(QDialog):
                 <td style='padding: 12px; font-weight: bold; border: 1px solid #e2e8f0; color: #15803d;'>Profit brut potentiel:</td>
                 <td style='padding: 12px; text-align: right; border: 1px solid #e2e8f0; font-weight: bold; color: #15803d;'>{total_profit:,.2f} {currency}</td>
             </tr>
-            <tr>
-                <td style='padding: 12px; border: 1px solid #e2e8f0;'>Dépenses totales enregistrées:</td>
-                <td style='padding: 12px; text-align: right; border: 1px solid #e2e8f0; color: #dc2626;'>{total_expenses:,.2f} {currency}</td>
-            </tr>
             <tr style='background-color: #dbeafe; border-top: 3px solid #3b82f6;'>
-                <td style='padding: 15px; font-weight: bold; font-size: 16px; border: 1px solid #e2e8f0;'>BÉNÉFICE NET ESTIMÉ:</td>
+                <td style='padding: 15px; font-weight: bold; font-size: 16px; border: 1px solid #e2e8f0;'>BÉNÉFICE ESTIMÉ:</td>
                 <td style='padding: 15px; text-align: right; font-weight: bold; font-size: 16px; color: #1d4ed8; border: 1px solid #e2e8f0;'>
                     {net_profit:,.2f} {currency}
                 </td>
@@ -5644,7 +5525,7 @@ class ProfitCalculationDialog(QDialog):
         # Bouton d'export
         export_btn = QPushButton("Exporter le rapport en Excel")
         export_btn.setIcon(parent.style().standardIcon(QStyle.SP_DialogSaveButton))
-        export_btn.clicked.connect(lambda: self.export_report_excel(total_investment, total_potential, total_profit, total_expenses, net_profit))
+        export_btn.clicked.connect(lambda: self.export_report_excel(total_investment, total_potential, total_profit, net_profit))
         
         button_layout = QHBoxLayout()
         button_layout.addWidget(export_btn)
@@ -5653,7 +5534,7 @@ class ProfitCalculationDialog(QDialog):
         
         layout.addLayout(button_layout)
     
-    def export_report_excel(self, total_investment, total_potential, total_profit, total_expenses, net_profit):
+    def export_report_excel(self, total_investment, total_potential, total_profit, net_profit):
         """Exporter le rapport de bénéfices en Excel"""
         try:
             import openpyxl
@@ -5681,21 +5562,18 @@ class ProfitCalculationDialog(QDialog):
                         'Investissement total en stock',
                         'Valeur potentielle de vente',
                         'Profit brut potentiel',
-                        'Dépenses totales enregistrées',
-                        'BÉNÉFICE NET ESTIMÉ'
+                        'BÉNÉFICE ESTIMÉ'
                     ],
                     f'MONTANT ({currency})': [
                         total_investment,
                         total_potential,
                         total_profit,
-                        total_expenses,
                         net_profit
                     ],
                     'POURCENTAGE': [
                         '100.0%',
                         f'{(total_potential/total_investment*100) if total_investment > 0 else 0:.1f}%',
                         f'{(total_profit/total_investment*100) if total_investment > 0 else 0:.1f}%',
-                        f'{(total_expenses/total_investment*100) if total_investment > 0 else 0:.1f}%',
                         f'{(net_profit/total_investment*100) if total_investment > 0 else 0:.1f}%'
                     ]
                 }

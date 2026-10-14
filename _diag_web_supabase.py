@@ -1,4 +1,4 @@
-"""Diagnostic LECTURE SEULE de la liaison web (PostgREST) <-> Supabase.
+  """Diagnostic LECTURE SEULE de la liaison web (PostgREST) <-> Supabase.
 
 Vérifie, côté base PostgreSQL :
   1. les privilèges REST des rôles `anon` et `authenticated` ;
@@ -17,7 +17,7 @@ from sqlalchemy import create_engine, text
 
 TABLES = ["stores", "products", "customers", "suppliers", "sales", "sale_items",
           "proforma_invoices", "proforma_invoice_items", "inventory_movements",
-          "treasury_accounts", "treasury_movements", "expenses", "activity_logs",
+          "treasury_accounts", "treasury_movements", "activity_logs",
           "users"]
 
 load_dotenv(".env")
@@ -77,7 +77,7 @@ def main():
 
             print("     is_admin()                 ->", q("SELECT app_security.is_admin()"))
             for t in ["users", "stores", "products", "sales", "customers",
-                      "expenses", "activity_logs", "treasury_accounts"]:
+                      "activity_logs", "treasury_accounts"]:
                 print(f"     SELECT {t:<20} -> {q(f'SELECT count(*) FROM public.{t}')}")
             print("     profil par email           ->",
                   q("SELECT id, username, role FROM public.users WHERE email = :e", {"e": email}))

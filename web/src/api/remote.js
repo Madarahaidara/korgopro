@@ -110,10 +110,7 @@ export const COLLECTIONS = [
     order: 'id',
   },
   {
-    name: 'expenses',
-    table: 'expenses',
-    order: 'id',
-  },
+
   {
     name: 'activityLogs',
     table: 'activity_logs',
@@ -191,7 +188,7 @@ const CHUNK = 400;
 //
 // Capturé lors de l'hydratation, il sert de référence aux suppressions : on ne
 // supprime QUE des lignes réellement vues côté Supabase. Sans cet index, une
-// table masquée par les RLS (lecture vide, ex. `users`/`expenses`/
+// table masquée par les RLS (lecture vide, ex. `users`/
 // `activity_logs` pour un non-admin) serait intégralement effacée au premier
 // enregistrement — la suppression portait auparavant sur tout ce qui n'était
 // pas présent en mémoire.

@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { listSalesOpen, registerPayment } from '../api/salesApi';
 import {
   Badge,
@@ -137,10 +145,15 @@ export default function PaiementsScreen() {
   }
 
   return (
+    <KeyboardAvoidingView
+      style={styles.screen}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
     <ScrollView
       style={styles.screen}
       contentContainerStyle={styles.content}
       keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
     >
       <Card>
         <SectionTitle right={<Badge text={activeStore?.name || 'Magasin —'} tone="info" />}>
@@ -246,6 +259,7 @@ export default function PaiementsScreen() {
         onClose={() => setValidation(null)}
       />
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 

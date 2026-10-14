@@ -1075,7 +1075,584 @@ $$;
 REVOKE ALL ON FUNCTION public.app_cancel_sale(integer, text) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.app_cancel_sale(integer, text) TO authenticated;
 
--- 7) Vérification : RPC mobiles installées + droits accordés
+-- ---------------------------------------------------------------------------- 
+-- 7) Trésorerie : comptes, mouvements, transferts, clôture mensuelle
+--
+--    Réplique la logique de :
+--      * desktop : core/treasury_manager.py (create_account, add_movement,
+--                  transfer, compute_month_summary, close_month)
+--      * web     : web/src/api/treasuryApi.js (saveAccount, createMovement,
+--                  computeMonthlyPreview, closeMonth)
+--      * mobile  : mobile/src/api/treasuryApi.js
+--
+--    Le mobile ne peut PAS écrire en direct sur `treasury_accounts` /
+--    `treasury_movements` / `monthly_closures` (RLS réservée aux admins) :
+--    tout passe par ces fonctions qui vérifient le rôle côté serveur,
+--    valident les saisies et mettent à jour les soldes dans la même
+--    transaction que le mouvement (jamais un mouvement sans solde).
+-- ----------------------------------------------------------------------------
+
+-- 7a) Créer / modifier un compte de trésorerie.
+--     p_id NULL  -> création (current_balance = initial_balance, comme
+--                   TreasuryManager.create_account) ;
+--     p_id fixé  -> modification (le solde courant n'est JAMAIS touché ici :
+--                   il n'évolue que par les mouvements).
+CREATE OR REPLACE FUNCTION public.app_treasury_save_account(
+    p_id              integer DEFAULT NULL,
+    p_name            text    DEFAULT NULL,
+    p_account_type    text    DEFAULT 'CASH',
+    p_currency        text    DEFAULT 'FCFA',
+    p_initial_balance numeric DEFAULT 0,
+    p_bank_name       text    DEFAULT NULL,
+    p_account_number  text    DEFAULT NULL,
+    p_phone_number    text    DEFAULT NULL,
+    p_is_active       boolean DEFAULT true,
+    p_is_default      boolean DEFAULT false,
+    p_notes           text    DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth
+AS $$
+DECLARE
+    v_type      text := UPPER(COALESCE(NULLIF(BTRIM(p_account_type), ''), 'CASH'));
+    v_name      text := BTRIM(COALESCE(p_name, ''));
+    v_currency  text := COALESCE(NULLIF(BTRIM(p_currency), ''), 'FCFA');
+    v_balance   numeric := COALESCE(p_initial_balance, 0);
+    v_id        integer;
+BEGIN
+    -- --- Contrôle de droit (le serveur décide, pas l'application) -----------
+    IF NOT app_security.can('manage_treasury') THEN
+        RAISE EXCEPTION 'Gestion de la tresorerie non autorisee pour votre role (%)',
+            COALESCE(app_security.current_role(), 'inconnu')
+            USING ERRCODE = '42501';
+    END IF;
+
+    -- --- Verrou « une seule session par utilisateur » -----------------------
+    IF NOT app_security.session_is_active() THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'SESSION_CLOSED',
+            'message', 'Session fermee : ce compte est utilise sur un autre '
+                       'appareil. Reconnectez-vous pour reprendre la main.');
+    END IF;
+
+    -- --- Validations serveur ------------------------------------------------
+    IF v_name = '' THEN
+        RETURN jsonb_build_object('ok', false, 'message', 'Nom du compte requis.');
+    END IF;
+    IF v_type NOT IN ('CASH', 'BANK', 'MOBILE_MONEY') THEN
+        RETURN jsonb_build_object('ok', false,
+            'message', 'Type de compte invalide (CASH, BANK ou MOBILE_MONEY).');
+    END IF;
+
+    IF p_id IS NULL THEN
+        INSERT INTO public.treasury_accounts (
+            name, account_type, currency, initial_balance, current_balance,
+            bank_name, account_number, phone_number, is_active, is_default,
+            notes, created_at, updated_at)
+        VALUES (
+            v_name, v_type, v_currency, v_balance, v_balance,
+            NULLIF(BTRIM(COALESCE(p_bank_name, '')), ''),
+            NULLIF(BTRIM(COALESCE(p_account_number, '')), ''),
+            NULLIF(BTRIM(COALESCE(p_phone_number, '')), ''),
+            COALESCE(p_is_active, true), COALESCE(p_is_default, false),
+            NULLIF(BTRIM(COALESCE(p_notes, '')), ''), now(), now())
+        RETURNING id INTO v_id;
+    ELSE
+        UPDATE public.treasury_accounts
+           SET name           = v_name,
+               account_type   = v_type,
+               currency       = v_currency,
+               initial_balance = v_balance,
+               bank_name      = NULLIF(BTRIM(COALESCE(p_bank_name, '')), ''),
+               account_number = NULLIF(BTRIM(COALESCE(p_account_number, '')), ''),
+               phone_number   = NULLIF(BTRIM(COALESCE(p_phone_number, '')), ''),
+               is_active      = COALESCE(p_is_active, true),
+               is_default     = COALESCE(p_is_default, false),
+               notes          = NULLIF(BTRIM(COALESCE(p_notes, '')), ''),
+               updated_at     = now()
+         WHERE id = p_id
+         RETURNING id INTO v_id;
+
+        IF v_id IS NULL THEN
+            RETURN jsonb_build_object('ok', false,
+                'message', 'Compte introuvable.');
+        END IF;
+    END IF;
+
+    RETURN jsonb_build_object(
+        'ok', true,
+        'message', CASE WHEN p_id IS NULL THEN 'Compte cree.'
+                        ELSE 'Compte mis a jour.' END,
+        'account_id', v_id);
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.app_treasury_save_account(
+    integer, text, text, text, numeric, text, text, text, boolean, boolean, text
+) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.app_treasury_save_account(
+    integer, text, text, text, numeric, text, text, text, boolean, boolean, text
+) TO authenticated;
+
+
+-- 7b) Saisir un mouvement manuel (IN / OUT) et ajuster le solde du compte.
+--     Même contrat que TreasuryManager.add_movement : montant strictement
+--     positif, compte actif, solde ± amount dans la MÊME transaction.
+CREATE OR REPLACE FUNCTION public.app_treasury_move(
+    p_account_id     integer,
+    p_movement_type  text,
+    p_amount         numeric,
+    p_reference      text DEFAULT NULL,
+    p_description    text DEFAULT NULL,
+    p_category       text DEFAULT NULL,
+    p_movement_date  timestamptz DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth
+AS $$
+DECLARE
+    v_user_id   integer;
+    v_type      text := UPPER(COALESCE(NULLIF(BTRIM(p_movement_type), ''), ''));
+    v_amount    numeric := COALESCE(p_amount, 0);
+    v_account   record;
+    v_mv_id     integer;
+BEGIN
+    -- --- Contrôle de droit ---------------------------------------------------
+    IF NOT app_security.can('manage_treasury') THEN
+        RAISE EXCEPTION 'Saisie de mouvement non autorisee pour votre role (%)',
+            COALESCE(app_security.current_role(), 'inconnu')
+            USING ERRCODE = '42501';
+    END IF;
+
+    -- --- Verrou « une seule session par utilisateur » ------------------------
+    IF NOT app_security.session_is_active() THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'SESSION_CLOSED',
+            'message', 'Session fermee : ce compte est utilise sur un autre '
+                       'appareil. Reconnectez-vous pour reprendre la main.');
+    END IF;
+
+    -- --- Identité (auteur du mouvement) --------------------------------------
+    SELECT u.id INTO v_user_id
+      FROM public.users u
+     WHERE u.email = (SELECT email FROM auth.users WHERE id = auth.uid())
+       AND u.active
+     LIMIT 1;
+
+    IF v_user_id IS NULL THEN
+        RETURN jsonb_build_object(
+            'ok', false,
+            'message', 'Profil utilisateur actif introuvable pour ce compte.');
+    END IF;
+
+    -- --- Validations serveur --------------------------------------------------
+    IF v_type NOT IN ('IN', 'OUT') THEN
+        RETURN jsonb_build_object('ok', false,
+            'message', 'Type de mouvement invalide (IN ou OUT).');
+    END IF;
+    IF v_amount <= 0 THEN
+        RETURN jsonb_build_object('ok', false,
+            'message', 'Le montant doit etre positif.');
+    END IF;
+
+    -- Verrou de ligne : deux saisies simultanées ne doivent pas perdre la
+    -- mise à jour du solde (UPDATE perdu sinon en écriture concurrente).
+    SELECT a.id, a.name, a.is_active
+      INTO v_account
+      FROM public.treasury_accounts a
+     WHERE a.id = p_account_id
+     FOR UPDATE;
+
+    IF v_account.id IS NULL THEN
+        RETURN jsonb_build_object('ok', false, 'message', 'Compte introuvable.');
+    END IF;
+    IF NOT v_account.is_active THEN
+        RETURN jsonb_build_object('ok', false,
+            'message', 'Ce compte est inactif : mouvement refuse.');
+    END IF;
+
+    INSERT INTO public.treasury_movements (
+        account_id, movement_type, amount, date, reference, description,
+        category, reference_type, reference_id, user_id, created_at)
+    VALUES (
+        v_account.id, v_type, v_amount,
+        COALESCE(p_movement_date, now()),
+        NULLIF(BTRIM(COALESCE(p_reference, '')), ''),
+        NULLIF(BTRIM(COALESCE(p_description, '')), ''),
+        NULLIF(BTRIM(COALESCE(p_category, '')), ''),
+        'MANUAL', NULL, v_user_id, now())
+    RETURNING id INTO v_mv_id;
+
+    UPDATE public.treasury_accounts
+       SET current_balance = COALESCE(current_balance, 0)
+                             + CASE WHEN v_type = 'IN' THEN v_amount
+                                    ELSE -v_amount END,
+           updated_at      = now()
+     WHERE id = v_account.id;
+
+    RETURN jsonb_build_object(
+        'ok', true,
+        'message', 'Mouvement enregistre.',
+        'movement_id', v_mv_id,
+        'account_id', v_account.id);
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.app_treasury_move(
+    integer, text, numeric, text, text, text, timestamptz
+) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.app_treasury_move(
+    integer, text, numeric, text, text, text, timestamptz
+) TO authenticated;
+
+
+-- 7c) Transfert entre deux comptes (OUT sur l'origine + IN sur la
+--     destination, reference_type TRANSFER) — miroir TreasuryManager.transfer.
+CREATE OR REPLACE FUNCTION public.app_treasury_transfer(
+    p_from_account_id integer,
+    p_to_account_id   integer,
+    p_amount          numeric,
+    p_description     text DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth
+AS $$
+DECLARE
+    v_user_id   integer;
+    v_amount    numeric := COALESCE(p_amount, 0);
+    v_from      record;
+    v_to        record;
+    v_mv_out    integer;
+    v_mv_in     integer;
+BEGIN
+    -- --- Contrôle de droit ---------------------------------------------------
+    IF NOT app_security.can('manage_treasury') THEN
+        RAISE EXCEPTION 'Transfert non autorise pour votre role (%)',
+            COALESCE(app_security.current_role(), 'inconnu')
+            USING ERRCODE = '42501';
+    END IF;
+
+    -- --- Verrou « une seule session par utilisateur » ------------------------
+    IF NOT app_security.session_is_active() THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'SESSION_CLOSED',
+            'message', 'Session fermee : ce compte est utilise sur un autre '
+                       'appareil. Reconnectez-vous pour reprendre la main.');
+    END IF;
+
+    -- --- Identité -------------------------------------------------------------
+    SELECT u.id INTO v_user_id
+      FROM public.users u
+     WHERE u.email = (SELECT email FROM auth.users WHERE id = auth.uid())
+       AND u.active
+     LIMIT 1;
+
+    IF v_user_id IS NULL THEN
+        RETURN jsonb_build_object(
+            'ok', false,
+            'message', 'Profil utilisateur actif introuvable pour ce compte.');
+    END IF;
+
+    -- --- Validations serveur ---------------------------------------------------
+    IF v_amount <= 0 THEN
+        RETURN jsonb_build_object('ok', false,
+            'message', 'Le montant doit etre positif.');
+    END IF;
+    IF p_from_account_id IS NULL OR p_to_account_id IS NULL
+       OR p_from_account_id = p_to_account_id THEN
+        RETURN jsonb_build_object('ok', false,
+            'message', 'Choisissez deux comptes differents.');
+    END IF;
+
+    -- Verrouille les DEUX comptes (ordre des id implicite : deux transferts
+    -- croisés simultanés ne peuvent ni mort-de-verrouiller ni perdre un solde).
+    SELECT a.id, a.name, a.is_active INTO v_from
+      FROM public.treasury_accounts a
+     WHERE a.id = p_from_account_id
+     FOR UPDATE;
+    SELECT a.id, a.name, a.is_active INTO v_to
+      FROM public.treasury_accounts a
+     WHERE a.id = p_to_account_id
+     FOR UPDATE;
+
+    IF v_from.id IS NULL OR v_to.id IS NULL THEN
+        RETURN jsonb_build_object('ok', false, 'message', 'Compte introuvable.');
+    END IF;
+    IF NOT v_from.is_active OR NOT v_to.is_active THEN
+        RETURN jsonb_build_object('ok', false,
+            'message', 'Les deux comptes doivent etre actifs.');
+    END IF;
+
+    INSERT INTO public.treasury_movements (
+        account_id, movement_type, amount, date, reference, description,
+        category, reference_type, reference_id, user_id, created_at)
+    VALUES (
+        v_from.id, 'OUT', v_amount, now(), NULL,
+        'Transfert vers ' || v_to.name
+            || CASE WHEN NULLIF(BTRIM(COALESCE(p_description, '')), '') IS NULL
+                    THEN '' ELSE ' — ' || BTRIM(p_description) END,
+        'Transfert', 'TRANSFER', NULL, v_user_id, now())
+    RETURNING id INTO v_mv_out;
+
+    INSERT INTO public.treasury_movements (
+        account_id, movement_type, amount, date, reference, description,
+        category, reference_type, reference_id, user_id, created_at)
+    VALUES (
+        v_to.id, 'IN', v_amount, now(), NULL,
+        'Transfert depuis ' || v_from.name
+            || CASE WHEN NULLIF(BTRIM(COALESCE(p_description, '')), '') IS NULL
+                    THEN '' ELSE ' — ' || BTRIM(p_description) END,
+        'Transfert', 'TRANSFER', NULL, v_user_id, now())
+    RETURNING id INTO v_mv_in;
+
+    UPDATE public.treasury_accounts
+       SET current_balance = COALESCE(current_balance, 0) - v_amount,
+           updated_at      = now()
+     WHERE id = v_from.id;
+
+    UPDATE public.treasury_accounts
+       SET current_balance = COALESCE(current_balance, 0) + v_amount,
+           updated_at      = now()
+     WHERE id = v_to.id;
+
+    RETURN jsonb_build_object(
+        'ok', true,
+        'message', format('Transfert de %s effectue : %s -> %s.',
+                          v_amount, v_from.name, v_to.name),
+        'movement_out_id', v_mv_out,
+        'movement_in_id', v_mv_in);
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.app_treasury_transfer(
+    integer, integer, numeric, text
+) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.app_treasury_transfer(
+    integer, integer, numeric, text
+) TO authenticated;
+
+
+-- 7d) Aperçu des totaux d'une période 'YYYY-MM' (miroir
+--     TreasuryManager.compute_month_summary / web computeMonthlyPreview).
+--     Lecture seule : autorisée à tout rôle vue_trésorerie, sert à afficher
+--     la confirmation avant `app_treasury_close_month`.
+CREATE OR REPLACE FUNCTION public.app_treasury_month_preview(p_period text)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth
+AS $$
+DECLARE
+    v_start   timestamptz;
+    v_end     timestamptz;
+    v_exists  record;
+    v_count   integer;
+    v_sales   numeric;
+    v_collect numeric;
+    v_out     numeric;
+BEGIN
+    IF NOT (app_security.can('view_treasury') OR app_security.can('manage_treasury')) THEN
+        RAISE EXCEPTION 'Consultation de la tresorerie non autorisee pour votre role (%)',
+            COALESCE(app_security.current_role(), 'inconnu')
+            USING ERRCODE = '42501';
+    END IF;
+
+    -- Période attendue 'YYYY-MM' (rejet d'une saisie libre faussant les bornes).
+    IF p_period !~ '^[0-9]{4}-(0[1-9]|1[0-2])$' THEN
+        RETURN jsonb_build_object('ok', false,
+            'message', 'Periode invalide (format YYYY-MM attendu).');
+    END IF;
+
+    v_start := (p_period || '-01')::timestamptz;
+    v_end   := v_start + interval '1 month';
+
+    -- Ventes du mois : ni annulations, ni avoirs (mêmes filtres que desktop).
+    SELECT COUNT(*),
+           COALESCE(SUM(s.total_amount), 0),
+           COALESCE(SUM(GREATEST(COALESCE(s.amount_paid, 0)
+                                 - COALESCE(s.change_amount, 0), 0)), 0)
+      INTO v_count, v_sales, v_collect
+      FROM public.sales s
+     WHERE s.sale_date >= v_start AND s.sale_date < v_end
+       AND s.sale_status IS DISTINCT FROM 'CANCELLED'
+       AND s.type_document IS DISTINCT FROM 'AVOIR';
+
+    -- Dépenses : sorties hors encaissements de ventes (recalculés ici,
+    -- le client n'est jamais cru).
+    SELECT COALESCE(SUM(m.amount), 0)
+      INTO v_out
+      FROM public.treasury_movements m
+     WHERE m.movement_type = 'OUT'
+       AND m.reference_type IS DISTINCT FROM 'SALE'
+       AND m.date >= v_start AND m.date < v_end;
+
+    SELECT c.status, c.closed_at, c.sales_count, c.total_sales,
+           c.total_collected, c.total_credit, c.total_out, c.net, c.notes
+      INTO v_exists
+      FROM public.monthly_closures c
+     WHERE c.period = p_period;
+
+    RETURN jsonb_build_object(
+        'ok', true,
+        'period', p_period,
+        'sales_count', v_count,
+        'total_sales', v_sales,
+        'total_collected', v_collect,
+        'total_credit', v_sales - v_collect,
+        'total_out', v_out,
+        'net', v_collect - v_out,
+        'closed', COALESCE(v_exists.status = 'CLOSED', false),
+        'closed_at', v_exists.closed_at,
+        'notes', v_exists.notes);
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.app_treasury_month_preview(text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.app_treasury_month_preview(text) TO authenticated;
+
+
+-- 7e) Clôture mensuelle : recalcule les totaux côté serveur puis fige la
+--     période dans `monthly_closures` (statut CLOSED). Refus si déjà
+--     clôturé — miroir TreasuryManager.close_month / web closeMonth.
+--     Droits : ADMIN uniquement (identique au bouton web « réservé aux
+--     administrateurs » ; `app_security.can('manage_treasury')` ne suffit pas).
+CREATE OR REPLACE FUNCTION public.app_treasury_close_month(
+    p_period text,
+    p_notes  text DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth
+AS $$
+DECLARE
+    v_user_id   integer;
+    v_start     timestamptz;
+    v_end       timestamptz;
+    v_status    text;
+    v_count     integer;
+    v_sales     numeric;
+    v_collect   numeric;
+    v_out       numeric;
+    v_balances  text;
+BEGIN
+    -- --- Contrôle de droit : strictement admin (comme le web) ---------------
+    IF app_security.current_role() IS DISTINCT FROM 'ADMIN' THEN
+        RAISE EXCEPTION 'Cloture mensuelle reservee aux administrateurs (role %)',
+            COALESCE(app_security.current_role(), 'inconnu')
+            USING ERRCODE = '42501';
+    END IF;
+
+    -- --- Verrou « une seule session par utilisateur » ------------------------
+    IF NOT app_security.session_is_active() THEN
+        RETURN jsonb_build_object('ok', false, 'code', 'SESSION_CLOSED',
+            'message', 'Session fermee : ce compte est utilise sur un autre '
+                       'appareil. Reconnectez-vous pour reprendre la main.');
+    END IF;
+
+    -- --- Identité -------------------------------------------------------------
+    SELECT u.id INTO v_user_id
+      FROM public.users u
+     WHERE u.email = (SELECT email FROM auth.users WHERE id = auth.uid())
+       AND u.active
+     LIMIT 1;
+
+    IF v_user_id IS NULL THEN
+        RETURN jsonb_build_object(
+            'ok', false,
+            'message', 'Profil utilisateur actif introuvable pour ce compte.');
+    END IF;
+
+    -- --- Période ---------------------------------------------------------------
+    IF p_period !~ '^[0-9]{4}-(0[1-9]|1[0-2])$' THEN
+        RETURN jsonb_build_object('ok', false,
+            'message', 'Periode invalide (format YYYY-MM attendu).');
+    END IF;
+
+    SELECT c.status INTO v_status
+      FROM public.monthly_closures c
+     WHERE c.period = p_period;
+
+    IF v_status = 'CLOSED' THEN
+        RETURN jsonb_build_object('ok', false,
+            'message', 'Ce mois est deja cloture.');
+    END IF;
+
+    -- --- Totaux recalculés par le serveur (le client n'est jamais cru) --------
+    v_start := (p_period || '-01')::timestamptz;
+    v_end   := v_start + interval '1 month';
+
+    SELECT COUNT(*),
+           COALESCE(SUM(s.total_amount), 0),
+           COALESCE(SUM(GREATEST(COALESCE(s.amount_paid, 0)
+                                 - COALESCE(s.change_amount, 0), 0)), 0)
+      INTO v_count, v_sales, v_collect
+      FROM public.sales s
+     WHERE s.sale_date >= v_start AND s.sale_date < v_end
+       AND s.sale_status IS DISTINCT FROM 'CANCELLED'
+       AND s.type_document IS DISTINCT FROM 'AVOIR';
+
+    SELECT COALESCE(SUM(m.amount), 0)
+      INTO v_out
+      FROM public.treasury_movements m
+     WHERE m.movement_type = 'OUT'
+       AND m.reference_type IS DISTINCT FROM 'SALE'
+       AND m.date >= v_start AND m.date < v_end;
+
+    -- Snapshot JSON des soldes (format du desktop : balances est une colonne
+    -- TEXT contenant du JSON).
+    SELECT COALESCE(jsonb_agg(jsonb_build_object(
+               'id', a.id, 'name', a.name,
+               'account_type', a.account_type,
+               'currency', a.currency,
+               'balance', COALESCE(a.current_balance, 0)) ORDER BY a.id), '[]'::jsonb)::text
+      INTO v_balances
+      FROM public.treasury_accounts a
+     WHERE a.is_active;
+
+    -- --- UPSERT de la clôture --------------------------------------------------
+    INSERT INTO public.monthly_closures (
+        period, sales_count, total_sales, total_collected, total_credit,
+        total_out, net, balances, status, closed_by, closed_at, notes, created_at)
+    VALUES (
+        p_period, v_count, v_sales, v_collect, v_sales - v_collect,
+        v_out, v_collect - v_out, v_balances, 'CLOSED', v_user_id, now(),
+        NULLIF(BTRIM(COALESCE(p_notes, '')), ''), now())
+    ON CONFLICT (period) DO UPDATE
+       SET sales_count     = EXCLUDED.sales_count,
+           total_sales     = EXCLUDED.total_sales,
+           total_collected = EXCLUDED.total_collected,
+           total_credit    = EXCLUDED.total_credit,
+           total_out       = EXCLUDED.total_out,
+           net             = EXCLUDED.net,
+           balances        = EXCLUDED.balances,
+           status          = 'CLOSED',
+           closed_by       = EXCLUDED.closed_by,
+           closed_at       = EXCLUDED.closed_at,
+           notes           = COALESCE(EXCLUDED.notes, monthly_closures.notes);
+
+    RETURN jsonb_build_object(
+        'ok', true,
+        'message', 'Mois cloture : totaux figes.',
+        'period', p_period,
+        'sales_count', v_count,
+        'total_sales', v_sales,
+        'total_collected', v_collect,
+        'total_credit', v_sales - v_collect,
+        'total_out', v_out,
+        'net', v_collect - v_out,
+        'closed_by', v_user_id);
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.app_treasury_close_month(text, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.app_treasury_close_month(text, text) TO authenticated;
+
+
+-- 8) Vérification : RPC mobiles installées + droits accordés
 -- ----------------------------------------------------------------------------
 SELECT p.proname                  AS fonction,
        pg_get_function_identity_arguments(p.oid) AS arguments
@@ -1085,6 +1662,9 @@ WHERE n.nspname IN ('public', 'app_security')
   AND p.proname IN ('app_mobile_context', 'app_create_sale',
                     'app_register_payment', 'app_stock_movement',
                     'app_cancel_sale',
+                    'app_treasury_save_account', 'app_treasury_move',
+                    'app_treasury_transfer', 'app_treasury_month_preview',
+                    'app_treasury_close_month',
                     'current_role', 'can')
 ORDER BY p.proname;
 

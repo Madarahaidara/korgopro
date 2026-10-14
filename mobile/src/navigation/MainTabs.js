@@ -65,18 +65,35 @@ export default function MainTabs() {
       tabBarActiveTintColor: colors.primary,
       tabBarInactiveTintColor: colors.textLight,
       tabBarLabelStyle: { fontSize: 11, fontWeight: '700' },
-      tabBarItemStyle: { paddingVertical: sp(1.5) },
+      tabBarItemStyle: {
+        paddingVertical: sp(1.5),
+        borderRadius: 14,
+        marginHorizontal: 6,
+        marginVertical: 6,
+      },
       tabBarStyle: {
         backgroundColor: colors.card,
         borderTopColor: colors.border,
         borderTopWidth: 1,
+        borderTopLeftRadius: 22,
+        borderTopRightRadius: 22,
+        shadowColor: '#0f172a',
+        shadowOffset: { width: 0, height: -4 },
+        shadowOpacity: 0.08,
+        shadowRadius: 12,
+        elevation: 6,
         // L'inset bas DOIT être rejoué ici. React Navigation calcule bien
         // `paddingBottom: insets.bottom` (BottomTabBar.js) mais applique
         // `tabBarStyle` EN DERNIER, ce qui l'écrase, et un `height` numérique
         // court-circuite l'ajout de l'inset à la hauteur. Comme l'APK est
         // edge-to-edge (gradle.properties), sans ça les libellés passent sous
         // la barre système gestuelle ou les 3 boutons.
-        height: 62 + insets.bottom,
+        // Le contenu réclame 73 dp HORS inset :
+        //   paddingTop 6 + marge item 6+6 + padding item 6+6 + icône 21 +
+        //   libellé ~16 + paddingBottom 6 = 73.
+        // Avec l'ancien `62`, les libellés débordaient sous le bord de
+        // l'écran (coupés sur le Huawei) : 76 laisse 3 dp de marge.
+        height: 76 + insets.bottom,
         paddingBottom: sp(1.5) + insets.bottom,
         paddingTop: sp(1.5),
       },

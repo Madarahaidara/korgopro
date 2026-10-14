@@ -55,8 +55,8 @@ class TreasuryMovement(Base):
     reference = Column(String(100), nullable=True)       # N° facture, reçu, etc.
     description = Column(Text, nullable=True)
     category = Column(String(100), nullable=True)        # Ventes, Achat, Salaire, Loyer...
-    reference_type = Column(String(50), nullable=True)   # SALE, EXPENSE, MANUAL, TRANSFER
-    reference_id = Column(Integer, nullable=True)        # ID de la vente/dépense liée
+    reference_type = Column(String(50), nullable=True)   # SALE, MANUAL, TRANSFER
+    reference_id = Column(Integer, nullable=True)        # ID de la vente liée
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, default=func.now())
 

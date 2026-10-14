@@ -3,7 +3,7 @@
 // Lecture seule (RLS admin pour l'écriture) + détail + lignes.
 // ============================================================================
 import { useCallback, useEffect, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { getProforma, listProformas } from '../api/proformaApi';
 import { formatDate, formatMoney } from '../lib/format';
 import { colors, sp } from '../theme';
@@ -54,9 +54,15 @@ export default function ProformasScreen() {
   });
 
   return (
+    <KeyboardAvoidingView
+      style={styles.screen}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
     <ScrollView
       style={styles.screen}
       contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />}
     >
       <Card>
@@ -104,6 +110,7 @@ export default function ProformasScreen() {
         ) : null}
       </Modal>
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 

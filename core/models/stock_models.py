@@ -121,41 +121,6 @@ class InventoryMovement(Base):
     def __repr__(self):
         return f"<Movement {self.movement_type} - {self.quantity} units>"
 
-class ExpenseCategory(Base):
-    """Modèle pour les catégories de dépenses"""
-    __tablename__ = "expense_categories"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(100), unique=True, nullable=False)
-    description = Column(Text, nullable=True)
-    active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=func.now())
-    
-    def __repr__(self):
-        return f"<ExpenseCategory {self.name}>"
-
-class Expense(Base):
-    """Modèle pour les dépenses"""
-    __tablename__ = "expenses"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    category_id = Column(Integer, ForeignKey('expense_categories.id'), nullable=False)
-    amount = Column(Float, nullable=False)
-    description = Column(Text, nullable=False)
-    payment_method = Column(String(50), nullable=True)  # CASH, BANK, MOBILE_MONEY
-    reference = Column(String(100), nullable=True)  # Numéro de facture, reçu
-    supplier_id = Column(Integer, ForeignKey('suppliers.id'), nullable=True)
-    user_id = Column(Integer, ForeignKey('users.id'), nullable=True)
-    date = Column(DateTime, default=func.now())
-    created_at = Column(DateTime, default=func.now())
-    
-    # Relations
-    category = relationship("ExpenseCategory", backref="expenses")
-    supplier = relationship("Supplier", backref="expenses")
-    user = relationship("User", backref="expenses")
-    
-    def __repr__(self):
-        return f"<Expense {self.description} - {self.amount}>"
 
 class PurchaseOrder(Base):
     """Modèle pour les commandes d'achat"""

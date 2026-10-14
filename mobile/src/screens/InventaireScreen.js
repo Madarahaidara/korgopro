@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import {
   addInventoryMovement,
   getProduct,
@@ -201,10 +201,15 @@ export default function InventaireScreen() {
   }
 
   return (
+    <KeyboardAvoidingView
+      style={styles.screen}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
     <ScrollView
       style={styles.screen}
       contentContainerStyle={styles.content}
       keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
     >
       <Card>
         <SectionTitle right={<Badge text={activeStore?.name || 'Magasin —'} tone="info" />}>
@@ -393,6 +398,7 @@ export default function InventaireScreen() {
         onClose={() => setValidation(null)}
       />
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 

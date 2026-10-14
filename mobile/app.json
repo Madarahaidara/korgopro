@@ -19,6 +19,7 @@
     },
     "android": {
       "package": "com.korgopro.mobile",
+      "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "backgroundColor": "#2F4255",
         "foregroundImage": "./assets/android-icon-foreground.png",

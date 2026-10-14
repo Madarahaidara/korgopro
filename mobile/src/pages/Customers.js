@@ -3,7 +3,7 @@
 // Lecture seule (RLS admin pour l'écriture) + recherche.
 // ============================================================================
 import { useCallback, useEffect, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { listCustomers } from '../api/catalogApi';
 import { formatMoney } from '../lib/format';
 import { colors, sp } from '../theme';
@@ -44,9 +44,15 @@ export default function CustomersScreen() {
   });
 
   return (
+    <KeyboardAvoidingView
+      style={styles.screen}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
     <ScrollView
       style={styles.screen}
       contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />}
     >
       <Card>
@@ -78,6 +84,7 @@ export default function CustomersScreen() {
         ))}
       </Card>
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 

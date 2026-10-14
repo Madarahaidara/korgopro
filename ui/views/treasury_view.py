@@ -9,6 +9,20 @@ from PySide6.QtGui import QFont
 from core.treasury_manager import TreasuryManager
 
 
+# Catégories de mouvement de trésorerie (électricité, eau, internet, etc.).
+# Aligné sur web/src/components/MovementModal.jsx (CATEGORIES).
+MOVEMENT_CATEGORIES = [
+    "ELECTRICITE",
+    "EAU",
+    "INTERNET",
+    "TRANSPORT",
+    "MEUBLE",
+    "MAINTENANCE",
+    "DIVERS",
+    "AUTRE",
+]
+
+
 class TreasuryView(QWidget):
     """Vue de trésorerie : gestion des comptes, mouvements et sessions de caisse."""
 
@@ -180,7 +194,9 @@ class TreasuryView(QWidget):
         self.mv_amount = QDoubleSpinBox()
         self.mv_amount.setRange(1, 999999999)
         self.mv_amount.setSuffix(" FCFA")
-        self.mv_category = QLineEdit()
+        self.mv_category = QComboBox()
+        self.mv_category.setEditable(True)
+        self.mv_category.addItems(MOVEMENT_CATEGORIES)
         self.mv_description = QLineEdit()
         self.mv_reference = QLineEdit()
         form_layout.addRow("Compte:", self.mv_account)
@@ -213,7 +229,7 @@ class TreasuryView(QWidget):
             account_id=account_id,
             movement_type=self.mv_type.currentText(),
             amount=self.mv_amount.value(),
-            category=self.mv_category.text().strip() or None,
+            category=self.mv_category.currentText().strip() or None,
             description=self.mv_description.text().strip() or None,
             reference=self.mv_reference.text().strip() or None,
             user_id=self.user.get("id") if isinstance(self.user, dict) else (

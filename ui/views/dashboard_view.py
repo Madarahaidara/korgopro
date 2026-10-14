@@ -250,8 +250,8 @@ class DashboardView(QWidget):
         self.active_customers_card = self.create_stat_card("Clients actifs", "0")
         stats_layout.addWidget(self.active_customers_card, 0, 2)
         
-        # Carte : Produits en stock bas
-        self.low_stock_card = self.create_stat_card("Stock bas", "0")
+        # Carte : Produits en stock bas (chiffre en rouge)
+        self.low_stock_card = self.create_stat_card("Stock bas", "0", value_color="#ef4444")
         stats_layout.addWidget(self.low_stock_card, 0, 3)
         
         main_layout.addLayout(stats_layout)
@@ -409,7 +409,7 @@ class DashboardView(QWidget):
         shadow.setColor(color)
         widget.setGraphicsEffect(shadow)
     
-    def create_stat_card(self, title, value):
+    def create_stat_card(self, title, value, value_color=None):
         # Crée une carte de statistique
         card_frame = QFrame()
         card_frame.setObjectName("statCard")
@@ -422,6 +422,9 @@ class DashboardView(QWidget):
         card_title_label.setObjectName("statTitle")
         card_value_label = QLabel(value)
         card_value_label.setObjectName("statValue")
+        if value_color:
+            # Le style propre au label l'emporte sur la feuille QSS héritée.
+            card_value_label.setStyleSheet(f"color: {value_color};")
         
         card_layout.addWidget(card_title_label)
         card_layout.addWidget(card_value_label)

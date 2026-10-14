@@ -12,8 +12,8 @@ from decimal import Decimal, ROUND_HALF_UP
 from core.database import Base, engine, SessionLocal
 from core.models.user import User
 from core.models.stock_models import (
-    Product, Supplier, InventoryMovement, 
-    ExpenseCategory, Expense, PurchaseOrder, 
+    Product, Supplier, InventoryMovement,
+    PurchaseOrder,
     PurchaseOrderItem, StockAlert
 )
 from core.models.sale_models import (
@@ -188,29 +188,6 @@ def create_test_data_100():
             products.append(product)
         
         print(f"✅ {len(products)} produits créés")
-        
-        # ========== CRÉATION DE CATÉGORIES DE DÉPENSES (20) ==========
-        print("Création de 20 catégories de dépenses...")
-        expense_categories = []
-        expense_category_names = [
-            "Transport", "Emballage", "Loyer", "Salaires", "Fournitures",
-            "Électricité", "Eau", "Internet", "Maintenance", "Nettoyage",
-            "Marketing", "Formation", "Assurance", "Frais bancaires", "Impôts",
-            "Licences", "Logiciels", "Publicité", "Voyage", "Représentation"
-        ]
-        
-        for i, cat_name in enumerate(expense_category_names, 1):
-            category = ExpenseCategory(
-                name=cat_name,
-                description=f"Catégorie pour les dépenses de type {cat_name}",
-                active=True
-            )
-            db.add(category)
-            db.flush()
-            expense_categories.append(category)
-        
-        print(f"✅ {len(expense_categories)} catégories de dépenses créées")
-        
         # ========== CRÉATION DE 100 CLIENTS ==========
         print("Création de 100 clients...")
         customers = []
@@ -422,28 +399,6 @@ def create_test_data_100():
             product.quantity = max(0, product.quantity + quantity)
         
         print(f"✅ 100 mouvements de stock créés")
-        
-        # ========== CRÉATION DE 100 DÉPENSES ==========
-        print("Création de 100 dépenses...")
-        for i in range(1, 101):
-            expense_date = datetime.now() - timedelta(days=random.randint(0, 365))
-            amount = round(random.uniform(5, 5000), 2)
-            user = random.choice(users)
-            
-            expense = Expense(
-                category_id=random.choice(expense_categories).id,
-                amount=amount,
-                description=f"Dépense {i}: {random.choice(['Transport marchandises', 'Achat fournitures', 'Maintenance équipement', 'Frais de représentation', 'Publicité locale', 'Formation personnel', 'Licence logiciel', 'Assurance locale'])}",
-                payment_method=random.choice(["CASH", "BANK", "MOBILE_MONEY"]),
-                reference=f"EXP{i:05d}",
-                supplier_id=random.choice(suppliers).id if random.choice([True, False]) else None,
-                user_id=user.id,
-                date=expense_date
-            )
-            db.add(expense)
-        
-        print(f"✅ 100 dépenses créées")
-        
         # ========== CRÉATION DE 100 ALERTES DE STOCK ==========
         print("Création de 100 alertes de stock...")
         for i in range(1, 101):
@@ -628,12 +583,10 @@ def create_test_data_100():
         print(f"👥  Utilisateurs créés: {len(users)}")
         print(f"🏭  Fournisseurs créés: {len(suppliers)}")
         print(f"📦  Produits créés: {len(products)}")
-        print(f"💰  Catégories de dépenses: {len(expense_categories)}")
         print(f"👤  Clients créés: {len(customers)}")
         print(f"🛒  Ventes créées: {len(sales)}")
         print(f"💳  Paiements créés: 100")
         print(f"📊  Mouvements de stock: 100")
-        print(f"💸  Dépenses créées: 100")
         print(f"⚠️   Alertes de stock: 100")
         print(f"📋  Commandes d'achat: 100")
         print(f"↩️   Retours de vente: 50")
@@ -641,11 +594,9 @@ def create_test_data_100():
         
         # Calculer quelques statistiques financières
         total_sales = sum(s.total_amount for s in sales)
-        total_expenses = sum(e.amount for e in db.query(Expense).all())
         total_inventory_value = sum(p.quantity * p.purchase_price for p in products)
         
         print(f"💰  Chiffre d'affaires total: {total_sales:,.2f} FCFA")
-        print(f"💸  Dépenses totales: {total_expenses:,.2f} FCFA")
         print(f"📦  Valeur du stock: {total_inventory_value:,.2f} FCFA")
         print("="*60)
         print("✅ Données de test créées avec succès!")

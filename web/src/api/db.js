@@ -72,7 +72,7 @@ const DEFAULT_DB = {
   treasuryAccounts: [],
   treasuryMovements: [],
   monthlyClosures: [],
-  expenses: [],
+
   settings: {
     company_name: 'Korgo Pro',
     address: 'Cotonou, Bénin',

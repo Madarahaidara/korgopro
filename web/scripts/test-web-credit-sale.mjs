@@ -59,7 +59,6 @@ const DB = {
   ],
   treasury_movements: [],
   monthly_closures: [],
-  expenses: [],
   activity_logs: [],
 };
 

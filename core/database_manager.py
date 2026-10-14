@@ -133,8 +133,6 @@ class DatabaseManager:
                 "sale_returns": None,
                 "sale_return_items": None,
                 "inventory_movements": None,
-                "expenses": None,
-                "expense_categories": None,
                 "purchase_orders": None,
                 "purchase_order_items": None,
                 "stock_alerts": None,

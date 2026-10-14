@@ -74,6 +74,11 @@ transaction :
 | `app_register_payment` | Règlement d'une facture + trésorerie + `sale_logs` |
 | `app_cancel_sale` | Annulation : stock remis + dette crédit effacée + caisse remboursée (OUT) + `sale_logs` |
 | `app_stock_movement` | Mouvement de stock (`IN`, `OUT`, `ADJUST`, `LOSS`) + `inventory_movements` |
+| `app_treasury_save_account` | Création / modification d'un compte de trésorerie (`manage_treasury`) |
+| `app_treasury_move` | Mouvement manuel `IN`/`OUT` + solde du compte dans la même transaction |
+| `app_treasury_transfer` | Transfert entre comptes (OUT source + IN destination, `TRANSFER`) |
+| `app_treasury_month_preview` | Aperçu des totaux d'une période `YYYY-MM` (lecture seule) |
+| `app_treasury_close_month` | Clôture mensuelle : totaux recalculés serveur puis figés (ADMIN strict) |
 | `app_mobile_context` | Droits vus par le serveur (écran Compte) |
 
 Installation, au choix :

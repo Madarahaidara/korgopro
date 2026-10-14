@@ -62,6 +62,21 @@ const CALLS = {
     p_unit_cost: null, p_reference: null, p_notes: null, p_store_id: null,
   },
   app_cancel_sale: { p_sale_id: 1, p_reason: null },
+  // Trésorerie (supabase_mobile_rpc.sql §7) — même payload que src/api/rpc.js.
+  app_treasury_save_account: {
+    p_id: null, p_name: '_TEST_RPC', p_account_type: 'CASH', p_currency: 'FCFA',
+    p_initial_balance: 0, p_bank_name: null, p_account_number: null,
+    p_phone_number: null, p_is_active: true, p_is_default: false, p_notes: null,
+  },
+  app_treasury_move: {
+    p_account_id: 1, p_movement_type: 'IN', p_amount: 1, p_reference: null,
+    p_description: null, p_category: null, p_movement_date: null,
+  },
+  app_treasury_transfer: {
+    p_from_account_id: 1, p_to_account_id: 2, p_amount: 1, p_description: null,
+  },
+  app_treasury_month_preview: { p_period: '2026-10' },
+  app_treasury_close_month: { p_period: '2026-10', p_notes: null },
 };
 
 const env = loadEnv();

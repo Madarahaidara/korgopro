@@ -2568,14 +2568,19 @@ class AdminView(QWidget):
     
     def apply_light_theme(self):
         import os
+        # admin.qss référence des icônes ':/icons/...' : le projet n'a pas de
+        # bundle .qrc, il faut donc résoudre ces chemins vers ui/icons/ comme
+        # le fait theme_manager.load_theme() (sinon Qt affiche « Cannot open
+        # file ':/icons/check.svg' »).
+        from ui.themes.theme_manager import _resolve_qss_icons
         possible_paths = [
             os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "themes", "admin.qss"),
         ]
-        
+
         for path in possible_paths:
             try:
                 with open(path, "r", encoding="utf-8") as f:
-                    self.setStyleSheet(f.read())
+                    self.setStyleSheet(_resolve_qss_icons(f.read()))
                     return
             except FileNotFoundError:
                 continue

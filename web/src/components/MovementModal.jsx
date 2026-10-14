@@ -4,6 +4,19 @@ import { createMovement } from '../api/treasuryApi';
 import { Modal, toast } from './ui';
 import Icon from './Icon';
 
+// Catégories de mouvement de trésorerie (électricité, eau, internet, etc.).
+// Aligné sur ui/views/treasury_view.py (mv_category).
+const CATEGORIES = [
+  'ELECTRICITE',
+  'EAU',
+  'INTERNET',
+  'TRANSPORT',
+  'MEUBLE',
+  'MAINTENANCE',
+  'DIVERS',
+  'AUTRE',
+];
+
 export default function MovementModal({ accounts, onSave, onClose }) {
   const { user } = useAuth();
   const [form, setForm] = useState({
@@ -12,7 +25,7 @@ export default function MovementModal({ accounts, onSave, onClose }) {
     amount: 0,
     reference: '',
     description: '',
-    category: 'Autre',
+    category: 'AUTRE',
   });
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
 
@@ -51,7 +64,9 @@ export default function MovementModal({ accounts, onSave, onClose }) {
       </div>
       <div className="field">
         <label>Catégorie</label>
-        <input className="input" value={form.category} onChange={set('category')} />
+        <select className="select" value={form.category} onChange={set('category')}>
+          {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
       </div>
       <div className="field">
         <label>Description</label>

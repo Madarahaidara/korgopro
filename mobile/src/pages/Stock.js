@@ -3,7 +3,7 @@
 // Création/édition produit : réservé admin (RLS) — voir Inventaire (mouvements).
 // ============================================================================
 import { useCallback, useEffect, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { listProducts } from '../api/catalogApi';
 import { useStores } from '../context/StoreContext';
 import { formatMoney } from '../lib/format';
@@ -46,9 +46,15 @@ export default function StockScreen() {
   });
 
   return (
+    <KeyboardAvoidingView
+      style={styles.screen}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
     <ScrollView
       style={styles.screen}
       contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />}
     >
       <Card>
@@ -75,6 +81,7 @@ export default function StockScreen() {
         ))}
       </Card>
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 

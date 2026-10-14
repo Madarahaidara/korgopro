@@ -87,8 +87,8 @@ BEGIN
     'users','customers','activity_logs','sale_logs',
     'sales','sale_items','payments','sale_returns','sale_return_items',
     'proforma_invoices','proforma_invoice_items',
-    'products','suppliers','inventory_movements','expense_categories',
-    'expenses','purchase_orders','purchase_order_items','stock_alerts',
+    'products','suppliers','inventory_movements',
+    'purchase_orders','purchase_order_items','stock_alerts',
     'treasury_accounts','treasury_movements','cash_register_sessions','stores'
   ]
   LOOP
@@ -101,14 +101,13 @@ END $$;
 -- ----------------------------------------------------------------------------
 -- 2) Tables 100 % réservées aux ADMIN
 --    users (hachages de mots de passe), activity_logs (audit), sale_logs,
---    expenses, expense_categories (données financières sensibles)
 -- ----------------------------------------------------------------------------
 DO $$
 DECLARE t text;
 BEGIN
   FOREACH t IN ARRAY ARRAY[
-    'users','activity_logs','sale_logs',
-    'expenses','expense_categories'
+   
+   
   ]
   LOOP
     EXECUTE format('DROP POLICY IF EXISTS admin_full_%1$s ON public.%1$I', t);

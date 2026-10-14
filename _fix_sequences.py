@@ -7,7 +7,7 @@ from sqlalchemy import create_engine, text as t
 e = create_engine(os.environ['DATABASE_URL'])
 TABLES = ['sales', 'sale_items', 'payments', 'products', 'customers', 'stores',
           'users', 'treasury_accounts', 'treasury_movements', 'cash_register_sessions',
-          'monthly_closures', 'expenses', 'activity_logs', 'proforma_invoices',
+          'monthly_closures', 'activity_logs', 'proforma_invoices',
           'proforma_invoice_items', 'suppliers', 'sale_logs']
 with e.begin() as conn:
     for tb in TABLES:

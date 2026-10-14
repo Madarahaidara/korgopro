@@ -29,7 +29,7 @@ from core.models.sale_log import SaleLog  # noqa: E402,F401
 from core.models.customer import Customer  # noqa: E402,F401
 from core.models.stock_models import (  # noqa: E402,F401
     Product, Supplier, InventoryMovement,
-    ExpenseCategory, Expense, PurchaseOrder,
+    PurchaseOrder,
     PurchaseOrderItem, StockAlert,
 )
 from core.models.sale_models import (  # noqa: E402,F401

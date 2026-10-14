@@ -1,12 +1,15 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { KeyboardAvoidingView, Image, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  KeyboardAvoidingView, Image, Platform, ScrollView, StyleSheet, Text, View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Icon from '../components/Icon';
 import { Banner, Btn, Field, Input } from '../components/ui';
 import { MISSING_ENV_MESSAGE, isConfigured } from '../config';
 import { useAuth } from '../context/AuthContext';
 import { SessionConflictError, describeOtherSession } from '../api/sessionApi';
+import { useKeyboardScroll } from '../lib/keyboardScroll';
 import { LOGO } from '../brand';
 import { colors, sp } from '../theme';
 
@@ -25,6 +28,12 @@ export default function LoginScreen() {
   const [error, setError] = useState(null);
   // Session unique : un autre appareil est deja connecte a ce compte.
   const [conflict, setConflict] = useState(null);
+  // Clavier : le hook mesure le champ focus et le remonte au-dessus du clavier
+  // (Android edge-to-edge / adjustResize — KeyboardAvoidingView ne suffit pas).
+  const { scrollRef, keyboardHeight, onScroll, scrollToField } = useKeyboardScroll();
+  // Refs des champs : mesure + scroll vers le champ focusé.
+  const identifiantRef = useRef(null);
+  const passwordRef = useRef(null);
   const configured = isConfigured();
 
   const connect = async (options) => {
@@ -64,11 +73,19 @@ export default function LoginScreen() {
     >
       <StatusBar style="light" />
       <ScrollView
+        ref={scrollRef}
+        onScroll={onScroll}
+        scrollEventThrottle={16}
         contentContainerStyle={[
           styles.content,
-          { paddingTop: Math.max(insets.top, 20), paddingBottom: Math.max(insets.bottom, 20) },
+          {
+            paddingTop: Math.max(insets.top, 20),
+            paddingBottom: Math.max(insets.bottom, 20) + keyboardHeight,
+          },
         ]}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        showsVerticalScrollIndicator={false}
       >
         <View style={styles.cardWrap}>
           {/* Panneau bleu : logo + avantages (colonne gauche du web) */}
@@ -120,6 +137,7 @@ export default function LoginScreen() {
 
             <Field label="EMAIL OU NOM D'UTILISATEUR">
               <Input
+                ref={identifiantRef}
                 value={identifiant}
                 onChangeText={setIdentifiant}
                 placeholder="ex. admin@korgo-pro.com"
@@ -127,11 +145,13 @@ export default function LoginScreen() {
                 autoCorrect={false}
                 keyboardType="email-address"
                 returnKeyType="next"
+                onFocus={() => scrollToField(identifiantRef)}
               />
             </Field>
 
             <Field label="MOT DE PASSE">
               <Input
+                ref={passwordRef}
                 value={password}
                 onChangeText={setPassword}
                 placeholder="••••••••"
@@ -139,6 +159,7 @@ export default function LoginScreen() {
                 autoCapitalize="none"
                 returnKeyType="go"
                 onSubmitEditing={submit}
+                onFocus={() => scrollToField(passwordRef)}
               />
             </Field>
 
@@ -164,7 +185,10 @@ export default function LoginScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#eef2f7' },
-  content: { padding: sp(4), flexGrow: 1, justifyContent: 'center' },
+  // Pas de `justifyContent: 'center'` ici : centrer le contenu d'un ScrollView
+  // empêche le défilement automatique vers le champ focused quand le clavier
+  // s'ouvre (champs masqués). flexGrow:1 garde le fond plein écran.
+  content: { padding: sp(4), flexGrow: 1 },
   cardWrap: {
     backgroundColor: '#ffffff',
     borderRadius: 20,

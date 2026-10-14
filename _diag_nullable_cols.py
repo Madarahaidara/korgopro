@@ -13,7 +13,6 @@ where table_schema='public' and (
   or (table_name='suppliers' and column_name='name')
   or (table_name='sales' and column_name in ('sale_number','sale_status'))
   or (table_name='stock_movements' and column_name='movement_type')
-  or (table_name='expenses' and column_name in ('description','category_id'))
   or (table_name='proforma_invoices' and column_name in ('proforma_number','status'))
   or (table_name='users' and column_name='username')
   or (table_name='treasury_accounts' and column_name in ('name','account_type'))

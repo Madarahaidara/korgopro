@@ -94,7 +94,7 @@ export function countRecords(dbData) {
   const collections = [
     'users', 'customers', 'products', 'suppliers',
     'sales', 'proformas', 'treasuryAccounts', 'treasuryMovements',
-    'expenses', 'inventoryMovements', 'activityLogs',
+    'inventoryMovements', 'activityLogs',
   ];
   return collections.reduce((sum, key) => {
     const arr = dbData[key];

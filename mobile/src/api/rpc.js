@@ -135,3 +135,96 @@ export function stockMovement({
 export function mobileContext() {
   return callRpc('app_mobile_context', {});
 }
+
+// ===========================================================================
+// Trésorerie (miroir web/src/api/treasuryApi.js -> saveAccount / createMovement
+// / closeMonth). Garde serveur : `manage_treasury` (ADMIN, GESTIONNAIRE,
+// SUPERVISEUR) pour les comptes/mouvements/transferts, ADMIN strict pour la
+// clôture mensuelle — matrice core/permissions.py appliquée en SQL.
+// ===========================================================================
+
+/**
+ * Crée ou modifie un compte de trésorerie.
+ * `account.id` absent -> création (solde initial = solde courant) ;
+ * présent -> modification (le solde courant n'est jamais touché par cette RPC).
+ */
+export function saveTreasuryAccount({
+  id = null,
+  name,
+  accountType = 'CASH',
+  currency = null,
+  initialBalance = 0,
+  bankName = '',
+  accountNumber = '',
+  phoneNumber = '',
+  isActive = true,
+  isDefault = false,
+  notes = '',
+}) {
+  return callRpc('app_treasury_save_account', {
+    p_id: id,
+    p_name: name,
+    p_account_type: accountType,
+    p_currency: currency,
+    p_initial_balance: initialBalance,
+    p_bank_name: bankName,
+    p_account_number: accountNumber,
+    p_phone_number: phoneNumber,
+    p_is_active: isActive,
+    p_is_default: isDefault,
+    p_notes: notes,
+  });
+}
+
+/**
+ * Mouvement manuel IN/OUT : le serveur contrôle le montant (> 0), le compte
+ * (actif) et ajuste `current_balance` dans la même transaction.
+ */
+export function createTreasuryMovement({
+  accountId,
+  movementType,
+  amount,
+  reference = '',
+  description = '',
+  category = '',
+  date = null,
+}) {
+  return callRpc('app_treasury_move', {
+    p_account_id: accountId,
+    p_movement_type: movementType,
+    p_amount: amount,
+    p_reference: reference,
+    p_description: description,
+    p_category: category,
+    p_movement_date: date,
+  });
+}
+
+/** Transfert entre comptes : OUT sur l'origine + IN sur la destination. */
+export function transferTreasury({ fromAccountId, toAccountId, amount, description = '' }) {
+  return callRpc('app_treasury_transfer', {
+    p_from_account_id: fromAccountId,
+    p_to_account_id: toAccountId,
+    p_amount: amount,
+    p_description: description,
+  });
+}
+
+/**
+ * Aperçu des totaux d'une période 'YYYY-MM' (ventes, encaissé, crédit,
+ * dépenses, net + statut de clôture). Lecture seule.
+ */
+export function treasuryMonthPreview(period) {
+  return callRpc('app_treasury_month_preview', { p_period: period });
+}
+
+/**
+ * Clôture mensuelle : recalcule les totaux côté serveur et les fige.
+ * Droits serveur : ADMIN strict (comme le bouton web réservé aux admins).
+ */
+export function closeTreasuryMonth(period, notes = '') {
+  return callRpc('app_treasury_close_month', {
+    p_period: period,
+    p_notes: notes,
+  });
+}

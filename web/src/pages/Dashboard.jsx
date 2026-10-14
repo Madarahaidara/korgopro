@@ -51,7 +51,7 @@ export default function Dashboard() {
         <div className="card">
           <div className="card-title"><Icon name="alert" size={16} style={{ verticalAlign: '-2px' }} /> Alertes stock</div>
           <div className="flex justify-between mb-12">
-            <div><span className="badge badge-warning">Stock bas</span> <b>{s.lowStock}</b></div>
+            <div><span className="badge badge-danger">Stock bas</span> <b style={{ color: 'var(--danger)' }}>{s.lowStock}</b></div>
             <div><span className="badge badge-danger">Rupture</span> <b>{s.outOfStock}</b></div>
           </div>
           <Link to="/stock" className="btn btn-sm">Gérer le stock <Icon name="arrowRight" size={16} style={{ verticalAlign: '-2px' }} /></Link>
