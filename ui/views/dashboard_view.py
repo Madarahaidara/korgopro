@@ -129,11 +129,10 @@ class DashboardDataWorker(QThread):
 
 
 class DashboardView(QWidget):
-    def __init__(self, user_data):
+    def __init__(self, user_data, settings_manager=None):
         super().__init__()
         self.user_data = user_data  # Peut être un dict ou un objet User
-        # Initialiser le gestionnaire de paramètres (Singleton garanti par __new__)
-        self.settings_manager = SettingsManager()
+        self.settings_manager = settings_manager or SettingsManager()
         self.init_ui()
         self.setup_chart()
         self.apply_light_theme()
@@ -185,7 +184,7 @@ class DashboardView(QWidget):
                     painter.drawEllipse(0, 0, 40, 40)
                     painter.setPen(Qt.white)
                     painter.setFont(QFont("Arial", 14, QFont.Bold))
-                    painter.drawText(self.rect(), Qt.AlignCenter, self.text[0] if self.text else "E")
+                    painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self.text[0] if self.text else "E")
                     
             logo_label = SimpleLogo(company_name)
         
@@ -240,6 +239,7 @@ class DashboardView(QWidget):
         
         # Carte : Ventes du jour
         self.total_sales_card = self.create_stat_card("Ventes du jour", "0 FCFA")
+        self.total_sales_card.setProperty("featured", True)
         stats_layout.addWidget(self.total_sales_card, 0, 0)
         
         # Carte : Ventes du mois
@@ -273,7 +273,7 @@ class DashboardView(QWidget):
         # Indicateur de mise à jour
         self.update_label = QLabel("Dernière mise à jour: --:--")
         self.update_label.setObjectName("updateLabel")
-        chart_header_layout.addWidget(self.update_label, alignment=Qt.AlignRight)
+        chart_header_layout.addWidget(self.update_label, alignment=Qt.AlignmentFlag.AlignRight)
         
         left_column_layout.addLayout(chart_header_layout)
         
@@ -301,7 +301,7 @@ class DashboardView(QWidget):
         
         # Légende sous le graphique
         legend_layout = QHBoxLayout()
-        legend_layout.setAlignment(Qt.AlignCenter)
+        legend_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
         legend_color = QLabel()
         legend_color.setFixedSize(20, 20)
@@ -413,10 +413,11 @@ class DashboardView(QWidget):
         # Crée une carte de statistique
         card_frame = QFrame()
         card_frame.setObjectName("statCard")
+        card_frame.setProperty("featured", False)
         card_frame.setMinimumHeight(100)
         self.apply_shadow(card_frame)
         card_layout = QVBoxLayout(card_frame)
-        card_layout.setAlignment(Qt.AlignCenter)
+        card_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
         card_title_label = QLabel(title)
         card_title_label.setObjectName("statTitle")
@@ -468,8 +469,8 @@ class DashboardView(QWidget):
         self.value_axis.setLabelsFont(QFont("Arial", 9))
         
         # Ajoute les axes au graphique
-        self.chart.addAxis(self.date_axis, Qt.AlignBottom)
-        self.chart.addAxis(self.value_axis, Qt.AlignLeft)
+        self.chart.addAxis(self.date_axis, Qt.AlignmentFlag.AlignBottom)
+        self.chart.addAxis(self.value_axis, Qt.AlignmentFlag.AlignLeft)
         
         # Cache la légende
         self.chart.legend().hide()
@@ -606,7 +607,7 @@ class DashboardView(QWidget):
                 row, 2, QTableWidgetItem(customer_name or "Non renseigné"))
 
             status_item = QTableWidgetItem(status_map.get(status, status or "-"))
-            status_item.setTextAlignment(Qt.AlignCenter)
+            status_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             color = status_colors.get(status)
             if color is not None:
                 status_item.setBackground(color)

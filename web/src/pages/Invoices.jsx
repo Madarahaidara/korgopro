@@ -79,23 +79,21 @@ export default function Invoices() {
 function InvoicePreview({ sale, onClose }) {
   return (
     <Modal title={`Aperçu — ${sale.number}`} onClose={onClose} width={680}>
-      <div className="invoice-sheet">
-        <div className="justify-between mb-12">
-          <div>
-            <div style={{ fontSize: 18, fontWeight: 800 }}>FACTURE</div>
-            <div className="text-muted">N° {sale.number}</div>
-          </div>
-          <div className="text-right">
-            <div className="text-muted">Date</div>
-            <b>{formatDate(sale.sale_date)}</b>
-          </div>
+      <div className="document-print-actions"><button className="btn btn-primary" onClick={() => window.print()}>Imprimer / Enregistrer en PDF</button></div>
+      <div className="invoice-sheet document-print-sheet">
+        <div className="document-print-header">
+          <div><div className="document-brand">KORGO</div><div className="text-muted">Document commercial</div></div>
+          <div className="text-right text-muted">Émise le {formatDate(sale.sale_date)}</div>
         </div>
+        <div className="document-print-title">{sale.type_document === 'AVOIR' ? 'AVOIR' : 'FACTURE'} N° {sale.number}</div>
         <div className="card mb-12" style={{ background: '#fafbfc' }}>
-          <div className="text-muted" style={{ fontSize: 12, fontWeight: 700 }}>CLIENT</div>
+          <div className="text-muted" style={{ fontSize: 12, fontWeight: 700 }}>DOIT :</div>
           <b>{sale.customer?.full_name || 'Client comptoir'}</b>
           {sale.customer?.company && <div>{sale.customer.company}</div>}
-          {sale.customer?.phone && <div className="text-muted">{sale.customer.phone}</div>}
+          {sale.customer?.address && <div>{sale.customer.address}</div>}
+          {(sale.customer?.phone || sale.customer?.email) && <div className="text-muted">{[sale.customer?.phone, sale.customer?.email].filter(Boolean).join(' · ')}</div>}
         </div>
+        {sale.notes && <div className="document-object"><b>Objet :</b> {sale.notes}</div>}
 
         {sale.items.length > 0 && (
           <table className="table mb-12">
@@ -117,8 +115,9 @@ function InvoicePreview({ sale, onClose }) {
           <Line label="Sous-total" value={formatMoney(sale.subtotal, sale.currency)} />
           <Line label="Remise" value={`-${formatMoney(sale.discount_amount, sale.currency)}`} />
           <Line label="Taxe" value={formatMoney(sale.tax_amount, sale.currency)} />
-          <Line label="Total" value={formatMoney(sale.total_amount, sale.currency)} bold />
+          <Line label="TOTAL GENERAL" value={formatMoney(sale.total_amount, sale.currency)} bold />
         </div>
+        <div className="document-print-footer">Document généré par Korgo · Montants en {sale.currency || 'FCFA'}</div>
       </div>
     </Modal>
   );

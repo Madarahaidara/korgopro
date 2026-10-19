@@ -133,7 +133,7 @@ class AdminView(QWidget):
     password_reset = Signal(dict)
     role_changed = Signal(dict)
     
-    def __init__(self, current_user):
+    def __init__(self, current_user, settings_manager=None):
         super().__init__()
         self.setWindowTitle("Korgo - Administration")
         self.setMinimumSize(800, 500)  # Taille minimale, s'adapte à l'écran
@@ -146,7 +146,7 @@ class AdminView(QWidget):
         self.log_manager = LogManager()
         self.db_manager = DatabaseManager()
         self.sale_log_manager = SaleLogManager()
-        self.settings_manager = SettingsManager()
+        self.settings_manager = settings_manager or SettingsManager()
         
         # Rôles et permissions : source unique core.permissions (le web s'y
         # adosse également). Ne pas redéfinir de matrice ici.
@@ -659,7 +659,7 @@ class AdminView(QWidget):
         
         system_logs_btn = QPushButton("📄 Journaux système (fichiers)")
         system_logs_btn.setObjectName("systemLogsBtn")
-        system_logs_btn.setCursor(Qt.PointingHandCursor)
+        system_logs_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         system_logs_btn.setToolTip(
             "Consulter et exporter les fichiers de logs / rapports de diagnostic "
             "générés par l'application (utile en cas de bug)."
@@ -793,18 +793,18 @@ class AdminView(QWidget):
             self.activity_table.setRowCount(len(logs))
             for row, log in enumerate(logs):
                 id_item = QTableWidgetItem(str(log.id))
-                id_item.setTextAlignment(Qt.AlignCenter)
+                id_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.activity_table.setItem(row, 0, id_item)
                 
                 date_item = QTableWidgetItem(log.created_at.strftime("%d/%m/%Y %H:%M:%S"))
-                date_item.setTextAlignment(Qt.AlignCenter)
+                date_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.activity_table.setItem(row, 1, date_item)
                 
                 user_item = QTableWidgetItem(log.username)
                 self.activity_table.setItem(row, 2, user_item)
                 
                 action_item = QTableWidgetItem(log.action)
-                action_item.setTextAlignment(Qt.AlignCenter)
+                action_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 
                 if "Connexion" in log.action:
                     action_item.setForeground(QColor(0, 123, 255))
@@ -823,7 +823,7 @@ class AdminView(QWidget):
                 self.activity_table.setItem(row, 4, details_item)
                 
                 ip_item = QTableWidgetItem(log.ip_address or "N/A")
-                ip_item.setTextAlignment(Qt.AlignCenter)
+                ip_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.activity_table.setItem(row, 5, ip_item)
             
             self.update_logs_statistics(payload['stats'])
@@ -1091,12 +1091,12 @@ class AdminView(QWidget):
             for row, log in enumerate(logs):
                 # ID
                 id_item = QTableWidgetItem(str(log.id))
-                id_item.setTextAlignment(Qt.AlignCenter)
+                id_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.sale_logs_table.setItem(row, 0, id_item)
                 
                 # Date/Heure
                 date_item = QTableWidgetItem(log.created_at.strftime("%d/%m/%Y %H:%M:%S"))
-                date_item.setTextAlignment(Qt.AlignCenter)
+                date_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.sale_logs_table.setItem(row, 1, date_item)
                 
                 # N° Vente
@@ -1105,7 +1105,7 @@ class AdminView(QWidget):
                 
                 # Action avec couleur
                 action_item = QTableWidgetItem(log.action)
-                action_item.setTextAlignment(Qt.AlignCenter)
+                action_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 if log.action == "CREATE":
                     action_item.setForeground(QColor(40, 167, 69))
                     action_item.setToolTip("Vente créée")
@@ -1132,7 +1132,7 @@ class AdminView(QWidget):
                 
                 # Rôle
                 role_item = QTableWidgetItem(log.user_role)
-                role_item.setTextAlignment(Qt.AlignCenter)
+                role_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 if log.user_role == "ADMIN":
                     role_item.setForeground(QColor(220, 53, 69))
                 elif log.user_role == "GERANT":
@@ -1147,13 +1147,13 @@ class AdminView(QWidget):
                 
                 # Montant
                 amount_item = QTableWidgetItem(f"{log.total_amount:,.0f} FCFA")
-                amount_item.setTextAlignment(Qt.AlignRight)
+                amount_item.setTextAlignment(Qt.AlignmentFlag.AlignRight)
                 amount_item.setForeground(QColor(0, 123, 255))
                 self.sale_logs_table.setItem(row, 7, amount_item)
                 
                 # Paiement
                 payment_item = QTableWidgetItem(log.payment_method or "-")
-                payment_item.setTextAlignment(Qt.AlignCenter)
+                payment_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.sale_logs_table.setItem(row, 8, payment_item)
                 
                 # Détails
@@ -1163,7 +1163,7 @@ class AdminView(QWidget):
                 
                 # IP
                 ip_item = QTableWidgetItem(log.ip_address or "N/A")
-                ip_item.setTextAlignment(Qt.AlignCenter)
+                ip_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.sale_logs_table.setItem(row, 10, ip_item)
             
             # Mettre à jour les statistiques
@@ -1229,7 +1229,7 @@ class AdminView(QWidget):
         # Titre
         title = QLabel("📊 STATISTIQUES DES VENTES")
         title.setStyleSheet("font-size: 16px; font-weight: bold; color: #1f2937; padding: 10px;")
-        title.setAlignment(Qt.AlignCenter)
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
         
         # Scroll area
@@ -1637,7 +1637,8 @@ class AdminView(QWidget):
             "Confirmation",
             "⚠️ ATTENTION: La restauration va remplacer les données des tables "
             "contenues dans le backup.\n"
-            "Les autres tables de la base sont conservées.\n\n"
+            "Les tables hors backup (dont les comptes utilisateurs et les "
+            "journaux d'activité) sont conservées.\n\n"
             "Formats acceptés : export JSON (.json) ou base SQLite (.db).\n\n"
             "Continuer ?",
             QMessageBox.Yes | QMessageBox.No
@@ -1781,7 +1782,7 @@ class AdminView(QWidget):
         
         for row, user in enumerate(self.filtered_users):
             id_item = QTableWidgetItem(str(user.id))
-            id_item.setTextAlignment(Qt.AlignCenter)
+            id_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self.users_table.setItem(row, 0, id_item)
             
             username_item = QTableWidgetItem(user.username)
@@ -1793,7 +1794,7 @@ class AdminView(QWidget):
             
             role_display = self.get_role_display_name(user.role)
             role_item = QTableWidgetItem(role_display)
-            role_item.setTextAlignment(Qt.AlignCenter)
+            role_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             
             if user.role == "ADMIN":
                 role_item.setForeground(QColor(220, 53, 69))
@@ -1807,7 +1808,7 @@ class AdminView(QWidget):
             status_icon = "✓" if user.active else "✗"
             status_text = f"{status_icon} {'Actif' if user.active else 'Inactif'}"
             status_item = QTableWidgetItem(status_text)
-            status_item.setTextAlignment(Qt.AlignCenter)
+            status_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             
             if user.active:
                 status_item.setForeground(QColor(40, 167, 69))
@@ -1818,7 +1819,7 @@ class AdminView(QWidget):
             
             created_date = user.created_at.strftime("%d/%m/%Y %H:%M") if user.created_at else "N/A"
             date_item = QTableWidgetItem(created_date)
-            date_item.setTextAlignment(Qt.AlignCenter)
+            date_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self.users_table.setItem(row, 5, date_item)
             
             if user.last_login:
@@ -1826,7 +1827,7 @@ class AdminView(QWidget):
             else:
                 last_login = "Jamais"
             login_item = QTableWidgetItem(last_login)
-            login_item.setTextAlignment(Qt.AlignCenter)
+            login_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self.users_table.setItem(row, 6, login_item)
             
             permissions = self.get_role_permissions(user.role)
@@ -1834,7 +1835,7 @@ class AdminView(QWidget):
             total_perms = len(permissions)
             perms_text = f"{active_perms}/{total_perms} permissions"
             perms_item = QTableWidgetItem(perms_text)
-            perms_item.setTextAlignment(Qt.AlignCenter)
+            perms_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             perms_item.setToolTip(self.get_permissions_tooltip(permissions))
             self.users_table.setItem(row, 7, perms_item)
             
@@ -1877,7 +1878,7 @@ class AdminView(QWidget):
             actions_layout.addWidget(reset_btn)
             actions_layout.addWidget(perms_btn)
             actions_layout.addWidget(delete_btn)
-            actions_layout.setAlignment(Qt.AlignCenter)
+            actions_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
             
             self.users_table.setCellWidget(row, 8, actions_widget)
     
@@ -2243,7 +2244,7 @@ class AdminView(QWidget):
         
         # Formulaire
         form_layout = QFormLayout()
-        form_layout.setLabelAlignment(Qt.AlignRight)
+        form_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         
         new_password_input = QLineEdit()
         new_password_input.setEchoMode(QLineEdit.Password)
@@ -2609,7 +2610,7 @@ class UserDialog(QDialog):
         layout = QVBoxLayout(self)
         
         form_layout = QFormLayout()
-        form_layout.setLabelAlignment(Qt.AlignRight)
+        form_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         
         self.username_input = QLineEdit()
         self.username_input.setPlaceholderText("Nom d'utilisateur")
@@ -2856,7 +2857,7 @@ class PermissionsDialog(QDialog):
         
         stats_label = QLabel(f"<b>{active_perms}/{total_perms}</b> permissions actives")
         stats_label.setObjectName("statsLabel")
-        stats_label.setAlignment(Qt.AlignCenter)
+        stats_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         permissions_layout.addWidget(stats_label)
         
         layout.addWidget(permissions_frame)

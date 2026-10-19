@@ -30,6 +30,7 @@ from core.models import customer, user, activity_log, sale_log  # noqa: F401,E40
 from core.models import sale_models  # noqa: F401,E402
 from core.models import stock_models  # noqa: F401,E402
 from core.models import treasury_models  # noqa: F401,E402
+from core.models import app_setting  # noqa: F401,E402
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

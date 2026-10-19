@@ -755,8 +755,35 @@ a {
 }
 .align-end { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
 .align-end b { margin-left: 4px; }
-/* Aperçu facture */
-.invoice-sheet { padding: 4px; }
+/* Factures et proformas */
+.invoice-sheet, .document-print-sheet { padding: 16px; color: #172b3a; background: #fff; }
+.document-print-actions { display: flex; justify-content: flex-end; margin: 0 0 14px; }
+.document-print-header { display: flex; justify-content: space-between; gap: 20px; align-items: flex-start; border-bottom: 2px solid #17324d; padding-bottom: 14px; margin-bottom: 20px; }
+.document-brand { color: #17324d; font-size: 22px; font-weight: 800; letter-spacing: .4px; }
+.document-type-label { color: #17324d; font-size: 20px; font-weight: 800; letter-spacing: 1px; }
+.document-print-title { margin: 4px 0 18px; color: #111827; text-align: center; font-size: 18px; font-weight: 800; letter-spacing: .3px; }
+.document-party { padding: 6px 0; line-height: 1.55; }
+.document-object { margin: 10px 0 16px; }
+.document-print-sheet .table { border-collapse: collapse; }
+.document-print-sheet .table thead { background: #e7e9eb; color: #172b3a; }
+.document-print-sheet .table th { font-size: 11px; letter-spacing: .35px; text-transform: uppercase; }
+.document-print-sheet .table td, .document-print-sheet .table th { padding: 10px 8px; border-bottom: 1px solid #dce3ea; }
+.document-print-sheet .table tbody tr:nth-child(even) { background: #f5f8fb; }
+.document-print-sheet .grid { padding: 12px; background: #f4f7fa; border-left: 3px solid #178f91; }
+.document-print-sheet .text-right { text-align: right; }
+.document-print-sheet .flex.justify-between:last-child { border-top: 1px solid #7f8992; padding-top: 9px; margin-top: 10px; color: #111827; font-size: 16px; }
+.document-terms { margin-top: 20px; padding: 12px; border: 1px solid #dce3ea; color: #405366; white-space: pre-wrap; }
+.document-print-footer { margin-top: 28px; padding-top: 10px; border-top: 1px solid #cbd5df; color: #64748b; font-size: 11px; }
+@page { size: A4; margin: 28mm 14mm 20mm; }
+@media print {
+  body * { visibility: hidden !important; }
+  .document-print-sheet, .document-print-sheet * { visibility: visible !important; }
+  .document-print-sheet { position: absolute !important; inset: 0 auto auto 0; width: 100%; padding: 0 !important; margin: 0 !important; box-shadow: none !important; }
+  .document-print-sheet .table thead { display: table-header-group; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .document-print-sheet tr { break-inside: avoid; }
+  .document-print-header { position: fixed; top: -18mm; left: 0; right: 0; background: #fff; padding-bottom: 4mm; }
+  .document-print-footer { position: fixed; bottom: -8mm; left: 0; right: 0; margin-top: 0; background: #fff; }
+}
 /* ===== Page Administration ===== */
 .admin-tabs {
   display: flex;

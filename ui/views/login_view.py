@@ -168,7 +168,7 @@ class AnimatedIconWidget(QWidget):
         font.setPointSize(32)
         font.setBold(True)
         painter.setFont(font)
-        painter.drawText(self.rect(), Qt.AlignCenter, self.text)
+        painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self.text)
 
 
 class LeftPanel(QWidget):
@@ -195,7 +195,7 @@ class LeftPanel(QWidget):
         self.logo_label.setObjectName("BrandLogo")
         self.logo_label.setMinimumSize(140, 140)
         self.logo_label.setMaximumSize(180, 180)
-        self.logo_label.setAlignment(Qt.AlignCenter)
+        self.logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
         # Charger le logo depuis le fichier
         logo_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "icons", "logo.ico")
@@ -219,13 +219,13 @@ class LeftPanel(QWidget):
         # Titre avec effet de fondu
         self.title_label = QLabel("KORGO PRO")
         self.title_label.setObjectName("BrandTitle")
-        self.title_label.setAlignment(Qt.AlignCenter)
+        self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.title_label)
         
         # Sous-titre
         subtitle = QLabel("Système de Gestion d'Entreprise")
         subtitle.setObjectName("BrandSubtitle")
-        subtitle.setAlignment(Qt.AlignCenter)
+        subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(subtitle)
         layout.addSpacing(10)
         
@@ -258,7 +258,7 @@ class LeftPanel(QWidget):
         for feature in features:
             feat_label = QLabel(feature)
             feat_label.setObjectName("FeatureItem")
-            feat_label.setAlignment(Qt.AlignCenter)
+            feat_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             features_layout.addWidget(feat_label)
         
         layout.addWidget(features_container)
@@ -269,7 +269,7 @@ class LeftPanel(QWidget):
         # Version
         version_label = QLabel("v0.1.0")
         version_label.setObjectName("VersionLabel")
-        version_label.setAlignment(Qt.AlignCenter)
+        version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(version_label)
 
 
@@ -312,8 +312,9 @@ class LoginInputField(QWidget):
 class LoginView(QWidget):
     login_successful = Signal(dict, str)
 
-    def __init__(self):
+    def __init__(self, auth_controller=None):
         super().__init__()
+        self.auth_controller = auth_controller
         self.setObjectName("LoginView")
         self.setWindowTitle("Korgo Pro - Connexion")
         
@@ -337,7 +338,7 @@ class LoginView(QWidget):
         # Layout principal
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setAlignment(Qt.AlignCenter)
+        main_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
         # === Fenêtre principale avec ombre portée ===
         # Utilisation d'un conteneur externe pour l'effet d'ombre
@@ -422,7 +423,7 @@ class LoginView(QWidget):
         # Bouton Se connecter premium
         self.btn_login = QPushButton("Se connecter")
         self.btn_login.setObjectName("LoginButton")
-        self.btn_login.setCursor(Qt.PointingHandCursor)
+        self.btn_login.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_login.setFixedHeight(44)
         self.btn_login.setFixedWidth(140)
         btn_layout.addWidget(self.btn_login)
@@ -430,7 +431,7 @@ class LoginView(QWidget):
         # Bouton Quitter
         self.btn_cancel = QPushButton("Quitter")
         self.btn_cancel.setObjectName("CancelButton")
-        self.btn_cancel.setCursor(Qt.PointingHandCursor)
+        self.btn_cancel.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_cancel.setFixedHeight(44)
         self.btn_cancel.setFixedWidth(140)
         btn_layout.addWidget(self.btn_cancel)
@@ -443,7 +444,7 @@ class LoginView(QWidget):
         right_layout.addSpacing(8)
         self.error_label = QLabel("")
         self.error_label.setObjectName("ErrorLabel")
-        self.error_label.setAlignment(Qt.AlignCenter)
+        self.error_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.error_label.setWordWrap(True)
         self.error_label.hide()
         right_layout.addWidget(self.error_label)
@@ -454,7 +455,7 @@ class LoginView(QWidget):
             "Déconnecter l'autre appareil et se connecter"
         )
         self.btn_takeover.setObjectName("TakeoverButton")
-        self.btn_takeover.setCursor(Qt.PointingHandCursor)
+        self.btn_takeover.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_takeover.setFixedHeight(40)
         self.btn_takeover.hide()
         self.btn_takeover.clicked.connect(self.on_takeover_pressed)
@@ -546,7 +547,8 @@ class LoginView(QWidget):
         self.btn_takeover.hide()
         
         from controllers.auth_controller import AuthController
-        auth = AuthController()
+
+        auth = self.auth_controller or AuthController()
         # Conserve pour l'affichage du refus (session deja ouverte ailleurs).
         self.auth_controller = auth
 

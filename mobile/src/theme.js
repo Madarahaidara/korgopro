@@ -17,7 +17,7 @@ export const colors = {
   info: '#8b5cf6',
   text: '#1e293b',
   textMuted: '#475569',
-  textLight: '#94a3b8',
+  textLight: '#64748b',
   border: '#e2e8f0',
   fieldBorder: '#cbd5e1',
   bg: '#f8fafc',

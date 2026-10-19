@@ -192,24 +192,54 @@ QTableView, QTableWidget {
     border-radius: 12px;
     background: #ffffff;
     alternate-background-color: #f8fafc;
-    selection-background-color: #dbeafe;
+    selection-background-color: #f1f3f5;
     selection-color: #0f172a;
-    gridline-color: #e2e8f0;
+    gridline-color: #e8edf2;
 }
 
 QHeaderView::section {
-    background: #f1f5f9;
+    background: #e9eef3;
     color: #334155;
     font-weight: 700;
-    padding: 10px 8px;
+    padding: 10px 9px;
     border: none;
-    border-right: 1px solid #e2e8f0;
-    border-bottom: 1px solid #e2e8f0;
+    border-right: 1px solid #d9e1e8;
+    border-bottom: 1px solid #d9e1e8;
 }
 
 QTableWidget::item {
     padding: 8px 6px;
     color: #0f172a;
+}
+
+QTableView::item:hover, QTableWidget::item:hover {
+    background: #f8f9fa;
+}
+
+QTableView::item:selected, QTableWidget::item:selected {
+    background: #f1f3f5;
+    color: #0f172a;
+}
+
+QTableView:focus, QTableWidget:focus {
+    border: 1px solid #2563eb;
+}
+
+/* Caisse : le récapitulatif et les actions restent fixes sous le panier. */
+#cartFooter {
+    background: #ffffff;
+    border: 1px solid #dfe7f1;
+    border-radius: 12px;
+}
+
+#totalsSection {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+}
+
+#actionsSection {
+    background: transparent;
 }
 
 /* ===== GROUP BOX ===== */
@@ -309,4 +339,10 @@ QTabBar::tab:selected {
 
 QTabBar::tab:hover {
     background: #e2e8f0;
+}
+
+QPushButton:focus, QLineEdit:focus, QComboBox:focus,
+QSpinBox:focus, QDoubleSpinBox:focus, QDateEdit:focus,
+QTextEdit:focus {
+    border: 2px solid #2563eb;
 }

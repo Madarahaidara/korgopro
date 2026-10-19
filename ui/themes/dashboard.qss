@@ -18,6 +18,17 @@ QWidget {
     border: 1px solid #2F4255;
 }
 
+#statCard[featured="true"] {
+    background-color: #effaf5;
+    border: 1px solid #86d6ad;
+    border-top: 4px solid #059669;
+}
+
+#statCard[featured="true"] #statValue {
+    color: #065f46;
+    font-size: 30px;
+}
+
 #statTitle {
     font-size: 14px;
     color: #7f8c8d;
@@ -78,25 +89,29 @@ QWidget {
 
 #productsTable QHeaderView::section, 
 #salesTable QHeaderView::section {
-    background-color: #f8f9fa;
-    padding: 15px;
+    background-color: #e9eef3;
+    padding: 10px 9px;
     border: none;
     font-weight: bold;
-    color: #2F4255;
-    font-size: 14px;
-    border-bottom: 2px solid #2F4255;
+    color: #334155;
+    font-size: 13px;
+    border-bottom: 1px solid #d9e1e8;
 }
 
 QTableWidget {
-    gridline-color: #e0e0e0;
-    selection-background-color: #2F4255;
+    gridline-color: #e8edf2;
+    selection-background-color: #f1f3f5;
     selection-color: white;
 }
 
 QTableWidget::item:selected {
-    background-color: #2F4255;
-    color: white;
-    font-weight: bold;
+    background-color: #f1f3f5;
+    color: #0f172a;
+    font-weight: 600;
+}
+
+QTableWidget::item:hover {
+    background-color: #f8f9fa;
 }
 
 /* Style pour les cellules avec couleurs spécifiques */
@@ -126,12 +141,12 @@ QHeaderView {
 }
 
 QHeaderView::section {
-    background-color: #f8f9fa;
-    padding: 10px;
+    background-color: #e9eef3;
+    padding: 10px 9px;
     border: none;
-    border-bottom: 2px solid #2F4255;
+    border-bottom: 1px solid #d9e1e8;
     font-weight: bold;
-    color: #2F4255;
+    color: #334155;
 }
 
 /* Style pour le graphique */

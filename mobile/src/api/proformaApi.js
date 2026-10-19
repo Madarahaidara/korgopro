@@ -18,7 +18,7 @@ const COLUMNS =
   'id,proforma_number,customer_id,created_by,created_date,valid_until,subtotal,' +
   'discount_percent,discount_amount,tax_percent,tax_amount,total_amount,status,' +
   'notes,terms_and_conditions,currency,converted_to_sale_id,' +
-  'customers(first_name,last_name,company)';
+  'customers(first_name,last_name,company,phone,email,address)';
 
 function enrich(row) {
   const c = row.customers || null;
@@ -26,7 +26,10 @@ function enrich(row) {
     ...row,
     number: row.proforma_number,
     customer: c
-      ? { full_name: [c.first_name, c.last_name].filter(Boolean).join(' ') || c.company || 'Client' }
+      ? {
+        full_name: [c.first_name, c.last_name].filter(Boolean).join(' ') || c.company || 'Client',
+        company: c.company || '', phone: c.phone || '', email: c.email || '', address: c.address || '',
+      }
       : null,
     items: [],
   };

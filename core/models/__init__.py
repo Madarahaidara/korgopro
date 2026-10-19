@@ -2,5 +2,6 @@
 from core.models.user import User
 from core.models.activity_log import ActivityLog
 from core.models.store import Store
+from core.models.app_setting import AppSetting
 
-__all__ = ['User', 'ActivityLog', 'Store']
+__all__ = ['User', 'ActivityLog', 'Store', 'AppSetting']

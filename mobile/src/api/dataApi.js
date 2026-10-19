@@ -19,9 +19,9 @@ const PRODUCT_COLUMNS =
   'barcode,location,active,store_id,supplier_id';
 
 const SALE_COLUMNS =
-  'id,sale_number,sale_date,total_amount,amount_paid,change_amount,payment_status,' +
+  'id,sale_number,sale_date,subtotal,discount_amount,tax_amount,total_amount,amount_paid,change_amount,notes,payment_status,' +
   'payment_method,sale_status,statut,customer_id,store_id,currency,' +
-  'customers(first_name,last_name,phone)';
+  'customers(first_name,last_name,company,phone,email,address)';
 
 /** Ajoute les indicateurs dérivés utilisés par l'interface (comme le web). */
 export function enrichProduct(product) {
@@ -160,7 +160,21 @@ export async function getSale(id, { storeId = null } = {}) {
   let request = client.from('sales').select(SALE_COLUMNS).eq('id', id);
   if (storeId != null) request = request.eq('store_id', storeId);
   const rows = await run(request.limit(1));
-  return rows.length ? enrichSale(rows[0]) : null;
+  if (!rows.length) return null;
+  const items = await run(
+    client.from('sale_items')
+      .select('id,product_id,quantity,unit_price,discount_percent,discount_amount,line_total,products(name,code)')
+      .eq('sale_id', id)
+      .order('id', { ascending: true })
+  );
+  return {
+    ...enrichSale(rows[0]),
+    customer_address: rows[0].customers?.address || '',
+    customer_phone: rows[0].customers?.phone || '',
+    customer_email: rows[0].customers?.email || '',
+    customer_company: rows[0].customers?.company || '',
+    items,
+  };
 }
 
 /** Ventes du jour (magasin actif) — statistiques de caisse. */

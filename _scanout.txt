@@ -1,0 +1,136 @@
+Location => 2
+location => 2
+Storage => 21
+storage => 21
+voice => 25
+Voice => 25
+Path => 59
+path => 59
+Alert => 27
+alert => 27
+---REACT-NATIVE IMPORTS---
+expo-status-bar
+react
+react-native
+react-native-safe-area-context
+react-native-svg
+---EXPO/IMPORT---
+ ActivityIndicator, Animated, KeyboardAvoidingView, Modal as RNModal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View,  :: react-native
+ Alert, Pressable, ScrollView, StyleSheet, Text, View  :: react-native
+ Animated, Easing, Modal as RNModal, Pressable, StyleSheet, Text,  :: react-native
+ AnimatedCheck, FadeSlideIn  :: ./Feedback
+ AnnulerForm, EncaisserForm  :: ../components/SaleActions
+ AppState  :: react-native
+ Badge, Banner, Btn, Card, ChipGroup, Empty, Field, Input, KeyValue, Loading, SectionTitle,  :: ../components/ui
+ Badge, Banner, Btn, Card, ChipGroup, Empty, Field, Input, KeyValue, SectionTitle,  :: ../components/ui
+ Badge, Banner, Btn, Card, ChipGroup, Field, Loading, SectionTitle,  :: ../components/ui
+ Badge, Banner, Card, ChipGroup, Empty, Field, Input, KeyValue, Loading, Modal, SectionTitle  :: ../components/ui
+ Badge, Banner, Card, Empty, Field, Input, KeyValue, Loading, Modal, SectionTitle  :: ../components/ui
+ Badge, Banner, Card, Empty, Field, Input, Loading, SectionTitle  :: ../components/ui
+ Badge, Banner, Card, Empty, Loading, SectionTitle, StatCard  :: ../components/ui
+ Banner, Btn, ChipGroup, Field, Input  :: ./ui
+ Banner, Btn, Field, Input  :: ../components/ui
+ Banner, Card, ChipGroup, Empty, KeyValue, Loading, SectionTitle  :: ../components/ui
+ Banner, Card, Empty, Loading, SectionTitle, StatCard  :: ../components/ui
+ Banner, Card, KeyValue, SectionTitle  :: ../components/ui
+ Brand, withChrome  :: ../components/Layout
+ Btn, Modal  :: ./ui
+ Dimensions, Keyboard, Platform  :: react-native
+ DrawerActions  :: @react-navigation/native
+ KeyboardAvoidingView, Image, Platform, ScrollView, StyleSheet, Text, View,  :: react-native
+ KeyboardAvoidingView, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View  :: react-native
+ KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View  :: react-native
+ KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View,  :: react-native
+ KeyboardAvoidingView, Platform, RefreshControl, ScrollView, StyleSheet, Text, View  :: react-native
+ LOGO  :: ../brand
+ PERMISSIONS  :: ../lib/permissions
+ Platform  :: react-native
+ Pressable, StyleSheet, Text, View  :: react-native
+ PulseOnChange, SuccessOverlay  :: ../components/Feedback
+ RefreshControl, ScrollView, StyleSheet, Text, View  :: react-native
+ ScrollView, StyleSheet, Text, View  :: react-native
+ SessionConflictError, describeOtherSession  :: ../api/sessionApi
+ StatusBar  :: expo-status-bar
+ StyleSheet, Text, View  :: react-native
+ SuccessOverlay  :: ../components/Feedback
+ addInventoryMovement, getProduct, listInventoryMovements, listStockAlerts, searchProducts,  :: ../api/catalogApi
+ can as canPermission, permissionsOf, roleLabel  :: ../lib/permissions
+ cancelSale as cancelSaleRpc, createSale as createSaleRpc, registerPayment as registerPaymentRpc  :: ./rpc
+ cancelSale, registerPayment  :: ../api/salesApi
+ checkHealth  :: ../api/systemApi
+ colors, radius, sp  :: ../theme
+ colors, sp  :: ../theme
+ config  :: ../config
+ config, isConfigured  :: ../config
+ createBottomTabNavigator  :: @react-navigation/bottom-tabs
+ createClient  :: @supabase/supabase-js
+ createContext, useCallback, useContext, useEffect, useMemo, useState  :: react
+ createDrawerNavigator, DrawerContentScrollView  :: @react-navigation/drawer
+ createSale, isCreditPayment, listSalesToday  :: ../api/salesApi
+ formatDate, formatMoney  :: ../lib/format
+ formatDate, formatMoney, toNumber  :: ../lib/format
+ formatDateTime, formatMoney, toNumber  :: ../lib/format
+ formatMoney  :: ../lib/format
+ formatMoney, toNumber  :: ../lib/format
+ friendlyError, requireClient  :: ./supabase
+ getBillingInfo, getSettings  :: ../api/settingsApi
+ getDashboardStats  :: ../api/statsApi
+ getProduct as getProductRaw, listProductMovements as listProductMovementsRaw, listStockAlerts as listStockAlertsRaw, searchCustomers as searchCustomersRaw, searchProducts as searchProductsRaw,  :: ./dataApi
+ getProforma, listProformas  :: ../api/proformaApi
+ getRequestCount, ping  :: ./supabase
+ getSale as getSaleRaw, listOpenSales, listRecentSales, listTodaySales,  :: ./dataApi
+ getSettings as loadSettings  :: ../api/settingsApi
+ isConfigured  :: ../config
+ listAccounts  :: ../api/treasuryApi
+ listAccounts  :: ./treasuryApi
+ listAccounts as listAccountsRaw  :: ./dataApi
+ listCustomers  :: ../api/catalogApi
+ listProducts  :: ../api/catalogApi
+ listRecentSales, listStockAlerts, searchProducts  :: ./dataApi
+ listSales  :: ../api/salesApi
+ listSalesOpen, registerPayment  :: ../api/salesApi
+ listStores as listStoresApi  :: ../api/storesApi
+ listStores as listStoresRaw  :: ./dataApi
+ mobileContext  :: ../api/systemApi
+ mobileContext  :: ./rpc
+ ping  :: ../api/supabase
+ registerSession, endSession  :: ./sessionApi
+ requireClient, run  :: ./supabase
+ requireClient, supabase, friendlyError  :: ./supabase
+ searchCustomers, searchProducts  :: ../api/catalogApi
+ stockMovement as stockMovementRpc  :: ./rpc
+ supabase  :: ./supabase
+ todayBounds  :: ../lib/format
+ useAuth  :: ../context/AuthContext
+ useAuth  :: ./AuthContext
+ useCallback, useEffect, useRef  :: react
+ useCallback, useEffect, useRef, useState  :: react
+ useCallback, useEffect, useState  :: react
+ useCallback, useMemo  :: react
+ useEffect, useState  :: react
+ useKeyboardScroll  :: ../lib/keyboardScroll
+ useRef, useState  :: react
+ useSafeAreaInsets  :: react-native-safe-area-context
+ useState  :: react
+ useStores  :: ../context/StoreContext
+ withChrome  :: ../components/Layout
+AdminScreen :: ../pages/Admin
+AsyncStorage :: @react-native-async-storage/async-storage
+CaisseScreen :: ../screens/CaisseScreen
+CompteScreen :: ../screens/CompteScreen
+CustomersScreen :: ../pages/Customers
+DashboardScreen :: ../pages/Dashboard
+Icon :: ../components/Icon
+Icon :: ./Icon
+InventaireScreen :: ../screens/InventaireScreen
+InvoicesScreen :: ../pages/Invoices
+MainTabs :: ./MainTabs
+PaiementsScreen :: ../screens/PaiementsScreen
+ProformasScreen :: ../pages/Proformas
+React :: react
+SalesScreen :: ../pages/Sales
+SettingsScreen :: ../pages/Settings
+StockScreen :: ../pages/Stock
+SyncBanner :: ./SyncBanner
+TopBar :: ./TopBar
+TreasuryScreen :: ../pages/Treasury

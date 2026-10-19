@@ -3,10 +3,10 @@ from pathlib import Path
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QPushButton, QStackedWidget, QApplication,
+    QLabel, QPushButton, QStackedWidget, QApplication, QTableView,
     QMessageBox
 )
-from PySide6.QtCore import Qt, QTimer, QThread, Signal
+from PySide6.QtCore import QEvent, Qt, QTimer, QThread, Signal
 from ui.views.dashboard_view import DashboardView
 from ui.views.sale_view import SaleView
 from ui.views.invoice_register_view import InvoiceRegisterView
@@ -27,6 +27,7 @@ from core.permissions import (
     normalize_role,
     role_display_name,
 )
+from ui.table_utils import configure_responsive_table
 
 import logging
 
@@ -70,13 +71,13 @@ class SessionHeartbeatWorker(QThread):
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, user_data, theme=None):
+    def __init__(self, user_data, theme=None, settings_manager=None):
         super().__init__()
         self.user_data = user_data
         self.theme = theme
-        
+
         # Initialiser le gestionnaire de paramètres
-        self.settings_manager = SettingsManager()
+        self.settings_manager = settings_manager or SettingsManager()
 
         # Définir les noms séparés
         self.app_name = "Gestion de stock"
@@ -113,6 +114,11 @@ class MainWindow(QMainWindow):
             
         # Appliquer le logo et le nom
         self.apply_company_logo_and_name()
+
+        # Harmoniser les tableaux, y compris ceux créés ensuite dans les dialogues.
+        self._table_filter_app = QApplication.instance()
+        if self._table_filter_app is not None:
+            self._table_filter_app.installEventFilter(self)
 
         # --- Session unique : battement de coeur -------------------------
         # Toutes les 5 min, on prolonge la session ; si un autre appareil a
@@ -209,7 +215,7 @@ class MainWindow(QMainWindow):
             f"{self.user_data.get('username', 'Utilisateur')} · {self.user_data.get('role', 'USER').upper()}"
         )
         self.header_user_info.setObjectName("UserInfo")
-        self.header_user_info.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.header_user_info.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
 
         # Bouton déconnexion
@@ -234,7 +240,7 @@ class MainWindow(QMainWindow):
         self.menu.setFixedWidth(self.menu_expanded_width)
 
         menu_layout = QVBoxLayout(self.menu)
-        menu_layout.setAlignment(Qt.AlignTop)
+        menu_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         menu_layout.setContentsMargins(8, 12, 8, 12)
         menu_layout.setSpacing(6)
 
@@ -242,7 +248,7 @@ class MainWindow(QMainWindow):
         self.btn_toggle = QPushButton("☰")
         self.btn_toggle.setObjectName("ToggleMenu")
         self.btn_toggle.setFixedHeight(36)
-        self.btn_toggle.setCursor(Qt.PointingHandCursor)
+        self.btn_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
         menu_layout.addWidget(self.btn_toggle)
 
         # Boutons menu
@@ -291,14 +297,21 @@ class MainWindow(QMainWindow):
         # fen?tre principale et tout ?cran ? moiti? initialis?.
         role = normalize_role(self.user_data.get("role"))
         factories = {
-            "dashboard_view": lambda: DashboardView(self.user_data),
-            "sale_view": lambda: SaleView(self.user_data),
-            "register_view": lambda: InvoiceRegisterView(self.user_data),
+            "dashboard_view": lambda: DashboardView(
+                self.user_data, settings_manager=self.settings_manager),
+            "sale_view": lambda: SaleView(
+                self.user_data, settings_manager=self.settings_manager),
+            "register_view": lambda: InvoiceRegisterView(
+                self.user_data, settings_manager=self.settings_manager),
             "proforma_view": lambda: EnhancedProformaInvoiceView(
-                current_user_id=self.user_data.get('id')),
-            "stock_view": lambda: StockView(self.user_data),
-            "treasury_view": lambda: TreasuryView(self.user_data),
-            "admin_view": lambda: AdminView(self.user_data),
+                current_user_id=self.user_data.get('id'),
+                settings_manager=self.settings_manager),
+            "stock_view": lambda: StockView(
+                self.user_data, settings_manager=self.settings_manager),
+            "treasury_view": lambda: TreasuryView(
+                self.user_data, settings_manager=self.settings_manager),
+            "admin_view": lambda: AdminView(
+                self.user_data, settings_manager=self.settings_manager),
             "settings_view": lambda: SettingsView(
                 self.user_data, self.settings_manager),
         }
@@ -458,7 +471,7 @@ class MainWindow(QMainWindow):
         """Crée un bouton de menu avec icône"""
         btn = QPushButton(text)
         btn.setObjectName(object_name)
-        btn.setCursor(Qt.PointingHandCursor)
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
         btn.setFixedHeight(38)
         btn.setIconSize(QSize(20, 20))
         btn.setProperty("fullText", text)
@@ -548,7 +561,7 @@ class MainWindow(QMainWindow):
                     )
                     
                     # Centrer le pixmap dans le label
-                    self.logo_image_label.setAlignment(Qt.AlignCenter)
+                    self.logo_image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
                     self.logo_image_label.setPixmap(scaled_pixmap)
                     
                     # Afficher le label d'image
@@ -587,8 +600,20 @@ class MainWindow(QMainWindow):
         # Cacher la fenêtre actuelle
         self.close()
 
+    def eventFilter(self, watched, event):
+        if event.type() == QEvent.Show and isinstance(watched, QTableView):
+            # La caisse a des largeurs spécifiques ; les autres tableaux partagent
+            # les mêmes règles de colonnes flexibles.
+            preserve_columns = watched.__class__.__name__ in {
+                "ProductTableWidget", "OptimizedCartTableWidget"
+            }
+            configure_responsive_table(watched, preserve_column_modes=preserve_columns)
+        return super().eventFilter(watched, event)
+
     def closeEvent(self, event):
         """Libère la session applicative à la fermeture de l'application."""
+        if getattr(self, "_table_filter_app", None) is not None:
+            self._table_filter_app.removeEventFilter(self)
         timer = getattr(self, "session_timer", None)
         if timer is not None:
             timer.stop()

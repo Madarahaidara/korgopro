@@ -10,7 +10,11 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { AppState } from 'react-native';
 import * as authApi from '../api/authApi';
-import { getSettings as loadSettings } from '../api/settingsApi';
+import {
+  clearRemoteSettingsCache,
+  getSettings as loadSettings,
+  hydrateSettings,
+} from '../api/settingsApi';
 import { HEARTBEAT_MS, heartbeatSession } from '../api/sessionApi';
 import { can as canPermission, permissionsOf, roleLabel } from '../lib/permissions';
 
@@ -47,10 +51,11 @@ export function AuthProvider({ children }) {
     (async () => {
       try {
         const profile = await authApi.restoreSession();
-        if (!cancelled) {
-          setUser(profile);
-          setSettings(loadSettings());
-        }
+        if (!cancelled) setUser(profile);
+        // Paramètres entreprise partagés (table app_settings) : aller-retour
+        // best-effort — le rendu initial affiche déjà les valeurs de repli.
+        await hydrateSettings();
+        if (!cancelled) setSettings(loadSettings());
       } catch (e) {
         if (!cancelled) setError(e.message);
       } finally {
@@ -62,8 +67,12 @@ export function AuthProvider({ children }) {
 
   const loginUser = useCallback(async (identifiant, password, options = {}) => {
     setError(null);
+    setSettings(clearRemoteSettingsCache());
     const profile = await authApi.login(identifiant, password, options);
     setUser(profile);
+    // Paramètres entreprise partagés (table app_settings) : le distant fait
+    // référence, il écrase les valeurs de repli ; best-effort comme le web.
+    await hydrateSettings();
     setSettings(loadSettings());
     return profile;
   }, []);
@@ -83,6 +92,7 @@ export function AuthProvider({ children }) {
         if (!stopped && res && res.active === false) {
           setError(res.message || TAKEN_OVER_MESSAGE);
           setUser(null);
+          setSettings(clearRemoteSettingsCache());
           await authApi.logout().catch(() => {});
         }
       } catch (e) {
@@ -113,11 +123,47 @@ export function AuthProvider({ children }) {
     };
   }, [user]);
 
+  // Paramètres entreprise partagés : re-hydratation périodique (même cadence
+  // que le heartbeat) + au retour au premier plan. Sans ça, un changement
+  // effectué depuis desktop/web n'apparaît sur le mobile qu'au prochain
+  // redémarrage de l'app (hydrateSettings() n'était appelé qu'au login et à la
+  // restauration de session). Best-effort : un échec réseau/RLS laisse les
+  // valeurs en cache intactes (fetchRemoteSettings() retourne null).
+  useEffect(() => {
+    if (!user) return undefined;
+    let stopped = false;
+
+    const refresh = async () => {
+      if (stopped) return;
+      // Ne lève jamais (best-effort) : valeurs repli + console.warn côté remote.
+      const fresh = await hydrateSettings();
+      if (stopped) return;
+      // Seul un vrai changement déclenche un re-rendu (même référence sinon).
+      setSettings((prev) => (
+        JSON.stringify(prev) === JSON.stringify(fresh) ? prev : fresh
+      ));
+    };
+
+    const timer = setInterval(refresh, HEARTBEAT_MS);
+    // Retour au premier plan (app Android revenue d'arriere-plan) : on
+    // re-recupere les parametres aussitot, comme pour le verrou de session.
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') refresh();
+    });
+
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+      if (subscription?.remove) subscription.remove();
+    };
+  }, [user]);
+
   const logout = useCallback(async () => {
     try {
       await authApi.logout();
     } finally {
       setUser(null);
+      setSettings(clearRemoteSettingsCache());
     }
   }, []);
 

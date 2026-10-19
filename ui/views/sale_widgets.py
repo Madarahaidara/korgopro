@@ -226,7 +226,7 @@ class OptimizedCartTableWidget(QTableWidget):
 
     def _create_row_widgets(self, row: int, item: Dict, currency: str):
         num_item = QTableWidgetItem(str(row + 1))
-        num_item.setTextAlignment(Qt.AlignCenter)
+        num_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setItem(row, 0, num_item)
 
         name_item = QTableWidgetItem(item["product_name"])
@@ -235,7 +235,7 @@ class OptimizedCartTableWidget(QTableWidget):
 
         qty_edit = QLineEdit()
         qty_edit.setText(f"{item['quantity']:.2f}")
-        qty_edit.setAlignment(Qt.AlignCenter)
+        qty_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
         qty_edit.setValidator(QDoubleValidator(0.1, 9999, 2))
         qty_edit.setStyleSheet("""
             QLineEdit {
@@ -253,12 +253,12 @@ class OptimizedCartTableWidget(QTableWidget):
         self.setCellWidget(row, 2, qty_edit)
 
         price_item = QTableWidgetItem(f"{item['unit_price']:,.0f}")
-        price_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        price_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.setItem(row, 3, price_item)
 
         discount_edit = QLineEdit()
         discount_edit.setText(f"{item.get('discount_percent', 0):.2f}")
-        discount_edit.setAlignment(Qt.AlignCenter)
+        discount_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
         discount_edit.setValidator(QDoubleValidator(0, 100, 2))
         discount_edit.setStyleSheet("""
             QLineEdit {
@@ -277,7 +277,7 @@ class OptimizedCartTableWidget(QTableWidget):
 
         line_total = item['quantity'] * item['unit_price'] * (1 - item.get('discount_percent', 0) / 100)
         total_item = QTableWidgetItem(f"{line_total:,.0f} {currency}")
-        total_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        total_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         total_item.setForeground(QColor("#3b82f6"))
         self.setItem(row, 5, total_item)
 
@@ -285,7 +285,7 @@ class OptimizedCartTableWidget(QTableWidget):
         delete_btn.setIcon(get_icon("trash", "#ef4444", 16))
         delete_btn.setToolTip("Supprimer l'article")
         delete_btn.setMaximumWidth(35)
-        delete_btn.setCursor(Qt.PointingHandCursor)
+        delete_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         delete_btn.setStyleSheet("""
             QPushButton {
                 background-color: transparent;
@@ -444,7 +444,7 @@ class ProductTableWidget(QTableWidget):
             self.setItem(row, 1, name_item)
 
             price_item = QTableWidgetItem(f"{product.sale_price:,.0f} {currency}")
-            price_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            price_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             self.setItem(row, 2, price_item)
 
             if product.is_out_of_stock:
@@ -461,7 +461,7 @@ class ProductTableWidget(QTableWidget):
                 stock_tooltip = "Stock OK"
 
             stock_item = QTableWidgetItem(stock_text)
-            stock_item.setTextAlignment(Qt.AlignCenter)
+            stock_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             stock_item.setForeground(stock_color)
             stock_item.setToolTip(stock_tooltip)
             self.setItem(row, 3, stock_item)

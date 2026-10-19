@@ -115,20 +115,20 @@ class LoadingOverlay(QWidget):
         )
 
         layout = QVBoxLayout(self)
-        layout.setAlignment(Qt.AlignCenter)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.setSpacing(8)
 
         self._spinner = LoadingSpinner(size=36, color=self._color)
-        layout.addWidget(self._spinner, 0, Qt.AlignHCenter)
+        layout.addWidget(self._spinner, 0, Qt.AlignmentFlag.AlignHCenter)
 
         self._label = QLabel(message)
-        self._label.setAlignment(Qt.AlignCenter)
+        self._label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._label.setWordWrap(True)
         self._label.setStyleSheet(
             "color: #2F4255; font-size: 12px;"
             " background: transparent; border: none;"
         )
-        layout.addWidget(self._label, 0, Qt.AlignHCenter)
+        layout.addWidget(self._label, 0, Qt.AlignmentFlag.AlignHCenter)
 
         # Anti-scintillement : affichage différé de SHOW_DELAY_MS.
         self._show_timer = QTimer(self)

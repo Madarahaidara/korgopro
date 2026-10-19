@@ -74,7 +74,7 @@ class SysLogsDialog(QDialog):
         self.summary_label = QLabel()
         self.summary_label.setObjectName("LogSummary")
         self.summary_label.setWordWrap(True)
-        self.summary_label.setTextFormat(Qt.RichText)
+        self.summary_label.setTextFormat(Qt.TextFormat.RichText)
         layout.addWidget(self.summary_label)
 
         # Zone de logs
@@ -98,7 +98,7 @@ class SysLogsDialog(QDialog):
         self.btn_close.clicked.connect(self.close)
 
         for btn in (self.btn_refresh, self.btn_open_folder, self.btn_export):
-            btn.setCursor(Qt.PointingHandCursor)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_layout.addWidget(self.btn_refresh)
         btn_layout.addWidget(self.btn_open_folder)
         btn_layout.addWidget(self.btn_export)
@@ -150,8 +150,10 @@ class SysLogsDialog(QDialog):
             return
         try:
             tmp = collect_diagnostics_zip()
-            if not tmp.get("success") or tmp.get("zip_path"):
+            if not tmp.get("success"):
                 raise RuntimeError(tmp.get("error") or "Échec de l'export.")
+            if not tmp.get("zip_path"):
+                raise RuntimeError("Aucune archive ZIP n'a été créée.")
             shutil.copy(str(tmp["zip_path"]), dest_dir)
             QMessageBox.information(
                 self,

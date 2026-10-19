@@ -71,7 +71,7 @@ Input.displayName = 'Input';
 
 const BUTTON_VARIANTS = {
   primary: { bg: colors.primary, text: '#ffffff', border: colors.primary },
-  success: { bg: colors.success, text: '#ffffff', border: colors.success },
+  success: { bg: colors.successDark, text: '#ffffff', border: colors.successDark },
   danger: { bg: colors.card, text: colors.danger, border: '#f3c9c9' },
   ghost: { bg: colors.card, text: colors.text, border: colors.border },
   // .btn-logout (web) : fond bleu clair, texte et bordure bleu marine.
@@ -365,17 +365,17 @@ const styles = StyleSheet.create({
   },
   hint: { fontSize: 12, color: colors.textLight, marginTop: sp(1) },
   input: {
-    fontSize: 14,
+    fontSize: 16,
     color: colors.text,
-    backgroundColor: '#f9fafb',
-    borderColor: '#e5e7eb',
-    borderWidth: 2,
-    borderRadius: 10,
+    backgroundColor: colors.card,
+    borderColor: colors.fieldBorder,
+    borderWidth: 1,
+    borderRadius: radius.md,
     paddingHorizontal: sp(3.5),
     paddingVertical: sp(2.5),
   },
   btn: {
-    minHeight: 42,
+    minHeight: 48,
     paddingHorizontal: sp(3.5),
     borderRadius: 8,
     borderWidth: 1,
@@ -388,12 +388,14 @@ const styles = StyleSheet.create({
   btnText: { fontSize: 14, fontWeight: '600' },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: sp(2) },
   chip: {
+    minHeight: 44,
     paddingHorizontal: sp(3),
     paddingVertical: sp(1.5),
     borderRadius: 999,
     borderWidth: 1,
     borderColor: colors.fieldBorder,
     backgroundColor: colors.card,
+    justifyContent: 'center',
   },
   chipSelected: { backgroundColor: colors.primary, borderColor: colors.primary },
   chipText: { fontSize: 13, fontWeight: '600', color: colors.textMuted },
@@ -419,7 +421,7 @@ const styles = StyleSheet.create({
   emptyTitle: { fontSize: 15, fontWeight: '700', color: colors.textMuted },
   emptyHint: {
     fontSize: 13,
-    color: colors.textLight,
+    color: colors.textMuted,
     marginTop: sp(1.5),
     textAlign: 'center',
   },
@@ -488,7 +490,7 @@ const styles = StyleSheet.create({
   listItemTitle: { fontSize: 14, fontWeight: '600', color: colors.text },
   listItemTitleActive: { color: colors.primary, fontWeight: '700' },
   listItemSubtitle: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
-  listItemMeta: { fontSize: 11, color: colors.textLight, marginTop: 1 },
+  listItemMeta: { fontSize: 11, color: colors.textMuted, marginTop: 1 },
   listItemRight: { alignItems: 'flex-end', justifyContent: 'center' },
   statCard: {
     backgroundColor: colors.card,

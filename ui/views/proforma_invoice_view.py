@@ -5,7 +5,7 @@ Workflow: Brouillon → Pro Forma → Validation → Facture Définitive → Pai
 """
 
 from enum import Enum
-from PySide6.QtCore import Qt, Signal, QTimer, QDateTime, QDate, QThread
+from PySide6.QtCore import Qt, Signal, QTimer, QDateTime, QDate, QThread, QMarginsF, QRectF, QSizeF
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QLineEdit, QPushButton, QTableWidget,
@@ -14,11 +14,12 @@ from PySide6.QtWidgets import (
     QDateEdit, QAbstractItemView, QScrollArea, QSplitter, QMenu,
     QFormLayout, QSizePolicy, QInputDialog, QApplication
 )
-from PySide6.QtGui import QFont, QColor, QBrush, QAction, QTextDocument, QIcon, QPixmap, QShortcut, QKeySequence
+from PySide6.QtGui import QFont, QColor, QBrush, QAction, QTextDocument, QIcon, QPixmap, QShortcut, QKeySequence, QPageSize, QPageLayout, QPainter, QAbstractTextDocumentLayout
 from PySide6.QtPrintSupport import QPrinter, QPrintPreviewDialog
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any, Tuple
 import logging
+from html import escape as html_escape
 
 from core.database import SessionLocal
 from core.models.sale_models import ProformaInvoice, ProformaInvoiceItem, Sale, SaleItem
@@ -90,10 +91,10 @@ class FactureStatus(Enum):
 class ProformaService:
     """Service pour la gestion des proformas"""
     
-    def __init__(self, db_session: SessionLocal):
+    def __init__(self, db_session: SessionLocal, settings_manager=None):
         self.db_session = db_session
         self.manager = ProformaInvoiceManager(db_session)
-        self.settings_manager = SettingsManager()
+        self.settings_manager = settings_manager or SettingsManager()
     
     def create_proforma(self, data: Dict[str, Any], user_id: int) -> Tuple[bool, Optional[ProformaInvoice], str]:
         """Crée une nouvelle proforma"""
@@ -477,7 +478,7 @@ class ProformaPreviewWidget(QWidget):
         preview_container = QWidget()
         preview_container.setStyleSheet("background-color: #e5e7eb; padding: 10px;")
         preview_layout = QVBoxLayout(preview_container)
-        preview_layout.setAlignment(Qt.AlignCenter)
+        preview_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         preview_layout.setContentsMargins(5, 5, 5, 5)
         
         # Widget qui simule la page A4 - taille réduite pour l'écran
@@ -555,10 +556,9 @@ class ProformaPreviewWidget(QWidget):
         """Génère une facture proforma format A4 avec filigrane et mentions comptables"""
         company_info = self.settings_manager.get_company_info_for_invoice()
 
-        logo_path = company_info.get("company_logo", "")
-        logo_html = f'<img src="{logo_path}" style="height:80px;">' if logo_path else '<div style="font-size:48px;font-weight:bold;color:#1a5490;">LOGO</div>'
-
         date_str = proforma.created_date.strftime("%d/%m/%Y")
+        valid_until_str = proforma.valid_until.strftime("%d/%m/%Y") if proforma.valid_until else "—"
+        currency = proforma.currency or company_info.get("currency", "FCFA") or "FCFA"
 
         customer_name = proforma.customer.full_name if proforma.customer else "Client"
         customer_address = ""
@@ -569,25 +569,25 @@ class ProformaPreviewWidget(QWidget):
             customer_phone = getattr(proforma.customer, "phone", "") or ""
             customer_email = getattr(proforma.customer, "email", "") or ""
 
-        subject = proforma.terms_and_conditions or ""
-
-        total_general = 0
+        subject = proforma.notes or "Proposition commerciale"
+        terms = proforma.terms_and_conditions or ""
+        terms_html = html_escape(terms).replace("\n", "<br>")
+        total_general = proforma.total_amount
         items_html = ""
 
         for idx, item in enumerate(proforma.items, start=1):
-            total_general += item.line_total
             items_html += f"""
             <tr>
-                <td style="font-size:10pt;padding:6px 4px;text-align:center;">{idx}</td>
-                <td style="font-size:10pt;padding:6px 4px;">{item.description}</td>
-                <td style="font-size:10pt;padding:6px 4px;text-align:center;">{int(item.quantity)}</td>
-                <td style="font-size:10pt;padding:6px 4px;text-align:right;">{item.unit_price:,.0f}</td>
-                <td style="font-size:10pt;padding:6px 4px;text-align:right;">{item.line_total:,.0f}</td>
+                <td>{idx}</td>
+                <td>{html_escape(item.description or "Article")}</td>
+                <td>{item.quantity:g}</td>
+                <td>{item.unit_price:,.0f} {html_escape(currency)}</td>
+                <td>{item.line_total:,.0f} {html_escape(currency)}</td>
             </tr>
             """
 
         # Conversion du total en lettres
-        total_letters = self.number_to_french_words(int(total_general))
+        total_letters = html_escape(self.number_to_french_words(int(total_general)))
 
         return f"""
 <!DOCTYPE html>
@@ -597,11 +597,11 @@ class ProformaPreviewWidget(QWidget):
 <style>
     @page {{
         size: A4;
-        margin: 10mm 10mm 10mm 10mm;
+        margin: 24mm 14mm 22mm;
     }}
     body {{
-        font-family: 'Times New Roman', Times, serif;
-        font-size: 10pt;
+        font-family: Arial, Helvetica, sans-serif;
+        font-size: 9.5pt;
         margin: 0;
         padding: 0;
         color: #1a1a1a;
@@ -610,26 +610,27 @@ class ProformaPreviewWidget(QWidget):
     .header-table {{
         width: 100%;
         border-collapse: collapse;
-        margin-bottom: 15px;
+        margin-bottom: 14px;
     }}
     .header-table td {{
         padding: 5px 0;
         vertical-align: top;
     }}
     .title {{
-        font-size: 18pt;
+        font-size: 17pt;
         font-weight: bold;
-        text-decoration: underline;
-        color: #1a5490;
+        letter-spacing: .4px;
+        color: #172b3a;
+        text-align: center;
     }}
     .company-name {{
-        font-size: 22pt;
+        font-size: 20pt;
         font-weight: bold;
-        color: #1a5490;
+        color: #17324d;
     }}
     .info-block {{
         margin-bottom: 10px;
-        padding: 8px 0;
+        padding: 5px 0;
     }}
     .info-block b {{
         font-weight: 600;
@@ -640,21 +641,22 @@ class ProformaPreviewWidget(QWidget):
         margin: 15px 0;
     }}
     .main-table th {{
-        background-color: #f3f4f6;
+        background-color: #edf0f2;
+        color: #172b3a;
         font-weight: bold;
         font-size: 9pt;
         text-align: center;
-        border: 1px solid #000;
-        padding: 6px 4px;
+        border-bottom: 1px solid #aeb8c2;
+        padding: 7px 6px;
         text-transform: uppercase;
     }}
     .main-table td {{
-        border: 1px solid #000;
-        padding: 5px 4px;
+        border-bottom: 1px solid #d8e0e8;
+        padding: 8px 7px;
         font-size: 10pt;
     }}
     .main-table tr:nth-child(even) {{
-        background-color: #fafafa;
+        background-color: #f7f9fb;
     }}
     .total-row td {{
         border: none;
@@ -670,8 +672,9 @@ class ProformaPreviewWidget(QWidget):
         font-weight: bold;
     }}
     .signature-block {{
-        margin-top: 40px;
+        margin-top: 28px;
         text-align: right;
+        page-break-inside: avoid;
     }}
     .signature-line {{
         margin-top: 30px;
@@ -684,9 +687,10 @@ class ProformaPreviewWidget(QWidget):
         margin-top: 30px;
         font-size: 9pt;
         color: #6b7280;
-        text-align: center;
-        border-top: 1px solid #e5e7eb;
-        padding-top: 15px;
+        text-align: left;
+        border-top: 1px solid #cbd5df;
+        padding-top: 10px;
+        page-break-inside: avoid;
     }}
     .letters {{
         font-size: 10pt;
@@ -696,19 +700,7 @@ class ProformaPreviewWidget(QWidget):
         background-color: #f9fafb;
         border-left: 3px solid #1a5490;
     }}
-    .watermark {{
-        position: fixed;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%) rotate(-45deg);
-        font-size: 72pt;
-        font-weight: bold;
-        color: rgba(239, 68, 68, 0.15);
-        border: 8px solid rgba(239, 68, 68, 0.3);
-        padding: 20px 60px;
-        z-index: 1000;
-        pointer-events: none;
-    }}
+    .watermark {{ display: none; }}
     .customer-info {{
         margin: 8px 0;
         font-size: 10pt;
@@ -716,6 +708,19 @@ class ProformaPreviewWidget(QWidget):
     .customer-info .label {{
         font-weight: 600;
         color: #4b5563;
+    }}
+    .summary {{ width: 52%; margin: 10px 0 10px auto; border-collapse: collapse; }}
+    .summary td {{ padding: 5px 7px; border-bottom: 1px solid #e1e7ed; }}
+    .summary td:last-child {{ text-align: right; white-space: nowrap; }}
+    .summary .grand-total td {{ background: #edf0f2; color: #172b3a; font-weight: bold; font-size: 12pt; border-top: 1.5px solid #172b3a; }}
+    .meta {{ color: #526173; font-size: 9pt; line-height: 1.5; }}
+    .terms {{ margin-top: 10px; padding: 8px 0; border-top: 1px solid #d8e0e8; }}
+    @media print {{
+        body {{ margin: 0; }}
+        .watermark {{ display: none; }}
+        .main-table thead {{ display: table-header-group; }}
+        .main-table tr {{ page-break-inside: avoid; }}
+        .footer {{ position: fixed; bottom: 0; left: 0; right: 0; margin-top: 0; background: #fff; }}
     }}
 </style>
 </head>
@@ -727,32 +732,32 @@ class ProformaPreviewWidget(QWidget):
 <!-- En-tête -->
 <table class="header-table">
 <tr>
-    <td width="50%">
-        <div class="company-name">{company_info.get("name", "MON ENTREPRISE")}</div>
+    <td width="55%">
+        <div class="company-name">{html_escape(company_info.get("company_name") or company_info.get("name") or "MON ENTREPRISE")}</div>
+        <div class="meta">{html_escape(company_info.get("company_address") or company_info.get("address") or "")}</div>
+        <div class="meta">{html_escape(company_info.get("company_phone") or company_info.get("phone") or "")} · {html_escape(company_info.get("company_email") or company_info.get("email") or "")}</div>
     </td>
-    <td width="55%" style="text-align:right;">
-        <div style="font-size:10pt;color:#4b5563;">Ouagadougou, le {date_str}</div>
-        <br>
-        <div class="title">FACTURE PRO FORMA</div>
-        <div style="font-size:12pt;font-weight:bold;color:#1a5490;margin-top:5px;">
-            N° {proforma.proforma_number}
-        </div>
+    <td width="45%" style="text-align:right;">
+        <div class="meta">Émise le {date_str}<br>Valable jusqu’au {valid_until_str}</div>
     </td>
 </tr>
 </table>
 
+<div class="title">FACTURE PROFORMA</div>
+<div style="text-align:center;font-size:11pt;font-weight:bold;margin:4px 0 18px;">N° {html_escape(proforma.proforma_number)}</div>
+
 <!-- Informations client - tout à gauche -->
 <div class="info-block">
-    <b><u>DOIT :</u></b><br>
-    <span style="font-size:11pt;font-weight:bold;">{customer_name}</span><br>
-    <span style="font-size:9pt;color:#4b5563;">{customer_address}</span><br>
-    {f'<span style="font-size:9pt;color:#4b5563;">Tél: {customer_phone}</span><br>' if customer_phone else ''}
-    {f'<span style="font-size:9pt;color:#4b5563;">Email: {customer_email}</span>' if customer_email else ''}
+    <span class="meta"><b>DOIT :</b></span><br>
+    <span style="font-size:11pt;font-weight:bold;">{html_escape(customer_name)}</span><br>
+    <span class="meta">{html_escape(customer_address)}</span><br>
+    {f'<span class="meta">Tél: {html_escape(customer_phone)}</span><br>' if customer_phone else ''}
+    {f'<span class="meta">Email: {html_escape(customer_email)}</span>' if customer_email else ''}
 </div>
 
 <!-- Objet -->
 <div class="info-block">
-    <b><u>Objet :</u></b> <span style="font-size:10pt;">{subject}</span>
+    <b>Objet :</b> <span style="font-size:10pt;">{html_escape(subject)}</span>
 </div>
 
 <!-- Tableau des articles -->
@@ -771,11 +776,13 @@ class ProformaPreviewWidget(QWidget):
     </tbody>
     <tfoot>
         <tr>
-            <td colspan="4" style="border:none;padding:10px 4px;text-align:right;">
-                <span class="total-label">Total net :</span>
-            </td>
-            <td style="border:none;padding:10px 4px;text-align:right;font-weight:bold;font-size:12pt;">
-                {total_general:,.0f} FCFA
+            <td colspan="5" style="border:none;padding:0;">
+                <table class="summary">
+                    <tr><td>Sous-total</td><td>{proforma.subtotal:,.0f} {html_escape(currency)}</td></tr>
+                    <tr><td>Remise ({proforma.discount_percent:g} %)</td><td>− {proforma.discount_amount:,.0f} {html_escape(currency)}</td></tr>
+                    <tr><td>Taxes ({proforma.tax_percent:g} %)</td><td>{proforma.tax_amount:,.0f} {html_escape(currency)}</td></tr>
+                    <tr class="grand-total"><td>TOTAL GENERAL</td><td>{total_general:,.0f} {html_escape(currency)}</td></tr>
+                </table>
             </td>
         </tr>
     </tfoot>
@@ -783,23 +790,25 @@ class ProformaPreviewWidget(QWidget):
 
 <!-- Montant en lettres -->
 <div class="letters">
-    <b>Arrêté à la somme de :</b> {total_letters} ({total_general:,.0f}) francs CFA
+    <b>Arrêté la présente facture proforma à la somme de :</b> {total_letters} ({total_general:,.0f} {html_escape(currency)})
 </div>
+
+{f'<div class="terms"><b>Conditions</b><br>{terms_html}</div>' if terms else ''}
 
 <!-- Signature -->
 <div class="signature-block">
-    <div style="font-size:10pt;font-weight:bold;">Le Gérant</div>
+    <div style="font-size:9pt;font-weight:bold;">Le Responsable</div>
     <div class="signature-line">
-        <span style="font-size:10pt;">TIENDREBEOGO François</span>
+        <span style="font-size:9pt;">Date, signature et cachet</span>
     </div>
 </div>
 
 <!-- Pied de page -->
 <div class="footer">
-    {ProformaConfig.DEFAULTS.get("footer_text", "Merci de votre confiance")}<br>
-    {company_info.get("address", "")}<br>
-    Tél: {company_info.get("phone", "")} | Email: {company_info.get("email", "")}<br>
-    BP: {company_info.get("company_po_box", "")} | IFU: {company_info.get("company_ifu", "")} | RCCM: {company_info.get("company_rccm", "")}
+    <b>{html_escape(company_info.get("company_name") or company_info.get("name") or "MON ENTREPRISE")}</b><br>
+    {html_escape(company_info.get("company_address") or company_info.get("address") or "")} · {html_escape(company_info.get("company_phone") or company_info.get("phone") or "")} · {html_escape(company_info.get("company_email") or company_info.get("email") or "")}<br>
+    {html_escape(company_info.get("invoice_footer") or ProformaConfig.DEFAULTS.get("footer_text", "Merci de votre confiance"))}<br>
+    {html_escape(company_info.get("company_po_box", "") or "")} · IFU: {html_escape(company_info.get("company_ifu", "") or "")} · RCCM: {html_escape(company_info.get("company_rccm", "") or "")}
 </div>
 
 </body>
@@ -851,29 +860,101 @@ class ProformaPreviewWidget(QWidget):
             return
         
         printer = QPrinter(QPrinter.HighResolution)
-        from PySide6.QtGui import QPageSize
-        page_size = QPageSize(QPageSize.A4)
-        printer.setPageSize(page_size)
-        printer.setFullPage(False)
+        printer.setPageSize(QPageSize(QPageSize.A4))
+        printer.setPageOrientation(QPageLayout.Portrait)
+        printer.setPageMargins(QMarginsF(14, 40, 14, 25), QPageLayout.Millimeter)
+        printer.setFullPage(True)
         
         preview = QPrintPreviewDialog(printer, self)
         preview.paintRequested.connect(self.print_document)
         preview.exec()
     
     def print_document(self, printer: QPrinter):
-        """Imprime le document en A4"""
+        """Imprime avec un en-tête et un pied répétés sur chaque page A4."""
+        if not self.current_proforma:
+            return
+
+        company = self.settings_manager.get_company_info_for_invoice()
+        proforma = self.current_proforma
+        dpi = printer.resolution()
+        mm = dpi / 25.4
+        page = printer.pageLayout().fullRectPixels(dpi)
+        margins = printer.pageLayout().margins(QPageLayout.Millimeter)
+        # En pleine page, paintRectPixels peut couvrir toute la feuille.
+        content = page.adjusted(
+            round(margins.left() * mm), round(margins.top() * mm),
+            -round(margins.right() * mm), -round(margins.bottom() * mm),
+        )
         document = QTextDocument()
         document.setDocumentMargin(0)
-        html = self.generate_html(self.current_proforma)
+        document.setDefaultFont(QFont("Arial", 10))
+        html = self.generate_html(proforma)
+        # L'en-tête et le pied HTML restent dans l'aperçu écran; l'impression les dessine par page.
+        import re
+        html = re.sub(r'<table class="header-table">.*?</table>\s*<div class="title">.*?</div>\s*<div style="text-align:center;font-size:11pt;font-weight:bold;margin:4px 0 18px;">.*?</div>', '', html, count=1, flags=re.S)
+        html = re.sub(r'<div class="watermark">.*?</div>', '', html, count=1, flags=re.S)
+        html = re.sub(r'<!-- Pied de page -->.*?</div>\s*</body>', '</body>', html, count=1, flags=re.S)
         document.setHtml(html)
-        
-        from PySide6.QtGui import QFont
-        font = QFont("Times New Roman", 10)
-        document.setDefaultFont(font)
-        
-        document.print_(printer)
+        # QTextDocument uses 96-DPI logical pixels; QPrinter uses device pixels.
+        scale = dpi / 96.0
+        doc_page_size = QSizeF(content.width() / scale, content.height() / scale)
+        document.setPageSize(doc_page_size)
+        document.setTextWidth(doc_page_size.width())
+        layout = document.documentLayout()
+        page_count = max(1, layout.pageCount())
 
+        painter = QPainter()
+        if not painter.begin(printer):
+            logger.error("Impossible de démarrer l'impression de la proforma")
+            return
 
+        name = company.get("company_name") or company.get("name") or "MON ENTREPRISE"
+        address = company.get("company_address") or company.get("address") or ""
+        phone = company.get("company_phone") or company.get("phone") or ""
+        email = company.get("company_email") or company.get("email") or ""
+        footer = company.get("invoice_footer") or ProformaConfig.DEFAULTS["footer_text"]
+        legal = " · ".join(part for part in (company.get("company_po_box", ""), f"IFU: {company.get('company_ifu', '')}" if company.get("company_ifu") else "", f"RCCM: {company.get('company_rccm', '')}" if company.get("company_rccm") else "") if part)
+        emitted = proforma.created_date.strftime("%d/%m/%Y")
+        valid_until = proforma.valid_until.strftime("%d/%m/%Y") if proforma.valid_until else "—"
+        header_bottom = content.top() - 5 * mm
+        footer_top = content.bottom() + 5 * mm
+
+        for page_index in range(page_count):
+            if page_index and not printer.newPage():
+                break
+            painter.save()
+            painter.setPen(QColor("#263746"))
+            painter.setFont(QFont("Arial", 12, QFont.Bold))
+            painter.drawText(QRectF(content.left(), 3 * mm, content.width() * .58, 8 * mm), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, name)
+            painter.setFont(QFont("Arial", 8))
+            painter.setPen(QColor("#526173"))
+            painter.drawText(QRectF(content.left(), 11 * mm, content.width() * .65, 5 * mm), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, address)
+            painter.drawText(QRectF(content.left(), 16 * mm, content.width() * .65, 5 * mm), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, " · ".join(x for x in (phone, email) if x))
+            painter.drawText(QRectF(content.left() + content.width() * .62, 4 * mm, content.width() * .38, 10 * mm), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, f"Émise le {emitted}\nValable jusqu’au {valid_until}")
+            painter.setPen(QColor("#172b3a"))
+            painter.setFont(QFont("Arial", 14, QFont.Bold))
+            painter.drawText(QRectF(content.left(), 21 * mm, content.width(), 8 * mm), Qt.AlignmentFlag.AlignCenter, "FACTURE PROFORMA")
+            painter.setFont(QFont("Arial", 9, QFont.Bold))
+            painter.drawText(QRectF(content.left(), 28 * mm, content.width(), 5 * mm), Qt.AlignmentFlag.AlignCenter, f"N° {proforma.proforma_number}")
+            painter.setPen(QColor("#aeb8c2"))
+            painter.drawLine(content.left(), header_bottom, content.right(), header_bottom)
+            context = QAbstractTextDocumentLayout.PaintContext()
+            context.clip = QRectF(0, page_index * doc_page_size.height(), doc_page_size.width(), doc_page_size.height())
+            painter.save()
+            painter.translate(content.left(), content.top())
+            painter.scale(scale, scale)
+            painter.translate(0, -page_index * doc_page_size.height())
+            layout.draw(painter, context)
+            painter.restore()
+            painter.setPen(QColor("#aeb8c2"))
+            painter.drawLine(content.left(), footer_top, content.right(), footer_top)
+            painter.setPen(QColor("#526173"))
+            painter.setFont(QFont("Arial", 7))
+            footer_text = " · ".join(x for x in (address, phone, email, footer, legal) if x)
+            painter.drawText(QRectF(content.left(), footer_top + 2 * mm, content.width() * .82, 12 * mm), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop, footer_text)
+            painter.drawText(QRectF(content.left() + content.width() * .82, footer_top + 2 * mm, content.width() * .18, 8 * mm), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop, f"Page {page_index + 1} / {page_count}")
+            painter.restore()
+        painter.end()
 # ============= WIDGET PRODUITS =============
 class ProductsWidget(QWidget):
     """Widget dédié à la sélection et gestion des produits"""
@@ -940,7 +1021,7 @@ class ProductsWidget(QWidget):
         self.next_btn = QPushButton("Suivant ▶")
         self.next_btn.clicked.connect(self.next_page)
         self.page_label = QLabel("Page 1/1")
-        self.page_label.setAlignment(Qt.AlignCenter)
+        self.page_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
         pagination_layout.addWidget(self.prev_btn)
         pagination_layout.addStretch()
@@ -1000,13 +1081,13 @@ class ProductsWidget(QWidget):
             
             # Prix
             price_item = QTableWidgetItem(f"{product.sale_price:,.0f}")
-            price_item.setTextAlignment(Qt.AlignRight)
+            price_item.setTextAlignment(Qt.AlignmentFlag.AlignRight)
             self.products_list.setItem(row, 2, price_item)
             
             # Stock
             stock_text = f"{int(product.quantity)}"
             stock_item = QTableWidgetItem(stock_text)
-            stock_item.setTextAlignment(Qt.AlignCenter)
+            stock_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             if product.quantity <= 0:
                 stock_item.setForeground(QColor("#ef4444"))
                 stock_item.setToolTip("Rupture de stock - Impossible d'ajouter")
@@ -1190,23 +1271,23 @@ class CartWidget(QWidget):
             
             # Qté
             qty_item = QTableWidgetItem(str(item.get("quantity", 1)))
-            qty_item.setTextAlignment(Qt.AlignCenter)
+            qty_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self.table.setItem(row, 2, qty_item)
             
             # Prix U.
             price_item = QTableWidgetItem(f"{item.get('unit_price', 0):,.0f}")
-            price_item.setTextAlignment(Qt.AlignRight)
+            price_item.setTextAlignment(Qt.AlignmentFlag.AlignRight)
             self.table.setItem(row, 3, price_item)
             
             # Remise
             discount_item = QTableWidgetItem(f"{item.get('discount_percent', 0)}%")
-            discount_item.setTextAlignment(Qt.AlignCenter)
+            discount_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self.table.setItem(row, 4, discount_item)
             
             # Total
             line_total = item.get('quantity', 1) * item.get('unit_price', 0) * (1 - item.get('discount_percent', 0) / 100)
             total_item = QTableWidgetItem(f"{line_total:,.0f}")
-            total_item.setTextAlignment(Qt.AlignRight)
+            total_item.setTextAlignment(Qt.AlignmentFlag.AlignRight)
             total_item.setForeground(QColor("#1a5490"))
             self.table.setItem(row, 5, total_item)
         
@@ -1356,21 +1437,21 @@ class ProformaInfoWidget(QWidget):
         totals_layout.addWidget(QLabel("TVA (%):"), 0, 0)
         self.tax_input = QLineEdit("18")
         self.tax_input.setMaximumWidth(70)
-        self.tax_input.textChanged.connect(self.info_changed.emit)
+        self.tax_input.textChanged.connect(lambda _text: self.info_changed.emit())
         totals_layout.addWidget(self.tax_input, 0, 1)
         
         # Remise
         totals_layout.addWidget(QLabel("Remise (%):"), 0, 2)
         self.discount_input = QLineEdit("0")
         self.discount_input.setMaximumWidth(70)
-        self.discount_input.textChanged.connect(self.info_changed.emit)
+        self.discount_input.textChanged.connect(lambda _text: self.info_changed.emit())
         totals_layout.addWidget(self.discount_input, 0, 3)
         
         # Total
         totals_layout.addWidget(QLabel("Total TTC:"), 1, 2)
         self.total_label = QLabel("0 FCFA")
         self.total_label.setStyleSheet("font-weight: bold; font-size: 16px; color: #1a5490;")
-        self.total_label.setAlignment(Qt.AlignRight)
+        self.total_label.setAlignment(Qt.AlignmentFlag.AlignRight)
         totals_layout.addWidget(self.total_label, 1, 3)
         
         layout.addWidget(totals_group)
@@ -1427,12 +1508,18 @@ class ProformaInfoWidget(QWidget):
         return self.customer_combo.currentData()
     
     def get_info_data(self) -> Dict:
+        def percentage_or_default(field: QLineEdit, default: float) -> float:
+            try:
+                return float(field.text().strip().replace(",", "."))
+            except (TypeError, ValueError):
+                return default
+
         return {
             "customer_id": self.get_customer_id(),
             "subject": self.subject.text(),
             "notes": self.notes.toPlainText(),
-            "tax_percent": float(self.tax_input.text() or 18),
-            "discount_percent": float(self.discount_input.text() or 0),
+            "tax_percent": percentage_or_default(self.tax_input, 18),
+            "discount_percent": percentage_or_default(self.discount_input, 0),
             "valid_until": self.valid_until.date().toPython()
         }
     
@@ -1843,11 +1930,12 @@ class ProformaListWorker(QThread):
 class EnhancedProformaInvoiceView(QWidget):
     """Vue principale des proformas"""
     
-    def __init__(self, current_user_id: int = None):
+    def __init__(self, current_user_id: int = None, settings_manager=None):
         super().__init__()
         self.current_user_id = current_user_id
+        self.settings_manager = settings_manager or SettingsManager()
         self.session = SessionLocal()
-        self.service = ProformaService(self.session)
+        self.service = ProformaService(self.session, settings_manager=self.settings_manager)
         
         self.current_filters = {"status": "ALL", "search": "", "date_filter": "all"}
 
@@ -2046,7 +2134,7 @@ class EnhancedProformaInvoiceView(QWidget):
 
             # Montant
             amount_item = QTableWidgetItem(values[4])
-            amount_item.setTextAlignment(Qt.AlignRight)
+            amount_item.setTextAlignment(Qt.AlignmentFlag.AlignRight)
             self.table.setItem(row, 4, amount_item)
 
             # Statut

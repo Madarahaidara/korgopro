@@ -152,10 +152,10 @@ class LockScreen(QDialog):
 
         # Supprimer les flags de redimensionnement
         self.setWindowFlags(
-            Qt.Dialog |
-            Qt.CustomizeWindowHint |
-            Qt.WindowTitleHint |
-            Qt.WindowCloseButtonHint
+            Qt.WindowType.Dialog |
+            Qt.WindowType.CustomizeWindowHint |
+            Qt.WindowType.WindowTitleHint |
+            Qt.WindowType.WindowCloseButtonHint
         )
 
         # Désactiver le redimensionnement
@@ -174,7 +174,7 @@ class LockScreen(QDialog):
         self.lock_icon = QLabel("🔒")
 
         self.lock_icon.setAlignment(
-            Qt.AlignCenter
+            Qt.AlignmentFlag.AlignCenter
         )
 
         self.lock_icon.setStyleSheet("""
@@ -189,7 +189,7 @@ class LockScreen(QDialog):
         )
 
         title.setAlignment(
-            Qt.AlignCenter
+            Qt.AlignmentFlag.AlignCenter
         )
 
         title.setStyleSheet("""
@@ -205,7 +205,7 @@ class LockScreen(QDialog):
         )
 
         subtitle.setAlignment(
-            Qt.AlignCenter
+            Qt.AlignmentFlag.AlignCenter
         )
 
         subtitle.setStyleSheet("""
@@ -335,7 +335,7 @@ class LockScreen(QDialog):
         self.btn_unlock.setDefault(True)
 
         self.btn_unlock.setCursor(
-            Qt.PointingHandCursor
+            Qt.CursorShape.PointingHandCursor
         )
 
         btn_layout.addWidget(
@@ -353,7 +353,7 @@ class LockScreen(QDialog):
         self.error_label.hide()
 
         self.error_label.setAlignment(
-            Qt.AlignCenter
+            Qt.AlignmentFlag.AlignCenter
         )
 
         self.error_label.setObjectName(
@@ -369,7 +369,7 @@ class LockScreen(QDialog):
         )
 
         secure.setAlignment(
-            Qt.AlignLeft
+            Qt.AlignmentFlag.AlignLeft
         )
 
         secure.setObjectName(

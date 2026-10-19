@@ -1,9 +1,22 @@
 # core/database_manager.py
 import re
-from sqlalchemy import inspect, text
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Float,
+    Integer,
+    String,
+    Text,
+    func,
+    inspect,
+    select,
+    text,
+)
+from sqlalchemy.schema import sort_tables_and_constraints
 from core.database import SessionLocal, engine
 from core.models.user import User
 from core.models.activity_log import ActivityLog
+from core.supabase_auth import provision_auth_user
 import logging
 import json
 import sqlite3
@@ -29,6 +42,28 @@ _FORBIDDEN_KEYWORDS = [
       'ATTACH DATABASE',
 ]
 
+# Tables jamais incluses dans les backups (export/restauration logiques).
+# La partie administration (comptes utilisateurs, journaux d'activité)
+# est laissée intacte lors des sauvegardes et restauration.
+BACKUP_EXCLUDED_TABLES = {"users", "activity_logs"}
+
+
+def _dependency_ordered_tables(metadata, schema=None):
+    """Trie les tables en isolant les contraintes cycliques en fin de tri."""
+    tables = list(metadata.tables.values())
+    if schema is not None:
+        tables = [table for table in tables if table.schema == schema]
+    return [
+        table
+        for table, _ in sort_tables_and_constraints(tables)
+        if table is not None
+    ]
+
+
+def _application_schema(engine):
+    """Schéma des données applicatives, distinct des schémas gérés par la plateforme."""
+    return "public" if engine.dialect.name == "postgresql" else None
+
 
 def _json_default(o):
     """Sérialise un datetime pour l'export portable JSON (dump/restore multi-dialecte)."""
@@ -49,6 +84,50 @@ def _json_object_hook(d):
         except ValueError:
             return d["__dt__"]
     return d
+
+
+def _default_for_column(column):
+    """Retourne une valeur par défaut pour une colonne NOT NULL sans défaut.
+
+    Utilisée lors de la restauration depuis un fichier externe dont le schéma
+    peut différer de la base active (colonnes ajoutées entre deux versions).
+    """
+    col_type = column.type
+    if isinstance(col_type, (String, Text)):
+        return ""
+    if isinstance(col_type, Boolean):
+        return False
+    if isinstance(col_type, Integer):
+        return 0
+    if isinstance(col_type, Float):
+        return 0.0
+    if isinstance(col_type, DateTime):
+        return datetime.now()
+    # Type inconnu : None sera transmis ; le SGBD lèvera une erreur explicite
+    return None
+
+
+def _coerce_value(value, column):
+    """Convertit une valeur brute lue depuis un fichier externe vers le type
+    Python attendu par la colonne SQLAlchemy.
+
+    En particulier, les colonnes DateTime lues depuis une base SQLite
+    externe arrivent comme des chaînes de caractères ; SQLAlchemy les
+    rejette si elles ne sont pas des objets datetime.
+    """
+    if value is None:
+        return None
+    col_type = column.type
+    if isinstance(col_type, DateTime) and isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            # Formats courants SQLite : 'YYYY-MM-DD HH:MM:SS'
+            try:
+                return datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                return value  # laisse le SGBD lever une erreur explicite
+    return value
 
 
 class DatabaseManager:
@@ -151,36 +230,25 @@ class DatabaseManager:
             return 0
     
     def backup_database(self, backup_path):
-        """Sauvegarder la base de données"""
+        """Sauvegarder la base de données (export logique JSON, hors tables
+        d'administration : users / activity_logs)."""
         try:
-            # Obtenir le chemin de la base SQLite
-            db_url = str(engine.url)
-            if db_url.startswith("sqlite:///"):
-                db_path = db_url.replace("sqlite:///", "")
-                
-                import shutil
-                
-                # Créer le dossier de backup si nécessaire
-                os.makedirs(os.path.dirname(backup_path), exist_ok=True)
-                
-                # Copier le fichier
-                shutil.copy2(db_path, backup_path)
-                
-                return {
-                    "success": True,
-                    "message": f"Base de données sauvegardée dans {backup_path}",
-                    "path": backup_path,
-                    "size": os.path.getsize(backup_path)
-                }
-            else:
-                # PostgreSQL / Supabase : export logique portable (JSON)
-                self._logical_export(backup_path)
-                return {
-                    "success": True,
-                    "message": f"Base de données sauvegardée dans {backup_path}",
-                    "path": backup_path,
-                    "size": os.path.getsize(backup_path)
-                }
+            # Créer le dossier de backup si nécessaire
+            parent_dir = os.path.dirname(backup_path)
+            if parent_dir:
+                os.makedirs(parent_dir, exist_ok=True)
+
+            # Export logique portable (JSON) — identique pour SQLite et
+            # PostgreSQL / Supabase. Les tables d'administration ne sont
+            # jamais incluses (cf. BACKUP_EXCLUDED_TABLES).
+            self._logical_export(backup_path)
+
+            return {
+                "success": True,
+                "message": f"Base de données sauvegardée dans {backup_path}",
+                "path": backup_path,
+                "size": os.path.getsize(backup_path)
+            }
         except Exception as e:
             return {
                 "success": False,
@@ -202,18 +270,28 @@ class DatabaseManager:
 
     def _logical_export(self, filepath):
         """
-        Export portable (JSON) de toutes les tables.
+        Export portable (JSON) des tables métier.
         Compatible SQLite et PostgreSQL : réflète le schéma actif et sérialise
-        les lignes. Utilisé pour les backups en base PostgreSQL / Supabase.
+        les lignes. Utilisé pour les backups (SQLite et PostgreSQL / Supabase).
+
+        Les tables d'administration (``users``, ``activity_logs``) ne sont
+        jamais exportées (cf. ``BACKUP_EXCLUDED_TABLES``) afin que les
+        sauvegardes/restaurations ne touchent pas aux comptes ni aux journaux.
         """
         from sqlalchemy import MetaData
 
         metadata = MetaData()
-        metadata.reflect(bind=engine)
+        schema = _application_schema(engine)
+        metadata.reflect(bind=engine, schema=schema)
+        tables = [
+            table for table in metadata.tables.values()
+            if (schema is None or table.schema == schema)
+            and table.name not in BACKUP_EXCLUDED_TABLES
+        ]
 
         payload = {"tables": {}}
         with engine.connect() as conn:
-            for table in metadata.sorted_tables:
+            for table in sorted(tables, key=lambda item: item.name):
                 rows = [dict(row._mapping) for row in conn.execute(table.select())]
                 payload["tables"][table.name] = rows
 
@@ -290,8 +368,9 @@ class DatabaseManager:
         Purge uniquement les tables présentes dans le backup puis réinsère les
         lignes. Les tables de la base active absentes du backup sont préservées.
 
-        La vérification des FK est désactivée le temps de l'import
-        (session_replication_role = replica sur PostgreSQL) car :
+        La vérification des FK est différée le temps de l'import
+        (session_replication_role = replica sur PostgreSQL, PRAGMA defer_foreign_keys
+        sur SQLite) car :
           - les contraintes créées par SQLAlchemy ne sont pas DEFERRABLE, donc
             SET CONSTRAINTS ALL DEFERRED n'a aucun effet ;
           - le schéma contient un cycle (proforma_invoices <-> sales) qui empêche
@@ -301,11 +380,18 @@ class DatabaseManager:
 
         payload = self._read_restore_payload(filepath)
         backup_tables = payload.get("tables", {})
+        # Ne jamais restaurer les tables d'administration (users /
+        # activity_logs), même si un ancien backup les contient. La partie
+        # admin (comptes, journaux) de la base active est préservée.
+        for excluded in BACKUP_EXCLUDED_TABLES:
+            backup_tables.pop(excluded, None)
+        is_postgres = engine.dialect.name == "postgresql"
+        is_sqlite = engine.dialect.name == "sqlite"
 
         metadata = MetaData()
-        metadata.reflect(bind=engine)
-
-        is_postgres = engine.dialect.name == "postgresql"
+        schema = _application_schema(engine)
+        metadata.reflect(bind=engine, schema=schema)
+        ordered_tables = _dependency_ordered_tables(metadata, schema=schema)
 
         with engine.begin() as conn:
             replica_disabled = False
@@ -317,43 +403,73 @@ class DatabaseManager:
                     self.logger.warning(
                         "Désactivation des FK impossible (session_replication_role): %s", e
                     )
+            elif is_sqlite:
+                conn.execute(text("PRAGMA defer_foreign_keys = ON"))
 
             try:
                 # 1) Purge ciblée : uniquement les tables du backup (préserve les
                 #    tables hors périmètre, ex. treasury_* / stores).
-                for table in reversed(metadata.sorted_tables):
+                for table in reversed(ordered_tables):
                     if table.name not in backup_tables:
                         continue
-                    if is_postgres:
-                        conn.execute(text(f'DELETE FROM "{table.name}"'))
-                    else:
-                        conn.execute(table.delete())
+                    conn.execute(table.delete())
 
                 # 2) Insertion des lignes (l'ordre importe peu : FK désactivées)
-                for table in metadata.sorted_tables:
+                for table in ordered_tables:
                     rows = backup_tables.get(table.name, [])
                     if not rows:
                         continue
                     col_names = {c.name for c in table.columns}
-                    clean = [{k: v for k, v in r.items() if k in col_names} for r in rows]
+
+                    # Colonnes NOT NULL sans défaut serveur qui peuvent
+                    # nécessiter une valeur par défaut lors de l'insertion
+                    # Core (les défauts Python ne sont pas appliqués par
+                    # SQLAlchemy Core). On les évalue par ligne car une
+                    # colonne peut être présente dans le backup avec une
+                    # valeur None sur certaines lignes seulement.
+                    not_null_no_server_default = [
+                        c for c in table.columns
+                        if not c.nullable and c.server_default is None
+                    ]
+
+                    clean = []
+                    for r in rows:
+                        row_clean = {k: v for k, v in r.items() if k in col_names}
+                        for column in not_null_no_server_default:
+                            if column.name not in row_clean or row_clean[column.name] is None:
+                                if column.unique:
+                                    # Valeur unique pour respecter la contrainte UNIQUE
+                                    row_id = row_clean.get("id", 0)
+                                    row_clean[column.name] = (
+                                        f"__restore__{column.name}__{row_id}"
+                                    )
+                                else:
+                                    row_clean[column.name] = _default_for_column(column)
+                        # Coerce les valeurs vers les types Python attendus
+                        # (ex: chaînes datetime lues depuis SQLite -> datetime)
+                        row_clean = {
+                            k: _coerce_value(v, table.columns[k])
+                            for k, v in row_clean.items()
+                        }
+                        clean.append(row_clean)
                     if clean:
                         conn.execute(table.insert(), clean)
 
                 # 3) Réalignement des séquences PostgreSQL sur max(id) : évite les
                 #    conflits de clé primaire lors du prochain INSERT applicatif.
                 if is_postgres:
-                    for table in metadata.sorted_tables:
+                    for table in ordered_tables:
                         if table.name not in backup_tables or "id" not in table.columns:
                             continue
                         try:
                             seq = conn.execute(
                                 text("SELECT pg_get_serial_sequence(:t, 'id')"),
-                                {"t": table.name},
+                                {"t": table.fullname},
                             ).scalar()
                             if not seq:
                                 continue
                             max_id = conn.execute(
-                                text(f'SELECT MAX(id) FROM "{table.name}"')
+                                select(func.max(table.c.id))
                             ).scalar()
                             if max_id is not None:
                                 conn.execute(
@@ -366,7 +482,12 @@ class DatabaseManager:
                             )
             finally:
                 if replica_disabled:
-                    conn.execute(text("SET session_replication_role = default"))
+                    try:
+                        conn.execute(text("SET session_replication_role = default"))
+                    except Exception as e:
+                        self.logger.warning(
+                            "Réactivation session_replication_role échouée: %s", e
+                        )
 
         return filepath
 
@@ -427,29 +548,13 @@ class DatabaseManager:
 
         tmp_path = None
         try:
-            if self._is_sqlite():
-                db_path = self._get_db_path()
-                if db_path is None or not os.path.exists(db_path):
-                    return {"success": False, "message": "Fichier de base de données introuvable"}
-
-                # Copie cohérente du fichier SQLite (même s'il est ouvert)
-                fd, tmp_path = tempfile.mkstemp(suffix=".db", prefix="korgo_backup_")
-                os.close(fd)
-
-                src = sqlite3.connect(db_path)
-                try:
-                    dst = sqlite3.connect(tmp_path)
-                    with dst:
-                        src.backup(dst)
-                finally:
-                    src.close()
-                suffix = ".db"
-            else:
-                # PostgreSQL / Supabase : export logique portable (JSON)
-                fd, tmp_path = tempfile.mkstemp(suffix=".json", prefix="korgo_backup_")
-                os.close(fd)
-                self._logical_export(tmp_path)
-                suffix = ".json"
+            # Export logique portable (JSON) — identique pour SQLite et
+            # PostgreSQL / Supabase. Les tables d'administration (users /
+            # activity_logs) ne sont jamais incluses.
+            fd, tmp_path = tempfile.mkstemp(suffix=".json", prefix="korgo_backup_")
+            os.close(fd)
+            self._logical_export(tmp_path)
+            suffix = ".json"
 
             size = os.path.getsize(tmp_path)
             filename = f"korgo_pro_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}{suffix}"
@@ -458,7 +563,8 @@ class DatabaseManager:
                 f"🗄️ **Backup base de données KORGO PRO**\n"
                 f"📅 {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}\n"
                 f"📁 `{filename}`\n"
-                f"⚖️ Taille : {size / 1024:.2f} Ko"
+                f"⚖️ Taille : {size / 1024:.2f} Ko\n"
+                f"ℹ️ Comptes utilisateurs et journaux d'activité exclus"
             )
 
             body, boundary = self._build_multipart_body(tmp_path, filename, message)
@@ -511,32 +617,112 @@ class DatabaseManager:
                     "message": "Fichier de backup introuvable"
                 }
 
-            if self._is_sqlite() and self._is_sqlite_file(backup_path):
-                db_path = self._get_db_path()
+            # Toujours importer les données via la connexion active : remplacer
+            # le fichier SQLite brut laisse les connexions SQLAlchemy ouvertes
+            # sur l'ancien fichier, surtout sous Windows.
+            self._logical_import(backup_path)
 
-                import shutil
+            # Reconciliation : creer les comptes Supabase Auth manquants pour
+            # les profils public.users restaures (sans cela, l'authentification
+            # echoue car auth.users est la source de verite et est vide apres
+            # restauration depuis un fichier externe).
+            if self._is_postgres():
+                self._reconcile_auth_users()
 
-                # Restaurer
-                shutil.copy2(backup_path, db_path)
-                
-                return {
-                    "success": True,
-                    "message": f"Base de données restaurée depuis {backup_path}"
-                }
-            else:
-                # PostgreSQL / Supabase (ou backup JSON) : import logique.
-                # Accepte aussi bien un export JSON qu'un fichier SQLite .db.
-                self._logical_import(backup_path)
-                return {
-                    "success": True,
-                    "message": f"Base de données restaurée depuis {backup_path}"
-                }
+            return {
+                "success": True,
+                "message": (
+                    f"Base de données restaurée depuis {backup_path} "
+                    "(comptes utilisateurs et journaux d'activité préservés)"
+                )
+            }
         except Exception as e:
             return {
                 "success": False,
                 "message": f"Erreur lors de la restauration: {str(e)}"
             }
-    
+
+    # ------------------------------------------------------------------
+    # Helpers : reconciliation Supabase Auth apres restauration
+    # ------------------------------------------------------------------
+    def _is_postgres(self) -> bool:
+        """True si la base active est PostgreSQL / Supabase."""
+        try:
+            return engine.url.drivername.startswith("postgresql")
+        except Exception:
+            return False
+
+    def _reconcile_auth_users(self):
+        """Cree les comptes Supabase Auth manquants pour les profils
+        public.users (idempotent).
+
+        Apres une restauration depuis un fichier externe, public.users peut
+        contenir des profils sans compte correspondant dans auth.users.
+        Comme auth.users est la source de verite, l'authentification echouerait
+        sans cette reconciliation.
+
+        Retourne un dict {created: int, skipped: int, errors: list[str]}.
+        """
+        from core.supabase_auth import _norm
+
+        result = {"created": 0, "skipped": 0, "errors": []}
+
+        with SessionLocal() as session:
+            # Profils locaux
+            try:
+                rows = session.execute(text("""
+                    SELECT id, username, email, role, active
+                    FROM public.users
+                    ORDER BY id
+                """)).mappings().all()
+            except Exception as exc:
+                result["errors"].append(f"Lecture public.users impossible: {exc}")
+                return result
+
+            for row in rows:
+                email = _norm(row["email"])
+                if not email or "@" not in email:
+                    result["skipped"] += 1
+                    continue
+
+                # Le compte existe-t-il deja dans auth.users ?
+                try:
+                    existing = session.execute(text("""
+                        SELECT 1 FROM auth.users
+                        WHERE lower(email) = :e LIMIT 1
+                    """), {"e": email}).scalar()
+                except Exception as exc:
+                    result["errors"].append(
+                        f"Verification auth.users pour {email}: {exc}"
+                    )
+                    continue
+
+                if existing:
+                    result["skipped"] += 1
+                    continue
+
+                # Creer le compte Supabase Auth avec un mot de passe temporaire
+                # ; l'utilisateur devra le reinitialiser a sa prochaine connexion.
+                import secrets as _secrets
+                temp_pwd = _secrets.token_urlsafe(12)
+                ok, msg = provision_auth_user(
+                    session,
+                    email=email,
+                    password=temp_pwd,
+                    username=row["username"] or email.split("@")[0],
+                    role=row["role"] or "CAISSIER",
+                    active=bool(row["active"]),
+                    must_change_password=True,
+                )
+                if ok:
+                    result["created"] += 1
+                else:
+                    result["errors"].append(
+                        f"Provisionnement {email} echec: {msg}"
+                    )
+
+        return result
+
     def vacuum_database(self):
         """Optimiser la base de données"""
         try:

@@ -10,6 +10,9 @@ import { colors, sp } from '../theme';
 import { Badge, Banner, Card, ChipGroup, Empty, Field, Input, KeyValue, Loading, Modal, SectionTitle } from '../components/ui';
 import { SuccessOverlay } from '../components/Feedback';
 import { AnnulerForm, EncaisserForm } from '../components/SaleActions';
+import DocumentActions from '../components/DocumentActions';
+import { getSale } from '../api/salesApi';
+import { invoiceHtml } from '../lib/documents';
 
 /** Délai avant la confirmation animée : laisse la modale de détail se fermer. */
 const OVERLAY_DELAY = 350;
@@ -48,6 +51,8 @@ export default function InvoicesScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
   const [selected, setSelected] = useState(null);
+  const [detail, setDetail] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [validation, setValidation] = useState(null);
 
   const load = useCallback(async () => {
@@ -66,6 +71,19 @@ export default function InvoicesScreen() {
     load();
   }, [load]);
 
+  const pick = async (sale) => {
+    setSelected(sale);
+    setDetail(null);
+    setDetailLoading(true);
+    try {
+      setDetail(await getSale(sale.id));
+    } catch (e) {
+      setDetail({ ...sale, items: [], _detailError: e.message });
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
   /**
    * Après un encaissement / une annulation : refermer l'aperçu, recharger la
    * liste puis afficher la confirmation animée (le léger différé laisse la
@@ -73,6 +91,7 @@ export default function InvoicesScreen() {
    */
   const afterAction = ({ summary } = {}) => {
     setSelected(null);
+    setDetail(null);
     load();
     if (summary) setTimeout(() => setValidation(summary), OVERLAY_DELAY);
   };
@@ -121,7 +140,7 @@ export default function InvoicesScreen() {
             <Pressable
               key={s.id}
               style={[styles.row, cancelled ? styles.rowCancelled : null]}
-              onPress={() => setSelected(s)}
+              onPress={() => pick(s)}
             >
               <View style={styles.grow}>
                 <Text style={styles.name}>{s.sale_number}</Text>
@@ -142,21 +161,30 @@ export default function InvoicesScreen() {
         })}
       </Card>
 
-      <Modal visible={!!selected} title={selected ? `Facture ${selected.sale_number}` : 'Facture'} onClose={() => setSelected(null)}>
+      <Modal visible={!!selected} title={selected ? `Facture ${selected.sale_number}` : 'Facture'} onClose={() => { setSelected(null); setDetail(null); }}>
         {selected ? (
           <View>
+            {detailLoading ? <Loading label="Chargement du détail de la facture…" /> : null}
+            {detail?._detailError ? <Banner tone="warning" title="Détail incomplet" message={detail._detailError} /> : null}
             <Text style={styles.invoiceTitle}>FACTURE</Text>
             <Text style={styles.meta}>N° {selected.sale_number} · {formatDate(selected.sale_date)}</Text>
             <KeyValue label="Client" value={selected.customer_name} />
-            <KeyValue label="Sous-total" value={formatMoney(selected.subtotal ?? selected.total_amount)} />
-            <KeyValue label="Remise" value={formatMoney(selected.discount_amount || 0)} />
-            <KeyValue label="Taxe" value={formatMoney(selected.tax_amount || 0)} />
-            <KeyValue label="Total" value={formatMoney(selected.total_amount)} strong />
-            <KeyValue label="Payé" value={formatMoney(selected.amount_paid)} />
-            <KeyValue label="Reste dû" value={selected.sale_status === 'CANCELLED' ? '— (annulée)' : formatMoney(selected.due)} strong />
+            {(detail?.items || []).map((item) => (
+              <View key={item.id} style={styles.itemRow}>
+                <Text style={styles.itemName}>{item.products?.name || `Article #${item.product_id}`} · {item.quantity}</Text>
+                <Text style={styles.itemPrice}>{formatMoney(item.line_total, detail?.currency)}</Text>
+              </View>
+            ))}
+            <KeyValue label="Sous-total" value={formatMoney(detail?.subtotal ?? selected.subtotal ?? selected.total_amount, detail?.currency)} />
+            <KeyValue label="Remise" value={formatMoney(detail?.discount_amount ?? selected.discount_amount ?? 0, detail?.currency)} />
+            <KeyValue label="Taxe" value={formatMoney(detail?.tax_amount ?? selected.tax_amount ?? 0, detail?.currency)} />
+            <KeyValue label="Total" value={formatMoney(detail?.total_amount ?? selected.total_amount, detail?.currency)} strong />
+            <KeyValue label="Payé" value={formatMoney(detail?.amount_paid ?? selected.amount_paid, detail?.currency)} />
+            <KeyValue label="Reste dû" value={selected.sale_status === 'CANCELLED' ? '— (annulée)' : formatMoney(detail?.due ?? selected.due, detail?.currency)} strong />
             <KeyValue label="Statut" value={STATUT_LABELS[selected.statut] || selected.statut || 'EMISE'} />
             <KeyValue label="Mode" value={selected.payment_method} />
             {selected.notes ? <KeyValue label="Note" value={String(selected.notes)} /> : null}
+            {!detailLoading && detail && !detail._detailError ? <DocumentActions html={invoiceHtml(detail)} fileName={`Facture-${selected.sale_number}`} /> : null}
             <EncaisserForm sale={selected} onDone={afterAction} />
             <AnnulerForm sale={selected} onDone={afterAction} />
           </View>
@@ -189,4 +217,7 @@ const styles = StyleSheet.create({
   due: { fontSize: 11, fontWeight: '700', color: colors.warning },
   rowCancelled: { opacity: 0.55 },
   invoiceTitle: { fontSize: 18, fontWeight: '800', color: colors.text, marginBottom: sp(1) },
+  itemRow: { flexDirection: 'row', justifyContent: 'space-between', gap: sp(2), paddingVertical: sp(1.5), borderBottomWidth: 1, borderBottomColor: colors.border },
+  itemName: { flex: 1, fontSize: 12, color: colors.text },
+  itemPrice: { fontSize: 12, fontWeight: '700', color: colors.primary },
 });

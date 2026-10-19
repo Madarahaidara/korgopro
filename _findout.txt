@@ -1,0 +1,114 @@
+mobile\src\config.js:11 : ======================================= function readEnv(value, fallback = '') { const raw = typeof v
+mobile\src\config.js:17 : llback; } export const config = { supabaseUrl: readEnv(process.env.EXPO_PUBLIC_SUPABASE_URL), supab
+mobile\src\config.js:18 : env.EXPO_PUBLIC_SUPABASE_URL), supabaseAnonKey: readEnv( process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY
+mobile\src\config.js:22 : C_SUPABASE_PUBLISHABLE_KEY ), supabaseSchema: readEnv(process.env.EXPO_PUBLIC_SUPABASE_SCHEMA, 'publ
+mobile\src\config.js:23 : PO_PUBLIC_SUPABASE_SCHEMA, 'public'), currency: readEnv(process.env.EXPO_PUBLIC_CURRENCY, 'FCFA'), t
+mobile\src\config.js:24 : .EXPO_PUBLIC_CURRENCY, 'FCFA'), taxRate: Number(readEnv(process.env.EXPO_PUBLIC_TAX_RATE, '0')) || 0, 
+mobile\src\api\authApi.js:8 : / qui porte le r¶le utilisÚ par la matrice de permissions ; // * la CREATION de comptes reste rÚservÚe Ó
+mobile\src\api\authApi.js:101 :  /** * Restaure la session enregistrÚe dans AsyncStorage. * Retourne le profil, ou null si aucune session
+mobile\src\api\catalogApi.js:31 : = ['RETAIL', 'WHOLESALE', 'CORPORATE']; function writeBlocked(label) { throw new Error( `${label} 
+mobile\src\api\catalogApi.js:74 : --------- export async function saveProduct() { writeBlocked('saveProduct'); } export async function d
+mobile\src\api\catalogApi.js:78 : t'); } export async function deleteProduct() { writeBlocked('deleteProduct'); } export async function
+mobile\src\api\catalogApi.js:82 :  export async function toggleProductActive() { writeBlocked('toggleProductActive'); } // --- Clients 
+mobile\src\api\catalogApi.js:101 : -------- export async function saveCustomer() { writeBlocked('saveCustomer'); } export async function 
+mobile\src\api\catalogApi.js:105 : '); } export async function deleteCustomer() { writeBlocked('deleteCustomer'); } /** * Fournisseurs 
+mobile\src\api\catalogApi.js:123 : n ''; } export async function saveSupplier() { writeBlocked('saveSupplier'); } 
+mobile\src\api\dataApi.js:19 : ax_stock,purchase_price,sale_price,' + 'barcode,location,active,store_id,supplier_id'; const SALE_COLUMNS
+mobile\src\api\remote.js:10 : name: { password: 'password_hash' }, order: 'id', readOnly: true }, { name: 'customers', table: 'custo
+mobile\src\api\rpc.js:93 :  * caissier reþoit une erreur 42501 (matrice core/permissions.py). * * `reason` : motif obligatoire c¶tÚ UI 
+mobile\src\api\rpc.js:133 : Ó dÚtecter une divergence * entre mobile/src/lib/permissions.js et la matrice SQL `app_security.can`. */ exp
+mobile\src\api\salesApi.js:57 : tion portant le message) si le r¶le n'a pas la * permission `cancel_sales` (42501) ou si la facture est dÚjÓ 
+mobile\src\api\storesApi.js:3 : i/storesApi.js. // Lecture Supabase directe (user_read_stores) ; persistance du magasin actif // dans As
+mobile\src\api\storesApi.js:4 : ores) ; persistance du magasin actif // dans AsyncStorage (Úquivalent localStorage web). // ===============
+mobile\src\api\storesApi.js:4 : gasin actif // dans AsyncStorage (Úquivalent localStorage web). // ========================================
+mobile\src\api\storesApi.js:6 : ===================================== import AsyncStorage from '@react-native-async-storage/async-storage';
+mobile\src\api\storesApi.js:6 : === import AsyncStorage from '@react-native-async-storage/async-storage'; import { listStores as listStores
+mobile\src\api\storesApi.js:6 : ncStorage from '@react-native-async-storage/async-storage'; import { listStores as listStoresRaw } from './
+mobile\src\api\storesApi.js:22 : tch(() => []); const stored = Number(await AsyncStorage.getItem(ACTIVE_STORE_KEY).catch(() => null)); i
+mobile\src\api\storesApi.js:29 : eStoreId(id) { if (id == null) { await AsyncStorage.removeItem(ACTIVE_STORE_KEY).catch(() => {}); }
+mobile\src\api\storesApi.js:31 : E_KEY).catch(() => {}); } else { await AsyncStorage.setItem(ACTIVE_STORE_KEY, String(Number(id))).cat
+mobile\src\api\supabase.js:8 : ue), session persistÚe // dans AsyncStorage. // // ConsÚquence importante : le r¶le `authenti
+mobile\src\api\supabase.js:15 : ort 'react-native-url-polyfill/auto'; import AsyncStorage from '@react-native-async-storage/async-storage';
+mobile\src\api\supabase.js:15 : o'; import AsyncStorage from '@react-native-async-storage/async-storage'; import { createClient } from '@su
+mobile\src\api\supabase.js:15 : ncStorage from '@react-native-async-storage/async-storage'; import { createClient } from '@supabase/supabas
+mobile\src\api\supabase.js:24 : a: config.supabaseSchema }, auth: { storage: AsyncStorage, storageKey: 'korgo_pro_mob
+mobile\src\api\supabase.js:24 : baseSchema }, auth: { storage: AsyncStorage, storageKey: 'korgo_pro_mobile_auth', 
+mobile\src\api\supabase.js:25 :  auth: { storage: AsyncStorage, storageKey: 'korgo_pro_mobile_auth', persistSessi
+mobile\src\api\supabase.js:44 : '; if (code === '42501' || /row-level security|permission denied|non autorise/i.test(raw)) { return `Ac
+mobile\src\api\supabase.js:85 :  err; } return data; } /** Erreur de session/permission explicite, levÚe par `requireClient()`. */ export
+mobile\src\api\systemApi.js:28 : veur (RPC `app_mobile_context`) : r¶le rÚel et * permissions rÚellement accordÚes. RÚ-exportÚ ici pour que le
+mobile\src\api\systemApi.js:33 : upabase : ping PostgREST + contexte serveur (r¶le/permissions). */ export async function checkHealth() { if 
+mobile\src\api\treasuryApi.js:70 :  `${MONTH_NAMES[m - 1] || '?'} ${y}`; } function writeBlocked(label) { throw new Error( `${label} 
+mobile\src\api\treasuryApi.js:77 : ` ); } export async function saveAccount() { writeBlocked('saveAccount'); } export async function c
+mobile\src\api\treasuryApi.js:81 : '); } export async function createMovement() { writeBlocked('createMovement (passer par app_create_sal
+mobile\src\api\treasuryApi.js:85 : ent)'); } export async function closeMonth() { writeBlocked('closeMonth (rÚservÚ admin)'); } export f
+mobile\src\components\Layout.js:9 : r.js, mÛme NAV, // mÛmes permissions, mÛme fond bleu marine) // <TopBar> 
+mobile\src\components\ui.js:83 : -primary, .btn-success, * .btn-danger, .btn-sm). Micro-animation d'appui : lÚgÞre compression puis * 
+mobile\src\components\ui.js:263 : style]}> {icon ? <View style={styles.listItemIcon}>{icon}</View> : null} <View style={style
+mobile\src\components\ui.js:486 :  }, listItemPressed: { opacity: 0.7 }, listItemIcon: { justifyContent: 'center', alignItems: 'cente
+mobile\src\context\AuthContext.js:5 :  refreshUser } + extras mobile { role, roleLabel, permissions, // signIn, signOut, error, clearError }. // Per
+mobile\src\context\AuthContext.js:7 : ions, // signIn, signOut, error, clearError }. // Permissions : matrice canonique core/permissions.py (19 clÚs
+mobile\src\context\AuthContext.js:7 : rError }. // Permissions : matrice canonique core/permissions.py (19 clÚs) + pont // `canModule()` vers le voc
+mobile\src\context\AuthContext.js:15 : on } from '../api/sessionApi'; import { can as canPermission, permissionsOf, roleLabel } from '../lib/permissi
+mobile\src\context\AuthContext.js:15 : ./api/sessionApi'; import { can as canPermission, permissionsOf, roleLabel } from '../lib/permissions'; const
+mobile\src\context\AuthContext.js:15 : rmission, permissionsOf, roleLabel } from '../lib/permissions'; const AuthContext = createContext(null); /**
+mobile\src\context\AuthContext.js:126 : const role = user?.role || null; const fine = permissionsOf(role); const can = (permission) => { 
+mobile\src\context\AuthContext.js:127 : onst fine = permissionsOf(role); const can = (permission) => { if (!user) return false; if (MO
+mobile\src\context\AuthContext.js:129 : if (!user) return false; if (MODULE_TO_FINE[permission]) { return MODULE_TO_FINE[permission].som
+mobile\src\context\AuthContext.js:130 : FINE[permission]) { return MODULE_TO_FINE[permission].some((p) => fine.includes(p)); } ret
+mobile\src\context\AuthContext.js:132 : (p) => fine.includes(p)); } return canPermission(user.role, permission); }; return { 
+mobile\src\context\AuthContext.js:132 : )); } return canPermission(user.role, permission); }; return { user, settings,
+mobile\src\context\AuthContext.js:145 :  roleLabel: role ? roleLabel(role) : '', permissions: fine, canModule: (module) => can(module),
+mobile\src\context\StoreContext.js:8 : ===================================== import AsyncStorage from '@react-native-async-storage/async-storage';
+mobile\src\context\StoreContext.js:8 : === import AsyncStorage from '@react-native-async-storage/async-storage'; import { createContext, useCallba
+mobile\src\context\StoreContext.js:8 : ncStorage from '@react-native-async-storage/async-storage'; import { createContext, useCallback, useContext
+mobile\src\context\StoreContext.js:39 : s(rows); const stored = Number(await AsyncStorage.getItem(ACTIVE_STORE_KEY)); const valid =
+mobile\src\context\StoreContext.js:58 : iveId(value); if (value == null) { AsyncStorage.removeItem(ACTIVE_STORE_KEY).catch(() => {}); 
+mobile\src\context\StoreContext.js:60 : ORE_KEY).catch(() => {}); } else { AsyncStorage.setItem(ACTIVE_STORE_KEY, String(value)).catch(()
+mobile\src\lib\permissions.js:2 : ===================================== // R¶les et permissions ù rÚplique de core/permissions.py (source unique
+mobile\src\lib\permissions.js:2 : ====== // R¶les et permissions ù rÚplique de core/permissions.py (source unique du // dÚp¶t, dÚjÓ partagÚe ent
+mobile\src\lib\permissions.js:10 : c une erreur explicite. // // ATTENTION : si core/permissions.py Úvolue, mettre Ó jour les 3 endroits ù // cor
+mobile\src\lib\permissions.js:11 : py Úvolue, mettre Ó jour les 3 endroits ù // core/permissions.py, mobile/src/lib/permissions.js et la matrice 
+mobile\src\lib\permissions.js:11 : endroits ù // core/permissions.py, mobile/src/lib/permissions.js et la matrice SQL. // =======================
+mobile\src\lib\permissions.js:30 :  vocabulaire (ordre d'affichage). */ export const PERMISSIONS = [ 'view_dashboard', 'view_sales', 'creat
+mobile\src\lib\permissions.js:59 : a', ]; /** Matrice de rÚfÚrence (_MATRIX de core/permissions.py). */ const MATRIX = { ADMIN: PERMISSIONS, 
+mobile\src\lib\permissions.js:61 : ore/permissions.py). */ const MATRIX = { ADMIN: PERMISSIONS, GESTIONNAIRE, SUPERVISEUR: [...GESTIONNAIRE
+mobile\src\lib\permissions.js:75 :  de bord uniquement. */ export const UNKNOWN_ROLE_PERMISSIONS = ['view_dashboard']; /** Normalise un r¶le (ma
+mobile\src\lib\permissions.js:83 : (); return ROLE_ALIASES[value] || value; } /** Permissions d'un r¶le (permissions_of()). */ export function
+mobile\src\lib\permissions.js:83 : ES[value] || value; } /** Permissions d'un r¶le (permissions_of()). */ export function permissionsOf(role) { 
+mobile\src\lib\permissions.js:84 :  d'un r¶le (permissions_of()). */ export function permissionsOf(role) { return MATRIX[normalizeRole(role)] |
+mobile\src\lib\permissions.js:85 : eturn MATRIX[normalizeRole(role)] || UNKNOWN_ROLE_PERMISSIONS; } /** ``true`` si le r¶le possÞde la permissio
+mobile\src\lib\permissions.js:88 : ERMISSIONS; } /** ``true`` si le r¶le possÞde la permission (can()). */ export function can(role, permission)
+mobile\src\lib\permissions.js:89 :  permission (can()). */ export function can(role, permission) { if (!PERMISSIONS.includes(permission)) retur
+mobile\src\lib\permissions.js:90 : */ export function can(role, permission) { if (!PERMISSIONS.includes(permission)) return false; return per
+mobile\src\lib\permissions.js:90 : n(role, permission) { if (!PERMISSIONS.includes(permission)) return false; return permissionsOf(role).incl
+mobile\src\lib\permissions.js:91 : IONS.includes(permission)) return false; return permissionsOf(role).includes(permission); } /** LibellÚ lis
+mobile\src\lib\permissions.js:91 : turn false; return permissionsOf(role).includes(permission); } /** LibellÚ lisible d'un r¶le. */ export fun
+mobile\src\navigation\MainTabs.js:22 :  /** * Chaque onglet est conditionnÚ par la M-ME permission que la garde des RPC * serveur : un caissier ne 
+mobile\src\navigation\MainTabs.js:48 : tab) => tab.perms.length === 0 || tab.perms.some((permission) => can(permission)) ).map((tab) => ({ 
+mobile\src\navigation\MainTabs.js:48 : ength === 0 || tab.perms.some((permission) => can(permission)) ).map((tab) => ({ ...tab, 
+mobile\src\navigation\RootDrawer.js:4 : b/src/App.jsx -> Protected (session + permission) => withGuard() // Layout.jsx <aside sidebar> 
+mobile\src\navigation\RootDrawer.js:5 : ide sidebar> -> tiroir latÚral : mÛme NAV, mÛmes permissions // Layout.jsx <div class=main> -> withChrome()
+mobile\src\navigation\RootDrawer.js:33 : werNavigator(); /** * NAV ù libellÚs, ic¶nes et permissions repris Ó l'identique de la constante * NAV de w
+mobile\src\pages\Admin.js:3 : MIN : diagnostic systÞme + contexte serveur (r¶le/permissions). // (Gestion users/logs/donnÚes : desktop/web, 
+mobile\src\screens\CaisseScreen.js:325 : et pas d'encaisser des ventes " + '(permission ½ create_sales + absente de la matrice).' 
+mobile\src\screens\CompteScreen.js:17 : Stores } from '../context/StoreContext'; import { PERMISSIONS } from '../lib/permissions'; import { colors, sp
+mobile\src\screens\CompteScreen.js:17 : toreContext'; import { PERMISSIONS } from '../lib/permissions'; import { colors, sp } from '../theme'; /** *
+mobile\src\screens\CompteScreen.js:24 : S : * * ½ calculÚs sur le tÚlÚphone + (src/lib/permissions.js, copie de * core/permissions.py) : ils d
+mobile\src\screens\CompteScreen.js:25 : e + (src/lib/permissions.js, copie de * core/permissions.py) : ils dÚterminent quels Úcrans sont visibles
+mobile\src\screens\CompteScreen.js:31 : ction CompteScreen() { const { user, roleLabel, permissions, signOut } = useAuth(); const { stores, active
+mobile\src\screens\CompteScreen.js:52 : cancelled = true; }; }, []); const serverPermissions = server?.permissions || null; const divergenc
+mobile\src\screens\CompteScreen.js:52 : }; }, []); const serverPermissions = server?.permissions || null; const divergences = serverPermissions
+mobile\src\screens\CompteScreen.js:53 : .permissions || null; const divergences = serverPermissions ? PERMISSIONS.filter( (key) => permi
+mobile\src\screens\CompteScreen.js:54 : ll; const divergences = serverPermissions ? PERMISSIONS.filter( (key) => permissions.includes(ke
+mobile\src\screens\CompteScreen.js:55 : ssions ? PERMISSIONS.filter( (key) => permissions.includes(key) !== serverPermissions.includes(key
+mobile\src\screens\CompteScreen.js:55 :  (key) => permissions.includes(key) !== serverPermissions.includes(key) ) : []; const logout 
+mobile\src\screens\CompteScreen.js:126 : r} /> : null} <Card> <SectionTitle>Permissions</SectionTitle> {!server ? <Loading label
+mobile\src\screens\CompteScreen.js:134 : upabase_mobile_rpc.sql (app_security.can) ET core/permissions.py.' } /> ) : null
+mobile\src\screens\CompteScreen.js:138 :  } /> ) : null} {PERMISSIONS.map((key) => { const local = permissio
+mobile\src\screens\CompteScreen.js:139 : ERMISSIONS.map((key) => { const local = permissions.includes(key); const remote = serverPe
+mobile\src\screens\CompteScreen.js:140 : ons.includes(key); const remote = serverPermissions ? serverPermissions.includes(key) : null; 
+mobile\src\screens\CompteScreen.js:140 :  const remote = serverPermissions ? serverPermissions.includes(key) : null; return ( 
+mobile\src\screens\InventaireScreen.js:197 :  message="Votre r¶le ne donne pas accÞs au stock (permission ½ view_stock +)." /> </ScrollView> 
+mobile\src\screens\InventaireScreen.js:270 :  <KeyValue label="Emplacement" value={selected.location || 'ù'} /> {!canManage ? ( 
+mobile\src\screens\InventaireScreen.js:276 : e="Votre r¶le ne permet pas de modifier le stock (permission ½ manage_stock +)." /> ) : 

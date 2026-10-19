@@ -83,7 +83,7 @@ class SaleView(QWidget):
     sale_completed = Signal(dict)
     sale_cancelled = Signal()
     
-    def __init__(self, user: Dict[str, Any]):
+    def __init__(self, user: Dict[str, Any], settings_manager=None):
         super().__init__()
         self.user = user
         self.current_page = 1
@@ -99,7 +99,7 @@ class SaleView(QWidget):
         self.current_width = 0
         
         # Initialiser SettingsManager
-        self.settings_manager = SettingsManager()
+        self.settings_manager = settings_manager or SettingsManager()
         
         # Paramètres dynamiques
         self.CURRENCY = self.settings_manager.get_setting("currency", "FCFA")
@@ -418,7 +418,7 @@ class SaleView(QWidget):
         self.prev_btn.clicked.connect(self.previous_page)
         
         self.page_label = QLabel("Page 1/1")
-        self.page_label.setAlignment(Qt.AlignCenter)
+        self.page_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
         self.next_btn = QPushButton("Suivant")
         self.next_btn.setIcon(get_icon("plus", "#6b7280", 14))
@@ -441,7 +441,7 @@ class SaleView(QWidget):
         self.add_to_cart_btn.setEnabled(False)
         self.add_to_cart_btn.setStyleSheet("""
             QPushButton {
-                background-color: #10b981;
+                background-color: #059669;
                 color: white;
                 font-weight: bold;
                 padding: 8px 16px;
@@ -516,17 +516,22 @@ class SaleView(QWidget):
         
         options_section = self.create_options_section()
         scroll_layout.addWidget(options_section)
-        
-        totals_section = self.create_totals_section()
-        scroll_layout.addWidget(totals_section)
-        
-        actions_section = self.create_actions_section()
-        scroll_layout.addWidget(actions_section)
-        
+
         scroll_layout.addStretch()
-        
         self.cart_scroll_area.setWidget(scroll_content)
-        main_layout.addWidget(self.cart_scroll_area)
+        main_layout.addWidget(self.cart_scroll_area, 1)
+
+        # Le total et la validation restent visibles pendant le défilement du panier.
+        footer = QFrame()
+        footer.setObjectName("cartFooter")
+        footer_layout = QVBoxLayout(footer)
+        footer_layout.setContentsMargins(0, 8, 0, 0)
+        footer_layout.setSpacing(6)
+        totals_section = self.create_totals_section()
+        footer_layout.addWidget(totals_section)
+        actions_section = self.create_actions_section()
+        footer_layout.addWidget(actions_section)
+        main_layout.addWidget(footer)
         
         return container
     
@@ -686,7 +691,7 @@ class SaleView(QWidget):
         # Remplacer QDoubleSpinBox par QLineEdit
         self.discount_input_edit = QLineEdit()
         self.discount_input_edit.setText("0")
-        self.discount_input_edit.setAlignment(Qt.AlignRight)
+        self.discount_input_edit.setAlignment(Qt.AlignmentFlag.AlignRight)
         self.discount_input_edit.setValidator(QDoubleValidator(0, 1000000, 2))
         self.discount_input_edit.setStyleSheet("""
             QLineEdit {
@@ -726,20 +731,20 @@ class SaleView(QWidget):
         
         totals_grid.addWidget(QLabel("Sous-total:"), 0, 0)
         self.subtotal_label = QLabel(f"0 {self.CURRENCY}")
-        self.subtotal_label.setAlignment(Qt.AlignRight)
+        self.subtotal_label.setAlignment(Qt.AlignmentFlag.AlignRight)
         self.subtotal_label.setStyleSheet("font-size: 13px; color: #6b7280;")
         totals_grid.addWidget(self.subtotal_label, 0, 1)
         
         totals_grid.addWidget(QLabel("Remise:"), 1, 0)
         self.discount_label = QLabel(f"-0 {self.CURRENCY}")
-        self.discount_label.setAlignment(Qt.AlignRight)
+        self.discount_label.setAlignment(Qt.AlignmentFlag.AlignRight)
         self.discount_label.setStyleSheet("font-size: 13px; color: #ef4444;")
         totals_grid.addWidget(self.discount_label, 1, 1)
         
         tax_rate_percent = self.settings_manager.get_setting("tax_rate", 20.0)
         totals_grid.addWidget(QLabel(f"TVA ({tax_rate_percent:.0f}%):"), 2, 0)
         self.tax_label = QLabel(f"0 {self.CURRENCY}")
-        self.tax_label.setAlignment(Qt.AlignRight)
+        self.tax_label.setAlignment(Qt.AlignmentFlag.AlignRight)
         self.tax_label.setStyleSheet("font-size: 13px; color: #f59e0b;")
         totals_grid.addWidget(self.tax_label, 2, 1)
         
@@ -750,7 +755,7 @@ class SaleView(QWidget):
         
         totals_grid.addWidget(QLabel("TOTAL:"), 4, 0)
         self.total_label = QLabel(f"0 {self.CURRENCY}")
-        self.total_label.setAlignment(Qt.AlignRight)
+        self.total_label.setAlignment(Qt.AlignmentFlag.AlignRight)
         self.total_label.setStyleSheet("font-size: 22px; font-weight: bold; color: #3b82f6;")
         totals_grid.addWidget(self.total_label, 4, 1)
         
@@ -760,7 +765,7 @@ class SaleView(QWidget):
         self.amount_paid_edit = QLineEdit()
         self.amount_paid_edit.setObjectName("amount_paid_input")
         self.amount_paid_edit.setText("0")
-        self.amount_paid_edit.setAlignment(Qt.AlignRight)
+        self.amount_paid_edit.setAlignment(Qt.AlignmentFlag.AlignRight)
         self.amount_paid_edit.setValidator(QDoubleValidator(0, 100000000, 2))
         self.amount_paid_edit.setEnabled(True)
         self.amount_paid_edit.setStyleSheet("""
@@ -780,7 +785,7 @@ class SaleView(QWidget):
         
         totals_grid.addWidget(QLabel("À rendre:"), 6, 0)
         self.change_label = QLabel(f"0 {self.CURRENCY}")
-        self.change_label.setAlignment(Qt.AlignRight)
+        self.change_label.setAlignment(Qt.AlignmentFlag.AlignRight)
         self.change_label.setStyleSheet("font-size: 15px; font-weight: bold; color: #10b981;")
         totals_grid.addWidget(self.change_label, 6, 1)
         
@@ -810,10 +815,12 @@ class SaleView(QWidget):
         self.validate_btn.clicked.connect(self.validate_sale)
         self.validate_btn.setEnabled(False)
         self.validate_btn.setMinimumHeight(45)
-        self.validate_btn.setStyleSheet(self._get_button_style("#10b981", True))
+        self.validate_btn.setStyleSheet(self._get_button_style("#059669", True))
         
         buttons_grid.addWidget(self.cancel_btn, 0, 0)
-        buttons_grid.addWidget(self.validate_btn, 1, 0, 1, 1)
+        buttons_grid.addWidget(self.validate_btn, 0, 1)
+        buttons_grid.setColumnStretch(0, 1)
+        buttons_grid.setColumnStretch(1, 2)
         
         layout.addLayout(buttons_grid)
         

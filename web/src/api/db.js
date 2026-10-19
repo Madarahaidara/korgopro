@@ -23,7 +23,7 @@ import {
   forgetRemoteIds,
   hydrateAll,
   pushAll,
-} from './remote';
+} from './remote.jsx';
 import { isSupabaseConfigured } from './supabase';
 
 const DB_KEY = 'korgo_pro_db_v1';

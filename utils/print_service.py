@@ -537,15 +537,13 @@ class InvoicePrinter:
                 pagesize=A4,
                 rightMargin=1*cm,
                 leftMargin=1*cm,
-                topMargin=1*cm,
-                bottomMargin=1*cm
+                topMargin=4*cm,
+                bottomMargin=2.8*cm
             )
             
             story = []
             
             # En-tête style proforma
-            story.extend(self._create_header(sale))
-            
             if progress_dialog:
                 progress_dialog.update(60, "Ajout des informations client...")
             
@@ -565,12 +563,11 @@ class InvoicePrinter:
             story.extend(self._create_totals_section(sale))
             
             # Pied de page avec informations légales
-            story.extend(self._create_footer())
-            
             if progress_dialog:
                 progress_dialog.update(90, "Génération du fichier PDF...")
             
-            doc.build(story)
+            page_callback = lambda page_canvas, page_doc: self._draw_invoice_page(page_canvas, page_doc, sale)
+            doc.build(story, onFirstPage=page_callback, onLaterPages=page_callback)
             
             if progress_dialog:
                 progress_dialog.update(100, "Facture générée avec succès !")
@@ -621,13 +618,11 @@ class InvoicePrinter:
                 pagesize=A4,
                 rightMargin=1*cm,
                 leftMargin=1*cm,
-                topMargin=1*cm,
-                bottomMargin=1*cm
+                topMargin=4*cm,
+                bottomMargin=2.8*cm
             )
             
             story = []
-            
-            story.extend(self._create_header(sale))
             
             if progress_dialog:
                 progress_dialog.update(70, "Ajout des informations client...")
@@ -643,12 +638,11 @@ class InvoicePrinter:
                 progress_dialog.update(85, "Calcul des totaux...")
             
             story.extend(self._create_totals_section(sale))
-            story.extend(self._create_footer())
-            
             if progress_dialog:
                 progress_dialog.update(90, "Génération du fichier PDF...")
             
-            doc.build(story)
+            page_callback = lambda page_canvas, page_doc: self._draw_invoice_page(page_canvas, page_doc, sale)
+            doc.build(story, onFirstPage=page_callback, onLaterPages=page_callback)
             
             if progress_dialog:
                 progress_dialog.update(100, "Facture générée avec succès !")
@@ -882,8 +876,11 @@ class InvoicePrinter:
     def generate_batch_invoices(self, sale_ids: List[int], output_dir: str = None, 
                                filename_pattern: str = "Facture_{sale_number}_{date}",
                                ask_location: bool = False,
-                               show_progress: bool = True) -> Dict[int, Tuple[bool, str, str]]:
-        """Génère plusieurs factures en batch"""
+                               show_progress: bool = True,
+                               document_type: str = "invoice") -> Dict[int, Tuple[bool, str, str]]:
+        """Génère plusieurs factures ou tickets en batch."""
+        if document_type not in {"invoice", "receipt"}:
+            raise ValueError("document_type doit être 'invoice' ou 'receipt'")
         self._load_settings()
         
         progress_dialog = None
@@ -945,6 +942,8 @@ class InvoicePrinter:
                     time=now.strftime('%H%M%S'),
                     datetime=now.strftime('%Y%m%d_%H%M%S')
                 ) + ".pdf"
+                if document_type == "receipt" and filename_pattern == "Facture_{sale_number}_{date}":
+                    filename = f"Ticket_{sale.sale_number}_{now.strftime('%Y%m%d')}.pdf"
                 
                 if progress_dialog:
                     progress_dialog.update(
@@ -952,10 +951,12 @@ class InvoicePrinter:
                         f"Génération de la facture {sale.sale_number}..."
                     )
                 
-                success, message, file_path = self.generate_invoice(
-                    sale_id, 
+                generator = self.generate_receipt if document_type == "receipt" else self.generate_invoice
+                success, message, file_path = generator(
+                    sale_id,
                     output_dir=output_dir,
                     filename=filename,
+                    ask_location=False,
                     show_progress=False
                 )
                 
@@ -1019,10 +1020,14 @@ class InvoicePrinter:
                 os.startfile(file_path, "print")
                 result_message = "Impression lancée sur Windows"
             elif system == 'Darwin':
-                subprocess.run(['lp', file_path])
+                result = subprocess.run(['lp', file_path], capture_output=True, text=True)
+                if result.returncode != 0:
+                    raise RuntimeError(result.stderr.strip() or "La commande lp a échoué")
                 result_message = "Impression lancée sur macOS"
             else:
-                subprocess.run(['lp', file_path])
+                result = subprocess.run(['lp', file_path], capture_output=True, text=True)
+                if result.returncode != 0:
+                    raise RuntimeError(result.stderr.strip() or "La commande lp a échoué")
                 result_message = "Impression lancée sur Linux"
             
             if progress_dialog:
@@ -1240,6 +1245,47 @@ class InvoicePrinter:
         
         return styles[style_name]
     
+    def _draw_invoice_page(self, page_canvas, page_doc, sale: 'Sale') -> None:
+        """Dessine un en-tête et un pied de page cohérents sur chaque page A4."""
+        page_canvas.saveState()
+        width, height = A4
+        left = 1 * cm
+        right = width - 1 * cm
+        title = "AVOIR" if getattr(sale, "type_document", "FACTURE") == "AVOIR" else "FACTURE"
+
+        page_canvas.setFillColor(colors.black)
+        page_canvas.setFont("Helvetica-Bold", 11)
+        page_canvas.drawString(left, height - 1.2 * cm, self.company_name or "MON ENTREPRISE")
+        page_canvas.setFont("Helvetica", 7.5)
+        company_meta = " · ".join(part for part in (self.company_address, self.company_phone, self.company_email) if part)
+        page_canvas.setFillColor(colors.HexColor("#303030"))
+        page_canvas.drawString(left, height - 1.62 * cm, company_meta[:120])
+
+        page_canvas.setFont("Helvetica", 8)
+        page_canvas.drawRightString(right, height - 1.2 * cm, f"Ouagadougou, le {sale.sale_date.strftime('%d/%m/%Y')}")
+        page_canvas.setFillColor(colors.black)
+        page_canvas.setFont("Helvetica-Bold", 15)
+        page_canvas.drawCentredString(width / 2, height - 2.55 * cm, f"{title} N° {sale.sale_number}")
+
+        page_canvas.setStrokeColor(colors.HexColor("#7f8992"))
+        page_canvas.setLineWidth(0.65)
+        page_canvas.line(left, height - 3.5 * cm, right, height - 3.5 * cm)
+
+        footer_y = 1.55 * cm
+        page_canvas.setStrokeColor(colors.HexColor("#cbd5df"))
+        page_canvas.setLineWidth(0.6)
+        page_canvas.line(left, footer_y + 0.35 * cm, right, footer_y + 0.35 * cm)
+        page_canvas.setFont("Helvetica", 7.5)
+        page_canvas.setFillColor(colors.HexColor("#526173"))
+        legal = " · ".join(part for part in (
+            f"BP {self.company_po_box}" if self.company_po_box else "",
+            f"IFU {self.company_ifu}" if self.company_ifu else "",
+            f"RCCM {self.company_rccm}" if self.company_rccm else "",
+        ) if part)
+        page_canvas.drawString(left, footer_y, legal[:90] or (self.invoice_footer or "Merci de votre confiance")[:90])
+        page_canvas.drawRightString(right, footer_y, f"Page {page_doc.page}")
+        page_canvas.restoreState()
+
     def _create_header(self, sale: 'Sale') -> List:
         """Crée l'en-tête de la facture style proforma"""
         styles = getSampleStyleSheet()
@@ -1261,10 +1307,11 @@ class InvoicePrinter:
             except Exception as e:
                 logger.warning(f"Impossible d'ajouter le logo: {e}")
         
-        # En-tête avec style proforma - nom de l'entreprise uniquement
+        # En-tête clair, avec les coordonnées de l'émetteur et la référence.
         header_text = f"""
         <para alignment="center" spaceAfter="12">
-        <font size="22" color="#1a5490"><b>{company_name}</b></font>
+        <font size="20" color="#17324d"><b>{html.escape(company_name)}</b></font><br/>
+        <font size="9" color="#526173">{html.escape(company_address)} | {html.escape(self.company_phone)} | {html.escape(self.company_email)}</font>
         </para>
         """
         
@@ -1281,11 +1328,11 @@ class InvoicePrinter:
         header_elements.append(Paragraph(date_text, styles['Normal']))
         header_elements.append(Spacer(1, 15))
         
-        # Titre FACTURE PRO FORMA
+        document_label = "AVOIR" if getattr(sale, "type_document", "FACTURE") == "AVOIR" else "FACTURE"
         title_text = f"""
-        <para alignment="center" spaceAfter="10">
-        <font size="18" color="#1a5490"><u><b>FACTURE N°{sale.sale_number}</b></u></font><br/>
-        
+        <para alignment="center" spaceAfter="10" backColor="#eef3f8" borderPadding="8">
+        <font size="18" color="#17324d"><b>{document_label}</b></font><br/>
+        <font size="11" color="#526173">N° {html.escape(str(sale.sale_number))} · {date_str}</font>
         </para>
         """
         header_elements.append(Paragraph(title_text, styles['Normal']))
@@ -1317,18 +1364,18 @@ class InvoicePrinter:
         # Construction des informations client - tout à gauche
         info_html = f"""
         <para>
-        <font size="11" color="#1a5490"><u><b>DOIT :</b></u></font><br/>
-        <font size="11" color="#1a1a1a"><b>{customer_name}</b></font><br/>
-        <font size="9" color="#4b5563">{customer_address}</font><br/>
-        {f'<font size="9" color="#4b5563">Tél: {customer_phone}</font><br/>' if customer_phone else ''}
-        {f'<font size="9" color="#4b5563">Email: {customer_email}</font>' if customer_email else ''}
+        <font size="9" color="#303030"><b>DOIT :</b></font><br/>
+        <font size="11" color="#111111"><b>{html.escape(customer_name)}</b></font><br/>
+        <font size="9" color="#303030">{html.escape(customer_address)}</font><br/>
+        {f'<font size="9" color="#303030">Tél: {html.escape(customer_phone)}</font><br/>' if customer_phone else ''}
+        {f'<font size="9" color="#303030">Email: {html.escape(customer_email)}</font>' if customer_email else ''}
         </para>
         """
         
         # Objet
         object_html = f"""
         <para>
-        <font size="10" color="#1a1a1a"><u><b>Objet :</b></u> <font size="10">{subject}</font></font>
+        <font size="10" color="#1a1a1a"><b>Objet :</b> {html.escape(str(subject))}</font>
         </para>
         """
         
@@ -1354,19 +1401,11 @@ class InvoicePrinter:
             
             items_data.append([
                 str(idx),
-                product_name,
+                Paragraph(html.escape(product_name), ParagraphStyle("InvoiceItem", fontName="Helvetica", fontSize=9, leading=12, textColor=colors.HexColor("#263746"))),
                 str(qty),
-                f"{item.unit_price:,.0f}",
-                f"{item.line_total:,.0f}"
+                f"{item.unit_price:,.0f} {self.CURRENCY}",
+                f"{item.line_total:,.0f} {self.CURRENCY}"
             ])
-        
-        # Ajouter 2 lignes vides pour l'espacement
-        items_data.append(["", "", "", "", ""])
-        items_data.append(["", "", "", "", ""])
-        
-        # Ligne du total
-        total_amount = sale.total_amount
-        items_data.append(["", "", "", "Total net :", f"{total_amount:,.0f}"])
         
         col_widths = [
             table_width * 0.08,  # N°
@@ -1376,30 +1415,27 @@ class InvoicePrinter:
             table_width * 0.15   # TOTAL
         ]
         
-        items_table = Table(items_data, colWidths=col_widths)
-        
-        total_row_index = len(items_data) - 1
+        items_table = Table(items_data, colWidths=col_widths, repeatRows=1)
         
         table_style = [
             # En-tête
             ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f3f4f6')),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#e7e9eb')),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
             ('FONTSIZE', (0, 0), (-1, 0), 9),
             
             # Alignement
-            ('ALIGN', (0, 1), (0, total_row_index - 1), 'CENTER'),  # N°
-            ('ALIGN', (2, 1), (2, total_row_index - 1), 'CENTER'),  # QTÉ
-            ('ALIGN', (3, 1), (4, total_row_index - 1), 'RIGHT'),   # PRIX et TOTAL
+            ('ALIGN', (0, 1), (0, -1), 'CENTER'),
+            ('ALIGN', (2, 1), (2, -1), 'CENTER'),
+            ('ALIGN', (3, 1), (4, -1), 'RIGHT'),
             
             # Bordures
-            ('GRID', (0, 0), (-1, total_row_index - 3), 0.5, colors.black),
-            ('LINEBELOW', (0, total_row_index - 3), (-1, total_row_index - 3), 1, colors.black),
+            ('LINEBELOW', (0, 0), (-1, 0), 0.6, colors.HexColor('#70777d')),
+            ('LINEBELOW', (0, 1), (-1, -1), 0.35, colors.HexColor('#d7e0e8')),
             
             # Alternance des couleurs
-            ('BACKGROUND', (0, 1), (-1, total_row_index - 3), colors.white),
-            ('ROWBACKGROUNDS', (0, 1), (-1, total_row_index - 3), [colors.white, colors.HexColor('#fafafa')]),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f5f8fb')]),
             
             # Padding
             ('PADDING', (0, 0), (-1, -1), 6),
@@ -1407,17 +1443,6 @@ class InvoicePrinter:
             # Taille police
             ('FONTSIZE', (0, 1), (-1, -1), 10),
         ]
-        
-        # Style spécial pour la ligne TOTAL
-        table_style.extend([
-            ('BACKGROUND', (3, total_row_index), (4, total_row_index), colors.white),
-            ('TEXTCOLOR', (3, total_row_index), (4, total_row_index), colors.HexColor('#1a5490')),
-            ('FONTNAME', (3, total_row_index), (4, total_row_index), 'Helvetica-Bold'),
-            ('FONTSIZE', (3, total_row_index), (4, total_row_index), 11),
-            ('ALIGN', (3, total_row_index), (4, total_row_index), 'RIGHT'),
-            ('LINEABOVE', (0, total_row_index), (-1, total_row_index), 1, colors.black),
-            ('LINEBELOW', (0, total_row_index), (-1, total_row_index), 1, colors.black),
-        ])
         
         items_table.setStyle(TableStyle(table_style))
         
@@ -1429,38 +1454,40 @@ class InvoicePrinter:
         
         total_amount = sale.total_amount
         currency = self.CURRENCY
+        doc_width = A4[0] - 2 * cm
         
         # Convertir le montant en lettres
         amount_in_words = self._number_to_words(total_amount, currency)
         
         # Montant en lettres
-        letters_html = f"""
-        <para fontSize="10" backColor="#f9fafb" borderColor="#1a5490" borderWidth="0.5" borderPadding="8" leftIndent="6">
-        <i><b>Arrêté à la somme de :</b> {amount_in_words} ({total_amount:,.0f}) francs CFA</i>
-        </para>
-        """
-        
-        # Signature
-        signature_html = """
-        <para alignment="right" fontSize="10" color="#1a1a1a">
-        <b>Le Gérant</b>
-        </para>
-        """
-        
-        signature_line_html = """
-        <para alignment="right" fontSize="10" color="#1a1a1a">
-        <font color="#1a1a1a">TIENDREBEOGO François</font>
-        </para>
-        """
-        
+        totals_data = [
+            ["Sous-total", f"{sale.subtotal:,.0f} {currency}"],
+            ["Remise", f"− {sale.discount_amount:,.0f} {currency}"],
+            ["Taxes", f"{sale.tax_amount:,.0f} {currency}"],
+            ["TOTAL GENERAL", f"{total_amount:,.0f} {currency}"],
+            ["Déjà réglé", f"{sale.amount_paid:,.0f} {currency}"],
+            ["Reste à payer", f"{max(total_amount - sale.amount_paid, 0):,.0f} {currency}"],
+        ]
+        totals = Table(totals_data, colWidths=[doc_width * 0.62, doc_width * 0.38])
+        totals.setStyle(TableStyle([
+            ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('TEXTCOLOR', (0, 0), (-1, -1), colors.HexColor('#34495e')),
+            ('LINEABOVE', (0, 3), (-1, 3), 0.8, colors.HexColor('#70777d')),
+            ('BACKGROUND', (0, 3), (-1, 3), colors.HexColor('#edf0f2')),
+            ('FONTNAME', (0, 3), (-1, 3), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 3), (-1, 3), 11),
+            ('TEXTCOLOR', (0, 3), (-1, 3), colors.black),
+            ('TOPPADDING', (0, 0), (-1, -1), 5),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ]))
+        letters_html = f'<para fontSize="9" textColor="#526173"><i>Arrêté à la somme de : {html.escape(amount_in_words)}</i></para>'
         return [
-            Spacer(1, 10),
-            Paragraph(letters_html, styles['Normal']),
-            Spacer(1, 30),
-            Paragraph(signature_html, styles['Normal']),
-            Spacer(1, 5),
-            Paragraph(signature_line_html, styles['Normal']),
-            Spacer(1, 20),
+            Spacer(1, 10), totals, Spacer(1, 8),
+            Paragraph(letters_html, styles['Normal']), Spacer(1, 18),
+            Paragraph('<para alignment="right" fontSize="9" textColor="#526173">Signature et cachet</para>', styles['Normal']),
+            Spacer(1, 18),
         ]
     
     def _create_footer(self) -> List:
@@ -1522,6 +1549,41 @@ class InvoicePrinter:
         except Exception as e:
             logger.error(f"Erreur génération HTML: {e}")
             return False, "", f"Erreur: {str(e)}"
+
+    def generate_html_receipt(self, sale_id: int) -> Tuple[bool, str, str]:
+        """Construit un ticket HTML compact pour l'aperçu et l'impression Qt."""
+        try:
+            sale = self.get_sale_details(sale_id)
+            if not sale:
+                return False, "", "Vente non trouvée"
+
+            escape = html.escape
+            rows = "".join(
+                f"<tr><td>{escape(self._clean_text(item.product.name if item.product else 'Produit'))}</td>"
+                f"<td>{item.quantity:g} × {item.unit_price:,.0f}</td>"
+                f"<td>{item.line_total:,.0f}</td></tr>"
+                for item in sale.items
+            )
+            customer = "Client général"
+            if sale.customer:
+                customer = self._clean_text(
+                    f"{sale.customer.first_name or ''} {sale.customer.last_name or ''}"
+                ).strip() or customer
+            ticket_html = f"""<!doctype html><html lang="fr"><head><meta charset="utf-8">
+<style>body{{font:10pt Arial,sans-serif;color:#111}}h1,p{{text-align:center}}table{{width:100%;border-collapse:collapse}}
+th,td{{padding:5px 2px;border-bottom:1px solid #bbb;text-align:left}}td:last-child,th:last-child{{text-align:right}}
+.total{{font-weight:bold;font-size:12pt;text-align:right;margin-top:12px}}</style></head><body>
+<h1>{escape(self.company_name or 'KORGO STORE')}</h1><p>{escape(self.company_address or '')}<br>
+{escape(self.company_phone or '')}</p><hr><p>Ticket {escape(str(sale.sale_number))}<br>
+{sale.sale_date.strftime('%d/%m/%Y %H:%M')}<br>Client : {escape(customer)}</p>
+<table><thead><tr><th>Article</th><th>Qté × PU</th><th>Total</th></tr></thead><tbody>{rows}</tbody></table>
+<div class="total">Total : {sale.total_amount:,.0f} {escape(self.CURRENCY)}</div>
+<p>Payé : {sale.amount_paid:,.0f} {escape(self.CURRENCY)}<br>{escape(self.invoice_footer or 'Merci de votre visite !')}</p>
+</body></html>"""
+            return True, ticket_html, "HTML ticket généré avec succès"
+        except Exception as e:
+            logger.error(f"Erreur génération HTML ticket: {e}")
+            return False, "", f"Erreur: {str(e)}"
     
     def _create_html_template(self, sale: 'Sale') -> str:
         """Crée le template HTML style proforma"""
@@ -1567,10 +1629,10 @@ class InvoicePrinter:
             items_rows += f"""
             <tr>
                 <td class="center">{idx}</td>
-                <td>{product_name}</td>
+                <td>{html.escape(product_name)}</td>
                 <td class="center">{qty}</td>
-                <td class="right">{item.unit_price:,.0f}</td>
-                <td class="right">{item.line_total:,.0f}</td>
+                <td class="right">{item.unit_price:,.0f} {html.escape(currency)}</td>
+                <td class="right">{item.line_total:,.0f} {html.escape(currency)}</td>
             </tr>
             """
         
@@ -1599,14 +1661,24 @@ class InvoicePrinter:
         legal_info = " | ".join(legal_parts) if legal_parts else ""
         
         date_str = sale.sale_date.strftime('%d/%m/%Y')
+        document_title = "AVOIR" if getattr(sale, "type_document", "FACTURE") == "AVOIR" else "FACTURE"
+        totals_rows = f"""
+          <tr><td>Sous-total</td><td>{sale.subtotal:,.0f} {html.escape(currency)}</td></tr>
+          <tr><td>Remise</td><td>− {sale.discount_amount:,.0f} {html.escape(currency)}</td></tr>
+          <tr><td>Taxes</td><td>{sale.tax_amount:,.0f} {html.escape(currency)}</td></tr>
+          <tr class="grand-total"><td>Total à payer</td><td>{total_amount:,.0f} {html.escape(currency)}</td></tr>
+          <tr><td>Déjà réglé</td><td>{sale.amount_paid:,.0f} {html.escape(currency)}</td></tr>
+          <tr><td>Reste à payer</td><td>{max(total_amount - sale.amount_paid, 0):,.0f} {html.escape(currency)}</td></tr>
+        """
         
         html = f'''<!DOCTYPE html>
 <html lang="fr">
 <head>
 <meta charset="UTF-8" />
-<title>Facture Pro Forma</title>
+<title>{document_title} {html.escape(str(sale.sale_number))}</title>
 
 <style>
+    @page {{ size: A4; margin: 28mm 14mm 24mm; }}
     *{{
         margin:0;
         padding:0;
@@ -1615,17 +1687,17 @@ class InvoicePrinter:
 
     body{{
         background:#ffffff;
-        font-family: 'Times New Roman', Times, serif;
+        font-family: Arial, Helvetica, sans-serif;
         color:#1a1a1a;
         font-size:10pt;
         line-height:1.4;
     }}
 
     .page{{
-        width:210mm;
-        min-height:297mm;
-        margin:auto;
-        padding:10mm 10mm;
+        width:100%;
+        min-height:0;
+        margin:0;
+        padding:0;
         position:relative;
     }}
 
@@ -1642,7 +1714,7 @@ class InvoicePrinter:
     .company-name{{
         font-size:22pt;
         font-weight:bold;
-        color:#1a5490;
+        color:#111111;
     }}
     .company-info{{
         font-size:8pt;
@@ -1651,8 +1723,8 @@ class InvoicePrinter:
     .title{{
         font-size:18pt;
         font-weight:bold;
-        text-decoration:underline;
-        color:#1a5490;
+        text-align:center;
+        color:#111111;
     }}
     .date{{
         font-size:10pt;
@@ -1702,21 +1774,22 @@ class InvoicePrinter:
         margin:15px 0;
     }}
     .main-table th{{
-        background-color:#f3f4f6;
+        background-color:#e7e9eb;
+        color:#111111;
         font-weight:bold;
         font-size:9pt;
         text-align:center;
-        border:1px solid #000;
-        padding:6px 4px;
+        border:1px solid #70777d;
+        padding:9px 7px;
         text-transform:uppercase;
     }}
     .main-table td{{
-        border:1px solid #000;
-        padding:5px 4px;
+        border-bottom:1px solid #d7e0e8;
+        padding:8px 7px;
         font-size:10pt;
     }}
     .main-table tr:nth-child(even){{
-        background-color:#fafafa;
+        background-color:#f5f8fb;
     }}
     .center{{
         text-align:center;
@@ -1756,6 +1829,7 @@ class InvoicePrinter:
     .signature-block{{
         margin-top:40px;
         text-align:right;
+        page-break-inside:avoid;
     }}
     .signature-line{{
         margin-top:30px;
@@ -1770,14 +1844,16 @@ class InvoicePrinter:
         margin-top:30px;
         font-size:9pt;
         color:#6b7280;
-        text-align:center;
-        border-top:1px solid #e5e7eb;
-        padding-top:15px;
-        position:absolute;
-        bottom:10mm;
-        left:10mm;
-        right:10mm;
+        text-align:left;
+        border-top:1px solid #cbd5df;
+        padding-top:10px;
+        page-break-inside:avoid;
     }}
+    .summary{{width:54%;margin:12px 0 12px auto;border-collapse:collapse;font-size:9pt}}
+    .summary td{{padding:5px 7px;border-bottom:1px solid #e1e7ed}}
+    .summary td:last-child{{text-align:right;white-space:nowrap}}
+    .summary .grand-total td{{background:#edf0f2;color:#111;font-size:12pt;font-weight:bold;border-top:1.5px solid #70777d}}
+    .meta{{font-size:8.5pt;color:#526173;line-height:1.45}}
 
     @media print{{
         body{{
@@ -1786,7 +1862,11 @@ class InvoicePrinter:
         .page{{
             margin:0;
             width:100%;
+            padding:0;
         }}
+        .main-table thead{{display:table-header-group}}
+        .main-table tr{{page-break-inside:avoid}}
+        .footer{{position:fixed;bottom:-16mm;left:0;right:0;margin:0;background:#fff;padding-top:4px}}
     }}
 </style>
 </head>
@@ -1799,29 +1879,29 @@ class InvoicePrinter:
     <table class="header-table">
         <tr>
             <td width="50%">
-                <div class="company-name">{company_name}</div>
+                <div class="company-name">{html.escape(company_name)}</div>
+                <div class="company-info">{html.escape(company_address)}<br>{html.escape(company_phone)} · {html.escape(company_email)}</div>
             </td>
             <td width="50%" style="text-align:right;">
                 <div class="date">Ouagadougou, le {date_str}</div>
-                <br>
-                <div class="title">FACTURE PRO FORMA</div>
-                <div class="invoice-number">N° {sale.sale_number}</div>
             </td>
         </tr>
     </table>
 
+    <div class="title">{document_title} N° {html.escape(str(sale.sale_number))}</div>
+
     <!-- Informations client - tout à gauche -->
     <div class="info-block">
-        <b><u>DOIT :</u></b><br>
-        <span class="customer-name">{customer_name}</span><br>
-        <span class="customer-address">{customer_address}</span><br>
-        {f'<span class="customer-address">Tél: {customer_phone}</span><br>' if customer_phone else ''}
-        {f'<span class="customer-address">Email: {customer_email}</span>' if customer_email else ''}
+        <span class="meta"><b>DOIT :</b></span><br>
+        <span class="customer-name">{html.escape(customer_name)}</span><br>
+        <span class="customer-address">{html.escape(customer_address)}</span><br>
+        {f'<span class="customer-address">Tél: {html.escape(customer_phone)}</span><br>' if customer_phone else ''}
+        {f'<span class="customer-address">Email: {html.escape(customer_email)}</span>' if customer_email else ''}
     </div>
 
     <!-- Objet -->
     <div class="info-block">
-        <span class="object-title"><u>Objet :</u></span> <span style="font-size:10pt;">{subject}</span>
+        <span class="object-title">Objet :</span> <span style="font-size:10pt;">{html.escape(str(subject))}</span>
     </div>
 
     <!-- Tableau des articles -->
@@ -1840,23 +1920,21 @@ class InvoicePrinter:
         </tbody>
         <tfoot>
             <tr>
-                <td colspan="3" style="border:none;padding:10px 4px;"></td>
-                <td class="total-label" style="border:none;padding:10px 4px;">Total net :</td>
-                <td class="total-amount" style="border:none;padding:10px 4px;">{total_amount:,.0f} FCFA</td>
+                <td colspan="5" style="border:none;padding:0"><table class="summary">{totals_rows}</table></td>
             </tr>
         </tfoot>
     </table>
 
     <!-- Montant en lettres -->
     <div class="letters">
-        <b>Arrêté à la somme de :</b> {amount_in_words} ({total_amount:,.0f}) francs CFA
+        <b>Montant en lettres :</b> {html.escape(amount_in_words)} ({total_amount:,.0f} {html.escape(currency)})
     </div>
 
     <!-- Signature -->
     <div class="signature-block">
-        <div style="font-size:10pt;font-weight:bold;">Le Gérant</div>
+        <div style="font-size:9pt;font-weight:bold;">Signature et cachet</div>
         <div class="signature-line">
-            <span style="font-size:10pt;">TIENDREBEOGO François</span>
+            <span style="font-size:9pt;">Nom et date</span>
         </div>
     </div>
 

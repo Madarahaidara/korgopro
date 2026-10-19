@@ -414,7 +414,7 @@ class SettingsView(QWidget):
         # ancien emoji « 📷 » de 90 px.
         self.logo_preview = QLabel()
         self.logo_preview.setObjectName("LogoImage")
-        self.logo_preview.setAlignment(Qt.AlignCenter)
+        self.logo_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.logo_filename = QLabel("Aucun logo sélectionné")
         self.logo_filename.setObjectName("LogoFilename")
         self.logo_hint = QLabel("PNG, JPG ou SVG — format carré recommandé")
@@ -441,7 +441,7 @@ class SettingsView(QWidget):
         preview_layout = QVBoxLayout(preview)
         preview_layout.setContentsMargins(2, 2, 2, 2)
         preview_layout.addWidget(self.logo_preview)
-        logo_box.addWidget(preview, 0, Qt.AlignTop)
+        logo_box.addWidget(preview, 0, Qt.AlignmentFlag.AlignTop)
 
         logo_side = QVBoxLayout()
         logo_side.setSpacing(6)
@@ -567,7 +567,7 @@ class SettingsView(QWidget):
             hint="Choisir un numéro supérieur au dernier numéro émis.")
         self.number_preview = QLabel()
         self.number_preview.setObjectName("NumberPreview")
-        self.number_preview.setAlignment(Qt.AlignCenter)
+        self.number_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
         numbering_grid.add_field("Aperçu du prochain numéro", self.number_preview)
         numbering_grid.add_field(
             "Délai de paiement", self.payment_terms_spin,

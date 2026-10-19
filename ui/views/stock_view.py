@@ -1737,13 +1737,13 @@ Pour {quantity} unités:
             for row, sale in enumerate(sales):
                 # N° Vente
                 sale_num_item = QTableWidgetItem(sale.sale_number)
-                sale_num_item.setTextAlignment(Qt.AlignCenter)
+                sale_num_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.sales_table.setItem(row, 0, sale_num_item)
                 
                 # Date
                 date_str = sale.sale_date.strftime("%d/%m/%Y %H:%M") if sale.sale_date else ""
                 date_item = QTableWidgetItem(date_str)
-                date_item.setTextAlignment(Qt.AlignCenter)
+                date_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.sales_table.setItem(row, 1, date_item)
                 
                 # Client
@@ -1767,27 +1767,27 @@ Pour {quantity} unités:
                 item_count = len(sale.items)
                 items_text = f"{item_count} article{'s' if item_count > 1 else ''}"
                 items_item = QTableWidgetItem(items_text)
-                items_item.setTextAlignment(Qt.AlignCenter)
+                items_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.sales_table.setItem(row, 3, items_item)
                 
                 # Sous-total
                 subtotal_item = QTableWidgetItem(f"{sale.subtotal:,.2f} {self.currency}")
-                subtotal_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                subtotal_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 self.sales_table.setItem(row, 4, subtotal_item)
                 
                 # Remise
                 discount_item = QTableWidgetItem(f"{sale.discount_amount:,.2f} {self.currency}")
-                discount_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                discount_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 self.sales_table.setItem(row, 5, discount_item)
                 
                 # Taxe
                 tax_item = QTableWidgetItem(f"{sale.tax_amount:,.2f} {self.currency}")
-                tax_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                tax_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 self.sales_table.setItem(row, 6, tax_item)
                 
                 # Total
                 total_item = QTableWidgetItem(f"{sale.total_amount:,.2f} {self.currency}")
-                total_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                total_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 if sale.total_amount > 0:
                     total_item.setForeground(QColor("#10b981"))
                 self.sales_table.setItem(row, 7, total_item)
@@ -1803,12 +1803,12 @@ Pour {quantity} unités:
                 }.get(sale.payment_method, sale.payment_method)
                 
                 payment_item = QTableWidgetItem(payment_method_text)
-                payment_item.setTextAlignment(Qt.AlignCenter)
+                payment_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.sales_table.setItem(row, 8, payment_item)
                 
                 # Statut
                 status_item = QTableWidgetItem(sale.sale_status)
-                status_item.setTextAlignment(Qt.AlignCenter)
+                status_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 
                 # Couleur selon le statut
                 if sale.sale_status == "COMPLETED":
@@ -2164,12 +2164,12 @@ Pour {quantity} unités:
         for row, product in enumerate(self.filtered_products):
             # ID
             id_item = QTableWidgetItem(str(product.id))
-            id_item.setTextAlignment(Qt.AlignCenter)
+            id_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self.products_table.setItem(row, 0, id_item)
             
             # Code
             code_item = QTableWidgetItem(product.code if product.code else "")
-            code_item.setTextAlignment(Qt.AlignCenter)
+            code_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self.products_table.setItem(row, 1, code_item)
             
             # Nom (avec indication si inactif)
@@ -2182,14 +2182,14 @@ Pour {quantity} unités:
             
             # Catégorie
             category_item = QTableWidgetItem(product.category)
-            category_item.setTextAlignment(Qt.AlignCenter)
+            category_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             if not product.active:
                 category_item.setForeground(QColor("#9ca3af"))
             self.products_table.setItem(row, 3, category_item)
             
             # Quantité
             quantity_item = QTableWidgetItem(str(product.quantity))
-            quantity_item.setTextAlignment(Qt.AlignCenter)
+            quantity_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             
             if product.active:
                 if product.is_low_stock:
@@ -2205,21 +2205,21 @@ Pour {quantity} unités:
             
             # Prix d'achat
             purchase_item = QTableWidgetItem(f"{product.purchase_price:,.2f} {self.currency}")
-            purchase_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            purchase_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             if not product.active:
                 purchase_item.setForeground(QColor("#9ca3af"))
             self.products_table.setItem(row, 5, purchase_item)
             
             # Prix de vente
             sale_item = QTableWidgetItem(f"{product.sale_price:,.2f} {self.currency}")
-            sale_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            sale_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             if not product.active:
                 sale_item.setForeground(QColor("#9ca3af"))
             self.products_table.setItem(row, 6, sale_item)
             
             # Marge
             margin_item = QTableWidgetItem(f"{product.profit_margin:.1f}%")
-            margin_item.setTextAlignment(Qt.AlignCenter)
+            margin_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             
             if product.active:
                 if product.profit_margin > 30:
@@ -2233,7 +2233,7 @@ Pour {quantity} unités:
             
             # Valeur stock
             value_item = QTableWidgetItem(f"{product.stock_value:,.2f} {self.currency}")
-            value_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            value_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             if not product.active:
                 value_item.setForeground(QColor("#9ca3af"))
             self.products_table.setItem(row, 8, value_item)
@@ -2247,7 +2247,7 @@ Pour {quantity} unités:
             
             # Statut
             status_item = QTableWidgetItem("✓ Actif" if product.active else "✗ Inactif")
-            status_item.setTextAlignment(Qt.AlignCenter)
+            status_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             
             if product.active:
                 status_item.setForeground(QColor("#10b981"))
@@ -2772,12 +2772,12 @@ Pour {quantity} unités:
             for row, movement in enumerate(movements):
                 # ID
                 id_item = QTableWidgetItem(str(movement.id))
-                id_item.setTextAlignment(Qt.AlignCenter)
+                id_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.movements_table.setItem(row, 0, id_item)
                 
                 # Date
                 date_item = QTableWidgetItem(movement.date.strftime("%d/%m/%Y %H:%M"))
-                date_item.setTextAlignment(Qt.AlignCenter)
+                date_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.movements_table.setItem(row, 1, date_item)
                 
                 # Produit
@@ -2789,7 +2789,7 @@ Pour {quantity} unités:
                 
                 # Type
                 type_item = QTableWidgetItem(movement.movement_type)
-                type_item.setTextAlignment(Qt.AlignCenter)
+                type_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 
                 # Couleur selon le type
                 if movement.movement_type == "IN":
@@ -2805,17 +2805,17 @@ Pour {quantity} unités:
                 
                 # Quantité
                 qty_item = QTableWidgetItem(f"{movement.quantity:,}")
-                qty_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                qty_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 self.movements_table.setItem(row, 4, qty_item)
                 
                 # Prix unitaire
                 price_item = QTableWidgetItem(f"{movement.unit_price:,.2f} {self.currency}" if movement.unit_price else "N/A")
-                price_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                price_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 self.movements_table.setItem(row, 5, price_item)
                 
                 # Valeur totale
                 value_item = QTableWidgetItem(f"{movement.total_value:,.2f} {self.currency}" if movement.total_value else "N/A")
-                value_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                value_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 self.movements_table.setItem(row, 6, value_item)
                 
                 # Raison
@@ -3051,12 +3051,12 @@ Pour {quantity} unités:
             for row, expense in enumerate(expenses):
                 # ID
                 id_item = QTableWidgetItem(str(expense.id))
-                id_item.setTextAlignment(Qt.AlignCenter)
+                id_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.expenses_table.setItem(row, 0, id_item)
                 
                 # Date
                 date_item = QTableWidgetItem(expense.date.strftime("%d/%m/%Y"))
-                date_item.setTextAlignment(Qt.AlignCenter)
+                date_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.expenses_table.setItem(row, 1, date_item)
                 
                 # Catégorie
@@ -3065,7 +3065,7 @@ Pour {quantity} unités:
                 
                 # Montant
                 amount_item = QTableWidgetItem(f"{expense.amount:,.2f} {self.currency}")
-                amount_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                amount_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 self.expenses_table.setItem(row, 3, amount_item)
                 
                 total += expense.amount
@@ -3483,17 +3483,17 @@ Pour {quantity} unités:
                     
                     # Prix d'achat
                     purchase_item = QTableWidgetItem(f"{product.purchase_price:,.2f} {self.currency}")
-                    purchase_item.setTextAlignment(Qt.AlignRight)
+                    purchase_item.setTextAlignment(Qt.AlignmentFlag.AlignRight)
                     self.low_margin_table.setItem(row, 2, purchase_item)
                     
                     # Prix de vente
                     sale_item = QTableWidgetItem(f"{product.sale_price:,.2f} {self.currency}")
-                    sale_item.setTextAlignment(Qt.AlignRight)
+                    sale_item.setTextAlignment(Qt.AlignmentFlag.AlignRight)
                     self.low_margin_table.setItem(row, 3, sale_item)
                     
                     # Marge
                     margin_item = QTableWidgetItem(f"{product.profit_margin:.1f}%")
-                    margin_item.setTextAlignment(Qt.AlignCenter)
+                    margin_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                     margin_item.setForeground(QColor("#ef4444"))
                     
                     self.low_margin_table.setItem(row, 4, margin_item)
@@ -4292,7 +4292,7 @@ class ProductDialog(QDialog):
         
         # Formulaire
         form = QFormLayout()
-        form.setLabelAlignment(Qt.AlignRight)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         
         # Code produit
         self.code_input = QLineEdit()
@@ -4586,7 +4586,7 @@ class SupplierDialog(QDialog):
         
         # Formulaire
         form = QFormLayout()
-        form.setLabelAlignment(Qt.AlignRight)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         
         # Nom
         self.name_input = QLineEdit()
@@ -4945,7 +4945,7 @@ class InventoryDialog(QDialog):
                 
                 # Stock actuel
                 current_item = QTableWidgetItem(str(product.quantity))
-                current_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                current_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 self.table.setItem(row, 2, current_item)
                 
                 # Quantité comptée (spinbox)
@@ -4957,7 +4957,7 @@ class InventoryDialog(QDialog):
                 
                 # Différence
                 diff_item = QTableWidgetItem("0")
-                diff_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                diff_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 self.table.setItem(row, 4, diff_item)
                 
                 # Notes (input)
@@ -5110,7 +5110,7 @@ class NewMovementDialog(QDialog):
         
         # Formulaire
         form = QFormLayout()
-        form.setLabelAlignment(Qt.AlignRight)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         
         # Produit
         self.product_combo = QComboBox()
@@ -5324,7 +5324,7 @@ class ExpenseDialog(QDialog):
         
         # Formulaire
         form = QFormLayout()
-        form.setLabelAlignment(Qt.AlignRight)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         
         # Catégorie
         self.category_combo = QComboBox()
@@ -5702,7 +5702,7 @@ class StoreFormDialog(QDialog):
         layout.addWidget(info)
 
         form = QFormLayout()
-        form.setLabelAlignment(Qt.AlignRight)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
 
         self.name_input = QLineEdit()
         self.name_input.setPlaceholderText("Ex : Magasin Cotonou")
@@ -5897,15 +5897,15 @@ class StoresDialog(QDialog):
             self.stores_table.setItem(row, 5, QTableWidgetItem(store.manager_name or ""))
 
             products_item = QTableWidgetItem(str(summary["products"]))
-            products_item.setTextAlignment(Qt.AlignCenter)
+            products_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self.stores_table.setItem(row, 6, products_item)
 
             value_item = QTableWidgetItem(f"{summary['stock_value']:,.2f}")
-            value_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            value_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             self.stores_table.setItem(row, 7, value_item)
 
             status_item = QTableWidgetItem("Actif" if store.active else "Inactif")
-            status_item.setTextAlignment(Qt.AlignCenter)
+            status_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             status_item.setForeground(
                 QColor("#10b981") if store.active else QColor("#ef4444")
             )

@@ -39,7 +39,7 @@ class QuantityDialog(QDialog):
 
         self.quantity_edit = QLineEdit()
         self.quantity_edit.setText("1")
-        self.quantity_edit.setAlignment(Qt.AlignRight)
+        self.quantity_edit.setAlignment(Qt.AlignmentFlag.AlignRight)
         self.quantity_edit.setValidator(QDoubleValidator(0.1, self.product.quantity, 2))
         self.quantity_edit.setStyleSheet("""
             QLineEdit {
@@ -233,7 +233,7 @@ class CustomerSelectionDialog(QDialog):
             self.customers_table.setItem(row, 4, phone_item)
 
             balance_item = QTableWidgetItem(f"{customer.balance:,.0f} {self.currency}")
-            balance_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            balance_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             if customer.balance > 0:
                 balance_item.setForeground(QColor("#ef4444"))
             elif customer.balance < 0:

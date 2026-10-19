@@ -4,7 +4,7 @@
 // ============================================================================
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { login, getUserById } from '../api/authApi';
-import { getSettings } from '../api/settingsApi';
+import { getSettings, hydrateSettings } from '../api/settingsApi';
 import { supabase } from '../api/supabase';
 import { db, hydrate } from '../api/db';
 import {
@@ -115,12 +115,15 @@ export function AuthProvider({ children }) {
         }
         if (cancelled) return;
         setUser(profile.data);
-        setSettings(getSettings());
         const result = await hydrate();
         if (!result.ok) {
           await supabase.auth.signOut({ scope: 'local' });
           if (!cancelled) setUser(null);
+          return;
         }
+        // Paramètres entreprise : source de vérité partagée (Supabase).
+        await hydrateSettings();
+        if (!cancelled) setSettings(getSettings());
       } catch (e) {
         await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
         if (!cancelled) setUser(null);
@@ -139,6 +142,8 @@ export function AuthProvider({ children }) {
         await supabase.auth.signOut({ scope: 'local' });
         throw new Error(result.message);
       }
+      // Paramètres entreprise : source de vérité partagée (Supabase).
+      await hydrateSettings();
     }
     if (authenticated) {
       clearSessionNotice();

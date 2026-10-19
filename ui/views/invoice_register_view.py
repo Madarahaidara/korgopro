@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QThread, QTimer, Signal
 from core.invoice_register_manager import InvoiceRegisterManager
 from ui.loading import LoadingOverlay
+from utils.settings_manager import SettingsManager
 
 STATUS_LABELS = {
     "ALL": "Tous les statuts",
@@ -107,9 +108,10 @@ class PaymentDialog(QDialog):
 class InvoiceRegisterView(QWidget):
     """Registre des factures clients : liste, statuts, encaissements."""
 
-    def __init__(self, user_data=None):
+    def __init__(self, user_data=None, settings_manager=None):
         super().__init__()
         self.user_data = user_data or {}
+        self.settings_manager = settings_manager or SettingsManager()
         self.manager = InvoiceRegisterManager()
         # Anti-gel : debounce 300 ms + worker (voir refresh/_start_refresh).
         self._worker = None
@@ -236,7 +238,7 @@ class InvoiceRegisterView(QWidget):
             for col, value in enumerate(values):
                 item = QTableWidgetItem(str(value))
                 if col >= 3:
-                    item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                    item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 self.table.setItem(row, col, item)
 
     def _on_receive_payment(self):

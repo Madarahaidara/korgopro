@@ -96,7 +96,13 @@ export default function CaisseScreen() {
         if (!cancelled) setProducts(rows);
       } catch (e) {
         if (!cancelled) {
-          setFeedback({ tone: 'danger', title: 'Recherche impossible', message: e.message });
+          setFeedback({
+            tone: 'danger',
+            title: 'Recherche impossible',
+            message: e.message,
+            actionLabel: 'Réessayer',
+            onAction: () => setRefreshKey((value) => value + 1),
+          });
         }
       } finally {
         if (!cancelled) setSearching(false);
@@ -337,7 +343,7 @@ export default function CaisseScreen() {
     >
     <ScrollView
       style={styles.screen}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[styles.content, lines.length ? styles.contentWithAction : null]}
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="on-drag"
     >
@@ -364,7 +370,13 @@ export default function CaisseScreen() {
       </Card>
 
       {feedback ? (
-        <Banner tone={feedback.tone} title={feedback.title} message={feedback.message} />
+        <Banner
+          tone={feedback.tone}
+          title={feedback.title}
+          message={feedback.message}
+          actionLabel={feedback.actionLabel}
+          onAction={feedback.onAction}
+        />
       ) : null}
 
       <Card>
@@ -380,8 +392,8 @@ export default function CaisseScreen() {
         {searching ? <Text style={styles.hint}>Recherche…</Text> : null}
         {!searching && products.length === 0 ? (
           <Empty
-            title="Aucun produit trouvé"
-            hint="Vérifiez le magasin actif ou élargissez la recherche."
+            title={query ? 'Aucun produit trouvé' : 'Aucun produit disponible'}
+            hint={query ? 'Vérifiez le code ou essayez un autre nom.' : 'Vérifiez le magasin actif ou le stock.'}
           />
         ) : null}
         {products.map((p) => (
@@ -560,7 +572,6 @@ export default function CaisseScreen() {
           {tax > 0 ? (
             <KeyValue label={`TVA (${config.taxRate} %)`} value={formatMoney(tax, currency)} />
           ) : null}
-          <KeyValue label="TOTAL" value={formatMoney(total, currency)} strong />
           {change > 0 ? (
             <KeyValue label="Monnaie à rendre" value={formatMoney(change, currency)} strong />
           ) : null}
@@ -573,18 +584,6 @@ export default function CaisseScreen() {
           ) : null}
         </View>
 
-        <Btn
-          title={
-            credit
-              ? `Vendre à crédit ${due > 0 ? formatMoney(due, currency) : ''}`
-              : `Encaisser ${total > 0 ? formatMoney(total, currency) : ''}`
-          }
-          variant={credit ? 'primary' : 'success'}
-          onPress={save}
-          loading={saving}
-          disabled={lines.length === 0}
-          style={styles.fullBtn}
-        />
       </Card>
 
       {/* Confirmation animée : coche + carte qui « pop » après validation. */}
@@ -596,13 +595,51 @@ export default function CaisseScreen() {
         onClose={() => setValidation(null)}
       />
     </ScrollView>
+    {lines.length > 0 ? (
+      <View style={styles.checkoutDock}>
+        <View style={styles.checkoutSummary}>
+          <Text style={styles.checkoutLabel}>{credit ? 'Reste à payer' : 'Total à encaisser'}</Text>
+          <PulseOnChange value={total}>
+            <Text style={styles.checkoutTotal}>{formatMoney(credit ? due : total, currency)}</Text>
+          </PulseOnChange>
+        </View>
+        <Btn
+          title={credit ? 'Valider la vente à crédit' : 'Encaisser la vente'}
+          variant={credit ? 'primary' : 'success'}
+          onPress={save}
+          loading={saving}
+          disabled={!lines.length}
+          style={styles.checkoutButton}
+        />
+      </View>
+    ) : null}
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
-  content: { padding: sp(3), paddingBottom: sp(10) },
+  content: { padding: sp(3), paddingBottom: sp(3) },
+  contentWithAction: { paddingBottom: 112 },
+  checkoutDock: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: sp(3),
+    paddingHorizontal: sp(4),
+    paddingVertical: sp(2.5),
+    backgroundColor: colors.card,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    elevation: 8,
+    shadowColor: '#101828',
+    shadowOffset: { width: 0, height: -3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+  },
+  checkoutSummary: { flex: 1, minWidth: 0 },
+  checkoutLabel: { fontSize: 12, fontWeight: '600', color: colors.textMuted },
+  checkoutTotal: { fontSize: 18, fontWeight: '800', color: colors.text, marginTop: 2 },
+  checkoutButton: { flex: 1.1, marginTop: 0 },
   statsRow: { flexDirection: 'row', gap: sp(2) },
   statBox: {
     flex: 1,

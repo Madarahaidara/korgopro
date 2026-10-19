@@ -244,18 +244,21 @@ class PrintOptionsDialog(QDialog):
         """Affiche un aperçu avec QPrintPreviewDialog"""
         try:
             doc_type = self.get_document_type()
-            
+            html_documents = []
             if doc_type in ["invoice", "both"]:
-                success, html, message = self.printer_service.generate_html_invoice(
-                    self.sale_data['sale_id']
-                )
-            else:
-                # Pour le ticket, générer un HTML simple
-                success, html, message = self.printer_service.generate_html_invoice(
-                    self.sale_data['sale_id']
-                )
-            
-            if success:
+                success, html, message = self.printer_service.generate_html_invoice(self.sale_data['sale_id'])
+                if not success:
+                    QMessageBox.warning(self, "Erreur", message)
+                    return
+                html_documents.append(html)
+            if doc_type in ["receipt", "both"]:
+                success, html, message = self.printer_service.generate_html_receipt(self.sale_data['sale_id'])
+                if not success:
+                    QMessageBox.warning(self, "Erreur", message)
+                    return
+                html_documents.append(html)
+
+            if html_documents:
                 # Utiliser QPrintPreviewDialog pour un aperçu fidèle
                 printer = QPrinter(QPrinter.HighResolution)
                 printer.setPageSize(QPageSize(self.get_paper_size()))
@@ -270,8 +273,9 @@ class PrintOptionsDialog(QDialog):
                 printer.setPageMargins(margins, QPageLayout.Millimeter)
                 
                 preview_dialog = QPrintPreviewDialog(printer, self)
+                combined_html = self._combine_html_documents(html_documents)
                 preview_dialog.paintRequested.connect(
-                    lambda p: self._render_html_to_printer(p, html)
+                    lambda p: self._render_html_to_printer(p, combined_html)
                 )
                 preview_dialog.exec()
             else:
@@ -291,6 +295,25 @@ class PrintOptionsDialog(QDialog):
         )
         doc.setHtml(adjusted_html)
         doc.print_(printer)
+
+    @staticmethod
+    def _combine_html_documents(documents: List[str]) -> str:
+        """Assemble plusieurs modèles complets dans un seul document Qt."""
+        bodies = []
+        for item in documents:
+            lower = item.lower()
+            start = lower.find("<body")
+            if start >= 0:
+                start = item.find(">", start) + 1
+                end = lower.rfind("</body>")
+                bodies.append(item[start:end] if end >= start else item[start:])
+            else:
+                bodies.append(item)
+        sections = "".join(
+            f"<div style='page-break-after: always'>{body}</div>" if index < len(bodies) - 1 else f"<div>{body}</div>"
+            for index, body in enumerate(bodies)
+        )
+        return f"<!doctype html><html><head><meta charset='utf-8'></head><body>{sections}</body></html>"
     
     def generate(self):
         """Génère le PDF avec copies multiples"""
@@ -324,7 +347,8 @@ class PrintOptionsDialog(QDialog):
             
             # Générer les copies supplémentaires
             if copies > 1 and files:
-                for doc_name, file_path in files:
+                originals = list(files)
+                for doc_name, file_path in originals:
                     base, ext = os.path.splitext(file_path)
                     for i in range(2, copies + 1):
                         copy_path = f"{base}_copie{i}{ext}"
@@ -338,9 +362,12 @@ class PrintOptionsDialog(QDialog):
                     self.printer_service.open_file(file_path)
             
             # Imprimer directement si demandé
+            print_errors = []
             if self.print_after_check.isChecked():
                 for doc_name, file_path in files:
-                    self.printer_service.print_file(file_path)
+                    success, message = self.printer_service.print_file(file_path)
+                    if not success:
+                        print_errors.append(f"{doc_name}: {message}")
             
             # Message de confirmation
             if len(files) == 1:
@@ -348,7 +375,10 @@ class PrintOptionsDialog(QDialog):
             else:
                 msg = f"{len(files)} documents générés avec succès"
             
-            QMessageBox.information(self, "Succès", msg)
+            if print_errors:
+                QMessageBox.warning(self, "Impression partielle", msg + "\n\n" + "\n".join(print_errors))
+            else:
+                QMessageBox.information(self, "Succès", msg)
             
             # Fermer le dialogue si tout est OK
             self.accept()
@@ -451,19 +481,20 @@ class PrintOptionsDialog(QDialog):
             doc_type = self.get_document_type()
             copies = self.copies_spinbox.value()
             
-            # Générer le HTML pour l'impression
+            # Générer les documents correspondant au choix utilisateur.
+            html_documents = []
             if doc_type in ["invoice", "both"]:
-                success, html, message = self.printer_service.generate_html_invoice(
-                    self.sale_data['sale_id']
-                )
-            else:
-                success, html, message = self.printer_service.generate_html_invoice(
-                    self.sale_data['sale_id']
-                )
-            
-            if not success:
-                QMessageBox.warning(self, "Erreur", message)
-                return
+                success, html, message = self.printer_service.generate_html_invoice(self.sale_data['sale_id'])
+                if not success:
+                    QMessageBox.warning(self, "Erreur", message)
+                    return
+                html_documents.append(html)
+            if doc_type in ["receipt", "both"]:
+                success, html, message = self.printer_service.generate_html_receipt(self.sale_data['sale_id'])
+                if not success:
+                    QMessageBox.warning(self, "Erreur", message)
+                    return
+                html_documents.append(html)
             
             # Configuration de l'imprimante
             printer = QPrinter(QPrinter.HighResolution)
@@ -482,20 +513,14 @@ class PrintOptionsDialog(QDialog):
             # Afficher le dialogue d'impression
             print_dialog = QPrintDialog(printer, self)
             if print_dialog.exec() == QPrintDialog.Accepted:
-                # Créer le document
                 doc = QTextDocument()
                 adjusted_html = self.adjust_html_for_printing(
-                    html,
+                    self._combine_html_documents(html_documents),
                     paper_size=self.paper_size_combo.currentText(),
                     orientation=self.orientation_combo.currentText()
                 )
                 doc.setHtml(adjusted_html)
-                
-                # Ajuster la largeur du texte à la largeur de la page
-                page_width = printer.pageRect(QPrinter.DevicePixel).width()
-                doc.setTextWidth(page_width)
-                
-                # Imprimer
+                doc.setTextWidth(printer.pageRect(QPrinter.DevicePixel).width())
                 doc.print_(printer)
                 
                 QMessageBox.information(self, "Impression", "Impression lancée avec succès")
@@ -913,7 +938,7 @@ class PrintHistoryDialog(QDialog):
             return
         
         # Demander le type de document
-        doc_type, ok = QInputDialog.getItem(
+        doc_label, ok = QInputDialog.getItem(
             self, "Type de document",
             "Choisissez le type de document à générer:",
             ["Facture détaillée", "Ticket de caisse", "Les deux"],
@@ -930,56 +955,40 @@ class PrintHistoryDialog(QDialog):
         
         if not output_dir:
             return
-        
-        # Créer une boîte de dialogue de progression
-        progress = QProgressDialog(
-            "Génération des documents...",
-            "Annuler",
-            0,
-            len(selected_ids),
-            self
-        )
-        progress.setWindowTitle("Génération en cours")
-        progress.setWindowModality(Qt.WindowModal)
-        progress.show()
+
+        document_types = ["invoice", "receipt"] if doc_label == "Les deux" else [
+            "receipt" if doc_label == "Ticket de caisse" else "invoice"
+        ]
+        generated = []
+        generation_errors = []
+        print_errors = []
         
         try:
-            results = self.printer_service.generate_batch_invoices(selected_ids, output_dir)
-            
-            # Compter les succès/échecs
-            success_count = 0
-            error_count = 0
-            
-            for i, sale_id in enumerate(selected_ids):
-                progress.setValue(i + 1)
-                
-                if progress.wasCanceled():
-                    break
-                
-                if sale_id in results:
-                    success, message, _ = results[sale_id]
+            for document_type in document_types:
+                pattern = "Ticket_{sale_number}_{date}" if document_type == "receipt" else "Facture_{sale_number}_{date}"
+                results = self.printer_service.generate_batch_invoices(
+                    selected_ids, output_dir, filename_pattern=pattern,
+                    show_progress=False, document_type=document_type
+                )
+                for sale_id, (success, message, file_path) in results.items():
                     if success:
-                        success_count += 1
+                        generated.append(file_path)
                     else:
-                        error_count += 1
-            
-            progress.close()
-            
-            # Afficher le résultat
-            if error_count == 0:
-                QMessageBox.information(
-                    self, "Succès",
-                    f"{success_count} document(s) généré(s) avec succès dans:\n{output_dir}"
-                )
+                        generation_errors.append(f"Vente {sale_id}: {message}")
+
+            for file_path in generated:
+                success, message = self.printer_service.print_file(file_path)
+                if not success:
+                    print_errors.append(f"{os.path.basename(file_path)}: {message}")
+
+            report = f"{len(generated)} document(s) généré(s) dans :\n{output_dir}\nImpression demandée pour {len(generated) - len(print_errors)} document(s)."
+            details = generation_errors + print_errors
+            if details:
+                QMessageBox.warning(self, "Résultat partiel", report + "\n\n" + "\n".join(details))
             else:
-                QMessageBox.warning(
-                    self, "Résultat partiel",
-                    f"{success_count} document(s) généré(s) avec succès\n"
-                    f"{error_count} erreur(s)"
-                )
+                QMessageBox.information(self, "Succès", report)
             
         except Exception as e:
-            progress.close()
             logger.error(f"Erreur impression batch: {e}")
             QMessageBox.critical(self, "Erreur", f"Erreur: {str(e)}")
     

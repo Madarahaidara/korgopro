@@ -4,7 +4,7 @@
 // trésorerie, modules disponibles. Données via statsApi (PostgREST à la demande).
 // ============================================================================
 import { useCallback, useEffect, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { getDashboardStats } from '../api/statsApi';
 import { useAuth } from '../context/AuthContext';
 import { useStores } from '../context/StoreContext';
@@ -58,16 +58,26 @@ export default function DashboardScreen({ navigation }) {
       </Card>
 
       {loading ? <Loading label="Chargement du tableau de bord…" /> : null}
-      {error ? <Banner tone="danger" title="Chargement impossible" message={error} /> : null}
+      {error ? (
+        <Banner tone="danger" title="Chargement impossible" message={error} actionLabel="Réessayer" onAction={load} />
+      ) : null}
       {!loading && !stats ? (
         <Empty title="Aucune donnée" hint="Sélectionnez un magasin puis tirez pour rafraîchir." />
       ) : null}
 
       {stats ? (
         <>
+          <Card style={styles.todayCard}>
+            <View style={styles.todayHeader}>
+              <View style={styles.todayIcon}><Icon name="cash" size={22} color={colors.successDark} /></View>
+              <Text style={styles.todayEyebrow}>VENTES DU JOUR</Text>
+            </View>
+            <Text style={styles.todayValue}>{formatMoney(stats.salesToday, currency)}</Text>
+            <Text style={styles.todayCaption}>Activité du magasin sélectionné</Text>
+          </Card>
+
           <View style={styles.grid2}>
             <StatCard icon={<Icon name="receipt" size={20} color="#2f6fed" />} label="Ventes (total)" value={formatMoney(stats.totalSales, currency)} color="#2f6fed" />
-            <StatCard icon={<Icon name="cash" size={20} color="#1a9e5e" />} label="Ventes du jour" value={formatMoney(stats.salesToday, currency)} color="#1a9e5e" />
             <StatCard icon={<Icon name="stock" size={20} color="#e5a50a" />} label="Valeur du stock" value={formatMoney(stats.stockValue, currency)} color="#e5a50a" />
             <StatCard icon={<Icon name="wallet" size={20} color="#0ea5c9" />} label="Trésorerie" value={formatMoney(stats.cashBalance, currency)} color="#0ea5c9" />
           </View>
@@ -84,11 +94,14 @@ export default function DashboardScreen({ navigation }) {
             </View>
           </Card>
 
-          <Card>
+          <Card style={stats.lowStock || stats.outOfStock ? styles.alertCard : null}>
             <SectionTitle>Alertes stock</SectionTitle>
-            <View style={styles.row}>
-              <Text style={styles.meta}>Stock bas : <Text style={styles.strong}>{stats.lowStock}</Text></Text>
-              <Text style={styles.meta}>Rupture : <Text style={styles.strong}>{stats.outOfStock}</Text></Text>
+            <View style={styles.alertRow}>
+              <View style={styles.alertMetric}><Text style={styles.alertValue}>{stats.lowStock}</Text><Text style={styles.meta}>Stock bas</Text></View>
+              <View style={styles.alertMetric}><Text style={[styles.alertValue, stats.outOfStock ? styles.alertDanger : null]}>{stats.outOfStock}</Text><Text style={styles.meta}>Rupture</Text></View>
+              {(stats.lowStock || stats.outOfStock) ? (
+                <Pressable style={styles.alertAction} onPress={() => navigation?.navigate('Stock')}><Text style={styles.alertActionText}>Voir le stock</Text></Pressable>
+              ) : null}
             </View>
           </Card>
 
@@ -121,12 +134,25 @@ const styles = StyleSheet.create({
   content: { padding: sp(3), paddingBottom: sp(10), gap: sp(3) },
   hello: { fontSize: 18, fontWeight: '800', color: colors.text },
   sub: { fontSize: 13, color: colors.textMuted, marginTop: sp(1) },
+  todayCard: { backgroundColor: '#effaf5', borderColor: '#b7ead2' },
+  todayHeader: { flexDirection: 'row', alignItems: 'center', gap: sp(2) },
+  todayIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: '#d7f4e5', alignItems: 'center', justifyContent: 'center' },
+  todayEyebrow: { fontSize: 11, fontWeight: '800', letterSpacing: 0.8, color: colors.successDark },
+  todayValue: { fontSize: 28, lineHeight: 34, fontWeight: '800', color: colors.text, marginTop: sp(2) },
+  todayCaption: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
   grid2: { gap: sp(2) },
   bars: { flexDirection: 'row', alignItems: 'flex-end', gap: sp(1.5), height: 120, marginTop: sp(2) },
   barCol: { flex: 1, alignItems: 'center', justifyContent: 'flex-end', gap: 4 },
   bar: { width: '70%', backgroundColor: colors.primary, borderRadius: 4 },
   barLabel: { fontSize: 10, color: colors.textMuted },
   row: { flexDirection: 'row', justifyContent: 'space-between', gap: sp(2), marginTop: sp(1) },
+  alertCard: { borderColor: '#f4d08a', backgroundColor: '#fffcf4' },
+  alertRow: { flexDirection: 'row', alignItems: 'center', gap: sp(3) },
+  alertMetric: { flex: 1 },
+  alertValue: { fontSize: 22, fontWeight: '800', color: '#a16207' },
+  alertDanger: { color: colors.dangerDark },
+  alertAction: { minHeight: 44, justifyContent: 'center', paddingHorizontal: sp(3), borderRadius: 10, backgroundColor: '#fff', borderWidth: 1, borderColor: '#e8c779' },
+  alertActionText: { fontSize: 12, fontWeight: '700', color: colors.primary },
   meta: { fontSize: 13, color: colors.textMuted },
   strong: { fontWeight: '800', color: colors.text },
   metrics: { flexDirection: 'row', flexWrap: 'wrap', gap: sp(3), marginTop: sp(1) },

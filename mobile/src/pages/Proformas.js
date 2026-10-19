@@ -8,6 +8,8 @@ import { getProforma, listProformas } from '../api/proformaApi';
 import { formatDate, formatMoney } from '../lib/format';
 import { colors, sp } from '../theme';
 import { Badge, Banner, Card, Empty, Field, Input, KeyValue, Loading, Modal, SectionTitle } from '../components/ui';
+import DocumentActions from '../components/DocumentActions';
+import { proformaHtml } from '../lib/documents';
 
 export default function ProformasScreen() {
   const [rows, setRows] = useState([]);
@@ -67,7 +69,7 @@ export default function ProformasScreen() {
     >
       <Card>
         <SectionTitle>Proformas</SectionTitle>
-        <Text style={styles.sub}>Devis et cycle de vie (lecture seule sur mobile).</Text>
+        <Text style={styles.sub}>Consultez, imprimez et partagez vos factures proforma.</Text>
         <Field label="RECHERCHE">
           <Input value={query} onChangeText={setQuery} placeholder="N°, client…" />
         </Field>
@@ -99,13 +101,16 @@ export default function ProformasScreen() {
             <KeyValue label="Date" value={formatDate(selected.created_date)} />
             <KeyValue label="Statut" value={selected.status} />
             <KeyValue label="Total" value={formatMoney(selected.total_amount, selected.currency)} strong />
+            {!detail ? <Loading label="Chargement du détail de la proforma…" /> : null}
+            {detail?._error ? <Banner tone="warning" title="Détail incomplet" message={detail._error} /> : null}
             {(detail?.items || []).map((it) => (
               <View key={it.id} style={styles.line}>
                 <Text style={styles.lineLabel} numberOfLines={1}>{it.description || `Produit #${it.product_id}`}</Text>
                 <Text style={styles.lineValue}>{it.quantity} × {formatMoney(it.unit_price, selected.currency)}</Text>
               </View>
             ))}
-            <Text style={styles.hint}>Création / conversion : desktop ou web (droits admin).</Text>
+            {detail && !detail._error ? <DocumentActions html={proformaHtml(detail)} fileName={`Proforma-${detail.number || detail.proforma_number}`} /> : null}
+            <Text style={styles.hint}>La création et la conversion restent disponibles depuis desktop ou web.</Text>
           </View>
         ) : null}
       </Modal>

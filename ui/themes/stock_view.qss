@@ -62,7 +62,7 @@ QTableWidget {
     border: 1px solid #e2e8f0;
     border-radius: 6px;
     alternate-background-color: #f8fafc;
-    gridline-color: #e2e8f0;
+    gridline-color: #e8edf2;
 }
 
 QTableWidget::item {
@@ -70,17 +70,21 @@ QTableWidget::item {
 }
 
 QTableWidget::item:selected {
-    background-color: #dbeafe;
+    background-color: #f1f3f5;
     color: #061433;
 }
 
+QTableWidget::item:hover {
+    background-color: #f8f9fa;
+}
+
 QHeaderView::section {
-    background-color: #2F4255;
-    color: white;
+    background-color: #e9eef3;
+    color: #334155;
     padding: 10px;
     border: none;
     font-weight: bold;
-    border-right: 1px solid #1B3A7A;
+    border-right: 1px solid #d9e1e8;
 }
 
 QHeaderView::section:last {

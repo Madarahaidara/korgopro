@@ -88,11 +88,18 @@ export default function Proformas() {
 function ProformaDetail({ proforma, onStatus, onClose }) {
   return (
     <Modal title={`Proforma ${proforma.number}`} onClose={onClose} width={640}>
-      <div className="grid grid-2 mb-12">
-        <div><div className="text-muted">Client</div><b>{proforma.customer?.full_name || '—'}</b></div>
-        <div><div className="text-muted">Date</div><b>{formatDate(proforma.created_date)}</b></div>
-        <div><div className="text-muted">Valable jusqu'au</div><b>{formatDate(proforma.valid_until)}</b></div>
-        <div><div className="text-muted">Statut</div><Badge status={proforma.status} /></div>
+      <div className="document-print-actions"><button className="btn btn-primary" onClick={() => window.print()}>Imprimer / Enregistrer en PDF</button></div>
+      <div className="document-print-sheet">
+      <div className="document-print-header">
+        <div><div className="document-brand">KORGO</div><div className="text-muted">Document commercial</div></div>
+        <div className="text-right text-muted">Émise le {formatDate(proforma.created_date)}<br />Valable jusqu’au {formatDate(proforma.valid_until)}</div>
+      </div>
+      <div className="document-print-title">FACTURE PROFORMA N° {proforma.number}</div>
+      <div className="document-party mb-12">
+        <div className="text-muted">Doit :</div>
+        <b>{proforma.customer?.full_name || '—'}</b>
+        {proforma.customer?.address && <div>{proforma.customer.address}</div>}
+        <div className="text-muted">{[proforma.customer?.phone, proforma.customer?.email].filter(Boolean).join(' · ')}</div>
       </div>
 
       {proforma.items.length > 0 && (
@@ -115,7 +122,10 @@ function ProformaDetail({ proforma, onStatus, onClose }) {
         <TotalsLine label="Sous-total" value={formatMoney(proforma.subtotal, proforma.currency)} />
         <TotalsLine label="Remise" value={`-${formatMoney(proforma.discount_amount, proforma.currency)}`} />
         <TotalsLine label="Taxe" value={formatMoney(proforma.tax_amount, proforma.currency)} />
-        <TotalsLine label="Total" bold value={formatMoney(proforma.total_amount, proforma.currency)} />
+        <TotalsLine label="TOTAL GENERAL" bold value={formatMoney(proforma.total_amount, proforma.currency)} />
+      </div>
+      {proforma.terms_and_conditions && <div className="document-terms"><b>Conditions</b><div>{proforma.terms_and_conditions}</div></div>}
+      <div className="document-print-footer">Document généré par Korgo · Montants en {proforma.currency || 'FCFA'}</div>
       </div>
 
       <div className="mt-16">

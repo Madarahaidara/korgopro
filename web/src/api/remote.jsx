@@ -110,8 +110,6 @@ export const COLLECTIONS = [
     order: 'id',
   },
   {
-
-  {
     name: 'activityLogs',
     table: 'activity_logs',
     rename: { user: 'username', timestamp: 'created_at' },

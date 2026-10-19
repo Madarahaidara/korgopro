@@ -1,0 +1,16 @@
+import os, re, glob
+paths=['c:/Users/COMTECH-DESKONE/korgopro/mobile/src','c:/Users/COMTECH-DESKONE/korgopro/mobile/app.json','c:/Users/COMTECH-DESKONE/korgopro/mobile/android/app/src/main/AndroidManifest.xml']
+pat='(notif|permission|POST_)?[Pp]ermission|[Pp]ermission|[Aa]lert|mic|Microphone|location|Location|[Cc]ontact|[Cc]amera|FDM|Storage|storage|WRITE|READ|VIBRATE|SMS|RECORD_AUDIO|ACCESS_FINE_LOCATION|ACCESS_COARSE_LOCATION|ACCESS_BACKGROUND_LOCATION'
+for p in paths:
+    if not os.path.exists(p):
+        print(p,'MISSING'); continue
+    for f in glob.glob(p+'/**/*.py',recursive=True)+glob.glob(p+'/**/*.js',recursive=True)+glob.glob(p+'/**/*.json',recursive=True)+glob.glob(p+'/**/*.xml',recursive=True):
+        try:
+            s=open(f,encoding='utf-8',errors='ignore').read()
+        except:
+            continue
+        for m in re.finditer(pat,s,re.I):
+            line=s[:m.start()].count('\n')+1
+            txt=re.sub(r'\s+',' ',s[max(0,m.start()-60):m.end()+60])
+            print(f.split('/')[-1]+'@'+str(line)+' : '+txt)
+PY

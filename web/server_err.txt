@@ -1,0 +1,76 @@
+[2m19:00:12[22m [31m[1m[vite][22m[39m Pre-transform error: C:\Users\COMTECH-DESKONE\korgopro\web\src\api\remote.jsx: Unexpected token (114:2)
+
+[0m [90m 112 |[39m   {
+ [90m 113 |[39m
+[31m[1m>[22m[39m[90m 114 |[39m   {
+ [90m     |[39m   [31m[1m^[22m[39m
+ [90m 115 |[39m     name[33m:[39m [32m'activityLogs'[39m[33m,[39m
+ [90m 116 |[39m     table[33m:[39m [32m'activity_logs'[39m[33m,[39m
+ [90m 117 |[39m     rename[33m:[39m { user[33m:[39m [32m'username'[39m[33m,[39m timestamp[33m:[39m [32m'created_at'[39m }[33m,[39m[0m
+[2m19:00:15[22m [31m[1m[vite][22m[39m [31mInternal server error: C:\Users\COMTECH-DESKONE\korgopro\web\src\api\remote.jsx: Unexpected token (114:2)
+
+[0m [90m 112 |[31m   {
+ [90m 113 |[31m
+[31m[1m>[22m[31m[90m 114 |[31m   {
+ [90m     |[31m   [31m[1m^[22m[31m
+ [90m 115 |[31m     name[33m:[31m [32m'activityLogs'[31m[33m,[31m
+ [90m 116 |[31m     table[33m:[31m [32m'activity_logs'[31m[33m,[31m
+ [90m 117 |[31m     rename[33m:[31m { user[33m:[31m [32m'username'[31m[33m,[31m timestamp[33m:[31m [32m'created_at'[31m }[33m,[31m[0m[39m
+  Plugin: [35mvite:react-babel[39m
+  File: [36mC:/Users/COMTECH-DESKONE/korgopro/web/src/api/remote.jsx[39m:114:2
+[33m  115|      name: 'activityLogs',
+  116|      table: 'activity_logs',
+  117|      rename: { user: 'username', timestamp: 'created_at' },
+     |                                                           ^
+  118|      order: 'id',
+  119|    },[39m
+      at constructor (C:\Users\COMTECH-DESKONE\korgopro\web\node_modules\@babel\parser\lib\index.js:369:19)
+      at JSXParserMixin.raise (C:\Users\COMTECH-DESKONE\korgopro\web\node_modules\@babel\parser\lib\index.js:6620:19)
+      at JSXParserMixin.unexpected (C:\Users\COMTECH-DESKONE\korgopro\web\node_modules\@babel\parser\lib\index.js:6640:16)
+      at JSXParserMixin.parsePropertyName (C:\Users\COMTECH-DESKONE\korgopro\web\node_modules\@babel\parser\lib\index.js:12053:18)
+      at JSXParserMixin.parsePropertyDefinition (C:\Users\COMTECH-DESKONE\korgopro\web\node_modules\@babel\parser\lib\index.js:11918:10)
+      at JSXParserMixin.parseObjectLike (C:\Users\COMTECH-DESKONE\korgopro\web\node_modules\@babel\parser\lib\index.js:11861:21)
+      at JSXParserMixin.parseExprAtom (C:\Users\COMTECH-DESKONE\korgopro\web\node_modules\@babel\parser\lib\index.js:11365:23)
+      at JSXParserMixin.parseExprAtom (C:\Users\COMTECH-DESKONE\korgopro\web\node_modules\@babel\parser\lib\index.js:4780:20)
+      at JSXParserMixin.parseExprSubscripts (C:\Users\COMTECH-DESKONE\korgopro\web\node_modules\@babel\parser\lib\index.js:11102:23)
+      at JSXParserMixin.parseUpdate (C:\Users\COMTECH-DESKONE\korgopro\web\node_modules\@babel\parser\lib\index.js:11087:21)
+      at JSXParserMixin.parseMaybeUnary (C:\Users\COMTECH-DESKONE\korgopro\web\node_modules\@babel\parser\lib\index.js:11067:23)
+      at JSXParserMixin.parseMaybeUnaryOrPrivate (C:\Users\COMTECH-DESKONE\korgopro\web\node_modules\@babel\parser\lib\index.js:10920:61)
+      at JSXParserMixin.parseExprOps (C:\Users\COMTECH-DESKONE\korgopro\web\node_modules\@babel\parser\lib\index.js:10925:23)
+      at JSXParserMixin.parseMaybeConditional (C:\Users\COMTECH-DESKONE\korgopro\web\node_modules\@babel\parser\lib\index.js:10902:23)
+      at JSXParserMixin.parseMaybeAssign (C:\Users\COMTECH-DESKONE\korgopro\web\node_modules\@babel\parser\lib\index.js:10852:21)
+      at C:\Users\COMTECH-DESKONE\korgopro\web\node_modules\@babel\parser\lib\index.js:10821:39
+      at JSXParserMixin.allowInAnd (C:\Users\COMTECH-DESKONE\korgopro\web\node_modules\@babel\parser\lib\index.js:12455:12)
+      at JSXParserMixin.parseMaybeAssignAllowIn (C:\Users\COMTECH-DESKONE\korgopro\web\node_modules\@babel\parser\lib\index.js:10821:17)
+      at JSXParserMixin.parseMaybeAssignAllowInOrVoidPattern (C:\Users\COMTECH-DESKONE\korgopro\web\node_modules\@babel\parser\lib\index.js:12522:17)
+      at JSXParserMixin.parseExprListItem (C:\Users\COMTECH-DESKONE\korgopro\web\node_modules\@babel\parser\lib\index.js:12204:18)
+      at JSXParserMixin.parseExprList (C:\Users\COMTECH-DESKONE\korgopro\web\node_modules\@babel\parser\lib\index.js:12179:22)
+      at JSXParserMixin.parseArrayLike (C:\Users\COMTECH-DESKONE\korgopro\web\node_modules\@babel\parser\lib\index.js:12086:26)
+      at JSXParserMixin.parseExprAtom (C:\Users\COMTECH-DESKONE\korgopro\web\node_modules\@babel\parser\lib\index.js:11361:23)
+      at JSXParserMixin.parseExprAtom (C:\Users\COMTECH-DESKONE\korgopro\web\node_modules\@babel\parser\lib\index.js:4780:20)
+      at JSXParserMixin.parseExprSubscripts (C:\Users\COMTECH-DESKONE\korgopro\web\node_modules\@babel\parser\lib\index.js:11102:23)
+      at JSXParserMixin.parseUpdate (C:\Users\COMTECH-DESKONE\korgopro\web\node_modules\@babel\parser\lib\index.js:11087:21)
+      at JSXParserMixin.parseMaybeUnary (C:\Users\COMTECH-DESKONE\korgopro\web\node_modules\@babel\parser\lib\index.js:11067:23)
+      at JSXParserMixin.parseMaybeUnaryOrPrivate (C:\Users\COMTECH-DESKONE\korgopro\web\node_modules\@babel\parser\lib\index.js:10920:61)
+      at JSXParserMixin.parseExprOps (C:\Users\COMTECH-DESKONE\korgopro\web\node_modules\@babel\parser\lib\index.js:10925:23)
+      at JSXParserMixin.parseMaybeConditional (C:\Users\COMTECH-DESKONE\korgopro\web\node_modules\@babel\parser\lib\index.js:10902:23)
+      at JSXParserMixin.parseMaybeAssign (C:\Users\COMTECH-DESKONE\korgopro\web\node_modules\@babel\parser\lib\index.js:10852:21)
+      at C:\Users\COMTECH-DESKONE\korgopro\web\node_modules\@babel\parser\lib\index.js:10821:39
+      at JSXParserMixin.allowInAnd (C:\Users\COMTECH-DESKONE\korgopro\web\node_modules\@babel\parser\lib\index.js:12450:16)
+      at JSXParserMixin.parseMaybeAssignAllowIn (C:\Users\COMTECH-DESKONE\korgopro\web\node_modules\@babel\parser\lib\index.js:10821:17)
+      at JSXParserMixin.parseVar (C:\Users\COMTECH-DESKONE\korgopro\web\node_modules\@babel\parser\lib\index.js:13413:91)
+      at JSXParserMixin.parseVarStatement (C:\Users\COMTECH-DESKONE\korgopro\web\node_modules\@babel\parser\lib\index.js:13259:10)
+      at JSXParserMixin.parseStatementContent (C:\Users\COMTECH-DESKONE\korgopro\web\node_modules\@babel\parser\lib\index.js:12880:23)
+      at JSXParserMixin.parseStatementLike (C:\Users\COMTECH-DESKONE\korgopro\web\node_modules\@babel\parser\lib\index.js:12796:17)
+      at JSXParserMixin.parseStatementListItem (C:\Users\COMTECH-DESKONE\korgopro\web\node_modules\@babel\parser\lib\index.js:12776:17)
+      at JSXParserMixin.parseExportDeclaration (C:\Users\COMTECH-DESKONE\korgopro\web\node_modules\@babel\parser\lib\index.js:13963:17)
+      at JSXParserMixin.maybeParseExportDeclaration (C:\Users\COMTECH-DESKONE\korgopro\web\node_modules\@babel\parser\lib\index.js:13922:31)
+      at JSXParserMixin.parseExport (C:\Users\COMTECH-DESKONE\korgopro\web\node_modules\@babel\parser\lib\index.js:13841:29)
+      at JSXParserMixin.parseStatementContent (C:\Users\COMTECH-DESKONE\korgopro\web\node_modules\@babel\parser\lib\index.js:12907:27)
+      at JSXParserMixin.parseStatementLike (C:\Users\COMTECH-DESKONE\korgopro\web\node_modules\@babel\parser\lib\index.js:12796:17)
+      at JSXParserMixin.parseModuleItem (C:\Users\COMTECH-DESKONE\korgopro\web\node_modules\@babel\parser\lib\index.js:12773:17)
+      at JSXParserMixin.parseBlockOrModuleBlockBody (C:\Users\COMTECH-DESKONE\korgopro\web\node_modules\@babel\parser\lib\index.js:13345:36)
+      at JSXParserMixin.parseBlockBody (C:\Users\COMTECH-DESKONE\korgopro\web\node_modules\@babel\parser\lib\index.js:13338:10)
+      at JSXParserMixin.parseProgram (C:\Users\COMTECH-DESKONE\korgopro\web\node_modules\@babel\parser\lib\index.js:12651:10)
+      at JSXParserMixin.parseTopLevel (C:\Users\COMTECH-DESKONE\korgopro\web\node_modules\@babel\parser\lib\index.js:12641:25)
+      at JSXParserMixin.parse (C:\Users\COMTECH-DESKONE\korgopro\web\node_modules\@babel\parser\lib\index.js:14517:25)

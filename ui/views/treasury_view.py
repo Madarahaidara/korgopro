@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtGui import QFont
 from core.treasury_manager import TreasuryManager
+from utils.settings_manager import SettingsManager
 
 
 # Catégories de mouvement de trésorerie (électricité, eau, internet, etc.).
@@ -26,9 +27,10 @@ MOVEMENT_CATEGORIES = [
 class TreasuryView(QWidget):
     """Vue de trésorerie : gestion des comptes, mouvements et sessions de caisse."""
 
-    def __init__(self, user=None, parent=None):
+    def __init__(self, user=None, parent=None, settings_manager=None):
         super().__init__(parent)
         self.user = user
+        self.settings_manager = settings_manager or SettingsManager()
         self.manager = TreasuryManager()
         self.current_session = None
         self._init_ui()

@@ -107,9 +107,9 @@ QTableWidget#activityTable {
     border: 1px solid #dfe6e9;
     border-radius: 6px;
     alternate-background-color: #f8f9fa;
-    selection-background-color: rgba(47, 66, 85, 0.2);
+    selection-background-color: #f1f3f5;
     selection-color: #2F4255;
-    gridline-color: #dfe6e9;
+    gridline-color: #e8edf2;
 }
 
 QTableWidget#usersTable::item,
@@ -117,15 +117,20 @@ QTableWidget#activityTable::item {
     padding: 8px;
 }
 
+QTableWidget#usersTable::item:hover,
+QTableWidget#activityTable::item:hover {
+    background-color: #f8f9fa;
+}
+
 /* EN-TÊTE DU TABLEAU */
 QTableWidget#usersTable QHeaderView::section,
 QTableWidget#activityTable QHeaderView::section {
-    background-color: #2F4255;
-    color: white;
+    background-color: #e9eef3;
+    color: #334155;
     padding: 10px;
     border: none;
     font-weight: bold;
-    border-right: 1px solid #2F4255;
+    border-right: 1px solid #d9e1e8;
 }
 
 QTableWidget#usersTable QHeaderView::section:last-child,
@@ -429,7 +434,7 @@ QLabel {
 
 /* ===== ÉTATS SPÉCIAUX ===== */
 QTableWidget#usersTable::item:selected {
-    background-color: rgba(13, 31, 74, 0.1);
+    background-color: #f1f3f5;
     color: #061433;
     font-weight: bold;
 }
