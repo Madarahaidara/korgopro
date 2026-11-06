@@ -1,7 +1,6 @@
 # core/log_manager.py
 from core.database import SessionLocal
 from core.models.activity_log import ActivityLog
-from core.models.organization import Organization, LEGACY_ORGANIZATION_CODE
 from datetime import datetime, timedelta
 import socket
 import platform
@@ -10,32 +9,11 @@ class LogManager:
     """Gestionnaire de logs d'activité"""
     
     @staticmethod
-    def _resolve_organization_id(session, organization_id):
-        """Retourne un organization_id valide (NOT NULL en BDD depuis migration 0006).
-
-        Si organization_id est None, tente de retrouver l'organisation par d�faut
-        (code KORGO-DEFAULT cr�� par la migration 0005), sinon la premi�re
-        organisation disponible.
-        """
-        if organization_id is not None:
-            return organization_id
-        default_org = session.query(Organization).filter(
-            Organization.code == LEGACY_ORGANIZATION_CODE
-        ).first()
-        if default_org is not None:
-            return default_org.id
-        first_org = session.query(Organization).first()
-        if first_org is not None:
-            return first_org.id
-        return None
-
-    @staticmethod
     def add_log(user_id, username, action, details=None, ip_address=None,
                 user_agent=None, organization_id=None):
-        """Ajouter un log d'activit�"""
+        """Ajouter un log d'activité"""
         try:
             with SessionLocal() as session:
-                org_id = LogManager._resolve_organization_id(session, organization_id)
                 log = ActivityLog(
                     user_id=user_id,
                     username=username,
@@ -44,7 +22,7 @@ class LogManager:
                     ip_address=ip_address or LogManager._get_local_ip(),
                     user_agent=user_agent or platform.platform(),
                     created_at=datetime.now(),
-                    organization_id=org_id,
+                    organization_id=organization_id,
                 )
                 session.add(log)
                 session.commit()

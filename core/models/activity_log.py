@@ -15,10 +15,10 @@ class ActivityLog(Base):
     ip_address = Column(String(45), nullable=True)
     user_agent = Column(String(255), nullable=True)
     # Colonne multi-entreprise (migration 0004/0005/0006)
-    # NOT NULL depuis la migration 0006 (backfill effectu�)
+    # Abandon du système multi-entreprise : organisation_id redevient nullable
     organization_id = Column(
         postgresql.UUID(as_uuid=True),
-        nullable=False,
+        nullable=True,
         index=True,
     )
     created_at = Column(DateTime, default=func.now())
