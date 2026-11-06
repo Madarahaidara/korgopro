@@ -31,7 +31,8 @@
       "commentaire": "Le .env (EXPO_PUBLIC_SUPABASE_URL / EXPO_PUBLIC_SUPABASE_ANON_KEY) est la seule source de configuration réseau."
     },
     "plugins": [
-      "expo-sharing"
+      "expo-sharing",
+      "expo-status-bar"
     ]
   }
 }

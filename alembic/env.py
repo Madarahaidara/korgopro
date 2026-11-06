@@ -42,7 +42,9 @@ _DBVAR = os.environ.get(
     "DATABASE_URL",
     config.get_main_option("sqlalchemy.url") or "sqlite:///korgo_pro.db",
 )
-config.set_main_option("sqlalchemy.url", _DBVAR)
+# Échapper les % dans l'URL pour éviter les problèmes de configparser (ex: password contient %@)
+db_url_escaped = _DBVAR.replace("%", "%%")
+config.set_main_option("sqlalchemy.url", db_url_escaped)
 
 # Interpréter la config pour le logging.
 if config.config_file_name is not None:

@@ -28,8 +28,10 @@ dépôt), recopiée dans `src/lib/permissions.js` **et** vérifiée côté serve
 ## 2. Installation
 
 ```bash
+# Depuis la racine du dépôt : l'application Expo se trouve dans mobile/.
+# Ne lancez pas Expo depuis la racine, qui a une installation distincte en SDK 57.
 cd mobile
-npm install                     # dépendances (Expo SDK 57, React Native)
+npm install                     # dépendances (Expo SDK 58, React Native)
 
 copy .env.example .env          # puis renseigner les 2 variables Supabase
 #   EXPO_PUBLIC_SUPABASE_URL=https://<REF>.supabase.co

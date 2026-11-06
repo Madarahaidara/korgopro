@@ -1,0 +1,11 @@
+# =============================================================================
+# Korgo Pro — requirements-dev.txt (développement & tests)
+# -----------------------------------------------------------------------------
+# Extension de requirements.txt avec les dépendances nécessaires au
+# développement, au linter et à l'exécution des tests automatiques.
+# =============================================================================
+
+-r requirements.txt
+
+# Exécution des tests automatiques
+pytest==9.1.1

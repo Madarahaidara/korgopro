@@ -1,5 +1,6 @@
 # core/models/activity_log.py
 from sqlalchemy import Column, Integer, String, DateTime, Text
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.sql import func
 from core.database import Base
 
@@ -13,6 +14,13 @@ class ActivityLog(Base):
     details = Column(Text, nullable=True)
     ip_address = Column(String(45), nullable=True)
     user_agent = Column(String(255), nullable=True)
+    # Colonne multi-entreprise (migration 0004/0005/0006)
+    # NOT NULL depuis la migration 0006 (backfill effectu�)
+    organization_id = Column(
+        postgresql.UUID(as_uuid=True),
+        nullable=False,
+        index=True,
+    )
     created_at = Column(DateTime, default=func.now())
     
     def __repr__(self):

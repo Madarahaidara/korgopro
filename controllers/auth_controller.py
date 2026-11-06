@@ -15,12 +15,18 @@ from datetime import datetime
 
 from core.database import SessionLocal
 from core.models.user import User
+from core.models.organization import OrganizationMember
 from core.security import (
     _is_bcrypt_hash,
     migrate_old_hash,
     verify_password as verify_password_hash,
 )
-from core.supabase_auth import resolve_email, supabase_available, verify_credentials
+from core.supabase_auth import (
+    resolve_email,
+    supabase_available,
+    verify_credentials,
+    get_auth_id,
+)
 
 
 class AuthController:
@@ -82,6 +88,25 @@ class AuthController:
         self.last_error = self._open_single_session(email, force=force)
         if self.last_error:
             return None
+
+        # Récupérer l'organization_id de l'utilisateur (pour multi-entreprise)
+        auth_user_id = get_auth_id(session, email)
+        organization_id = None
+        if auth_user_id:
+            member = (
+                session.query(OrganizationMember)
+                .filter(
+                    OrganizationMember.user_id == auth_user_id,
+                    OrganizationMember.active == True,
+                )
+                .first()
+            )
+            if member:
+                organization_id = member.organization_id
+
+        user.last_login = datetime.utcnow()
+        session.commit()
+        return self._as_dict(user, organization_id=organization_id)
 
         user.last_login = datetime.utcnow()
         session.commit()
@@ -168,7 +193,7 @@ class AuthController:
         return None
 
     @staticmethod
-    def _as_dict(user):
+    def _as_dict(user, organization_id=None):
         return {
             "id": user.id,
             "username": user.username,
@@ -176,6 +201,7 @@ class AuthController:
             "role": user.role,
             "active": user.active,
             "last_login": user.last_login,
+            "organization_id": organization_id,
         }
 
     def verify_password(self, username: str, password: str) -> bool:

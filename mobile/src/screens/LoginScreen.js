@@ -77,6 +77,7 @@ export default function LoginScreen() {
           {
             paddingTop: Math.max(insets.top, 20),
             paddingBottom: Math.max(insets.bottom, 20) + keyboardHeight,
+            justifyContent: keyboardHeight ? 'flex-start' : 'center',
           },
         ]}
         keyboardShouldPersistTaps="handled"
@@ -159,11 +160,10 @@ export default function LoginScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
-  // Pas de `justifyContent: 'center'` ici : centrer le contenu d'un ScrollView
-  // empêche le défilement automatique vers le champ focused quand le clavier
-  // s'ouvre (champs masqués). flexGrow:1 garde le fond plein écran.
-  content: { padding: sp(5), flexGrow: 1 },
+  content: { padding: sp(5), flexGrow: 1, alignItems: 'center' },
   cardWrap: {
+    width: '100%',
+    maxWidth: 480,
     backgroundColor: '#ffffff',
     borderRadius: 16,
     overflow: 'hidden',
@@ -184,4 +184,3 @@ const styles = StyleSheet.create({
   submitBtn: { backgroundColor: colors.primary, borderRadius: 10, paddingVertical: sp(3) },
   conflictText: { fontSize: 12, color: '#6b7280', textAlign: 'center', marginBottom: sp(3) },
 });
-

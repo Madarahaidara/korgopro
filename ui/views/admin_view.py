@@ -2545,12 +2545,22 @@ class AdminView(QWidget):
         dialog.show()
 
     def log_activity(self, user_id, username, action, details=None, ip_address=None):
+        # Récupérer organization_id depuis le contexte utilisateur si disponible
+        organization_id = None
+        current_user = getattr(self, "current_user", None)
+        if isinstance(current_user, dict):
+            organization_id = current_user.get("organization_id")
+        elif current_user is not None:
+            # Objet Python : chercher l'attribut organization_id
+            organization_id = getattr(current_user, "organization_id", None)
+
         return self.log_manager.add_log(
             user_id=user_id,
             username=username,
             action=action,
             details=details,
-            ip_address=ip_address
+            ip_address=ip_address,
+            organization_id=organization_id,
         )
     
     def get_current_user_id(self):

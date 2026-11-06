@@ -1,0 +1,32 @@
+# =============================================================================
+# Korgo Pro — requirements.txt (runtime)
+# -----------------------------------------------------------------------------
+# Dépendances épinglées (==) pour des builds reproductibles dans tous les
+# environnements (développement, CI, exécutable PyInstaller).
+#
+# Générer / mettre à jour :  pip-compile requirements.in   (pip-tools)
+# Vérifier l'intégrité    :  pip install --dry-run -r requirements.txt
+# =============================================================================
+
+# Interface graphique Qt 6 (bureau, Windows)
+PySide6==6.11.2
+
+# ORM et migrations de schéma
+SQLAlchemy==2.1.1
+alembic==1.20.0
+
+# Connexion PostgreSQL (optionnelle) — SQLite par défaut en local
+psycopg2-binary==2.9.13
+
+# Variables d'environnement / fichiers .env
+python-dotenv==1.2.4
+
+# Export Excel et prétraitement des rapports
+pandas==3.0.6
+openpyxl==3.1.5
+
+# Hachage des mots de passe
+bcrypt==5.0.0
+
+# Génération de PDF (factures, reçus)
+reportlab==5.0.1
