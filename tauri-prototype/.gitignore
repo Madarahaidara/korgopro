@@ -1,0 +1,6 @@
+# Artefacts de build (non versionnés)
+target/
+node_modules/
+dist/
+.env
+*.log
